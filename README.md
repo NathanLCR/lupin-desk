@@ -97,14 +97,14 @@ A cada turno, o catálogo atual do SQLite e os apps abertos são injetados no *s
 | :--- | :--- |
 | **Analógico Esquerdo** | Move o olhar do pet (`EmoFace.lookAt`) |
 | **Segurar `L2` ou `R2`** | **Push-to-Talk** (segurar grava, soltar envia áudio + vibração háptica) |
-| **`L1` / `R1`** | Alterna entre os 4 modos (`Pet` ↔ `Dock` ↔ `Display` ↔ `Diagnóstico`) |
+| **`L1` / `R1`** | Alterna entre os Modos `Pet` e `Dock` (dentro dos Ajustes, troca de seção). Deslizar rápido na tela ou `Alt`+setas fazem o mesmo |
 | **`D-Pad`** | Navega pelos apps da Dock Viva e tiles do Stream Deck / Display |
-| **`A`** | Executa o app/atalho selecionado (ou abre Expressões no modo Pet) |
+| **`A`** | Executa o app/atalho selecionado  |
 | **`B`** | **Barge-in** (interrompe fala/LLM na hora) ou fecha modal aberto |
 | **`X`** | Mostra / oculta a legenda |
 | **`Y`** | Alterna TTS entre **Browser** e **Servidor Mac (`/api/tts`)** |
 | **`Select`** | Alterna Tela Cheia + WakeLock |
-| **`Start`** | Abre/fecha Gaveta de Memória (ou Config. de Atalhos no modo Dock) |
+| **`Start`** | Abre/fecha os **Ajustes** (Voz e som, Cérebro, Memória, Skills, Dock, Diagnóstico) |
 
 **Atalhos no teclado do Mac**: segurar **`Espaço`** (fora de campos de texto) ativa o **Push-to-Talk**; **`Esc`** dispara **barge-in** ou fecha modais.
 
@@ -184,7 +184,7 @@ Suba o servidor com TLS na porta `8443`:
 Acesse pelo IP exibido pelo script (ex.: `https://192.168.0.125:8443`). Ao usar certificado autoassinado no Chrome Android ou iOS Safari pela primeira vez, aceite o aviso de certificado local (ou instale a CA raiz do `mkcert`).
 
 ### 3. Voz Local (STT e TTS)
-- **TTS do Servidor Mac (`/api/tts`)**: funciona nativamente no macOS via `/usr/bin/say` + `/usr/bin/afconvert` sem dependências extras. Recomendado no **iPhone Safari** e no **RG406H** usando o botão **🗣️ Browser / 🖥️ Mac TTS** na HUD.
+- **TTS do Servidor Mac (`/api/tts`)**: funciona nativamente no macOS via `/usr/bin/say` + `/usr/bin/afconvert` sem dependências extras. Recomendado no **iPhone Safari** e no **RG406H** em Ajustes › Voz e som › Origem da voz (Navegador ou Mac).
 - **STT Local (`/api/stt` e Push-to-Talk)**: requer `faster-whisper` (ou `mlx-whisper` no Apple Silicon) instalado no `.venv`. Caso não esteja instalado, o servidor continua funcionando normalmente e informa a ausência do motor no `/api/diagnostics`. Para habilitar:
 
 ```bash
@@ -243,7 +243,7 @@ Para trocar manualmente a qualquer momento:
    - Se o microfone interno do portátil estiver baixo ou com ruído, conecte um microfone/headset **USB-C** ou **Bluetooth** no RG406H (ou no Mac/iPhone), clique em **↻ Listar** no card **🎙️ Microfone & Loopback**, selecione o dispositivo na lista e valide no loopback de 3s. O botão **🎤 Segure para falar** usará automaticamente o microfone selecionado no Diagnóstico.
 5. **Sem áudio de TTS no iPhone Safari**:
    - Toque uma vez na tela (ou no banner *Toque em qualquer lugar para ativar som e voz*) para destravar o `AudioContext` e o `<audio>` oculto.
-   - Alterne o botão na HUD para **🖥️ Mac TTS** para reproduzir áudio `.m4a` gerado pelo Mac, evitando travamentos do `speechSynthesis` no iOS.
+   - Em Ajustes › Voz e som, mude a Origem da voz para **Mac** para reproduzir áudio `.m4a` gerado pelo Mac, evitando travamentos do `speechSynthesis` no iOS.
 6. **Giroscópio/Acelerômetro não atualiza no iPhone**:
    - No modo **🩺 Diagnóstico**, clique em **📱 Ativar Sensores (iOS / Movimento)** para disparar `DeviceMotionEvent.requestPermission()`.
 
