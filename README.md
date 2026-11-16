@@ -33,6 +33,10 @@ Combina um **pet de mesa vivo** (rosto SVG + partículas em Canvas + áudio proc
 - **`static/diagnostics.js` (`window.DeskDiagnostics`)**: Estúdio de Diagnóstico de `isSecureContext`, microfones, loopback de 3s, vozes TTS, Gamepad e sensores.
 - **`static/app.js`, `static/index.html`, `static/style.css`, `static/manifest.json`, `static/icon.svg`**: interface responsiva multiplataforma (`960×720`, desktop Mac e iPhone `100dvh` + `safe-area-inset-*`).
 
+### App Android Nativo (`android/` e `scripts/build_android_apk.py`)
+- **`android/src/com/nathanlucio/deskassistant/MainActivity.java`**: invólucro nativo WebView em tela cheia imersiva (`sensorLandscape`, `FLAG_KEEP_SCREEN_ON`) para o **Anbernic RG406H**, com ponte `AndroidBridge`, detecção automática de túnel USB ADB (`127.0.0.1:8000`) com fallback para Wi-Fi HTTPS (`https://192.168.0.125:8443`), aceitação restrita de SSL local apenas em hosts privados (`isPrivateOrLocalHost`), liberação de `RESOURCE_AUDIO_CAPTURE` e preservação total dos eventos de Gamepad em `dispatchKeyEvent`.
+- **`scripts/build_android_apk.py`**: pipeline em Python puro (`aapt2` → `javac --release 11` → `d8` → `zipalign` → `apksigner`) gerando `dist/desk-assistant-rg406h.apk`.
+
 ---
 
 ## Os 4 Modos de Tela
@@ -176,6 +180,40 @@ Acesse pelo IP exibido pelo script (ex.: `https://192.168.0.125:8443`). Ao usar 
 # ou no Apple Silicon:
 # /Users/nathanlucio/Desktop/desk-assistant/.venv/bin/pip install mlx-whisper
 ```
+
+---
+
+## App Android Nativo para o Anbernic RG406H (`com.nathanlucio.deskassistant`)
+
+Além do acesso direto pelo navegador, o projeto inclui um app Android nativo dedicado ao **Anbernic RG406H** (`minSdk 26`, `targetSdk 34`) que roda o Desk Assistant em tela cheia imersiva sem barras do navegador, mantém a tela sempre ligada (`FLAG_KEEP_SCREEN_ON`) e preserva 100% dos controles na Gamepad API.
+
+### 1. Compilar o APK (`dist/desk-assistant-rg406h.apk`)
+Requer **OpenJDK 17** e **Android SDK** (plataforma `android-34` + `build-tools`). O script localiza o toolchain automaticamente (incluindo `/opt/homebrew/opt/openjdk@17` e `/opt/homebrew/share/android-commandlinetools`), gera `certs/debug.keystore` se necessário, compila e valida a assinatura:
+
+```bash
+.venv/bin/python scripts/build_android_apk.py
+```
+
+### 2. Instalar no RG406H e Liberar Microfone (`RECORD_AUDIO`)
+Com o Anbernic RG406H conectado via USB ADB:
+
+```bash
+adb install -r dist/desk-assistant-rg406h.apk
+```
+
+O app solicita a permissão `RECORD_AUDIO` na primeira abertura. Caso queira conceder previamente via ADB:
+
+```bash
+adb shell pm grant com.nathanlucio.deskassistant android.permission.RECORD_AUDIO
+```
+
+### 3. Alternar entre USB ADB e Wi-Fi LAN
+Ao iniciar, o app testa rapidamente a porta local `127.0.0.1:8000` (800 ms): se o túnel `adb reverse tcp:8000 tcp:8000` estiver ativo, abre `http://localhost:8000`; caso contrário, usa automaticamente `https://192.168.0.125:8443` (aceitando certificado local autoassinado **apenas** em `localhost`/redes privadas RFC 1918).
+
+Para trocar manualmente a qualquer momento:
+- Toque no botão discreto **`⚙`** no canto superior direito (ele fica quase invisível após 3 segundos; toque para revelar e toque novamente para abrir o menu), **ou**
+- Pressione **duas vezes o botão `Voltar`** do Android (dentro de 1,5 s).
+- No menu **Servidor — Desk Assistant**, escolha entre **USB ADB (`http://localhost:8000`)**, **Wi-Fi HTTPS (`https://192.168.0.125:8443`)**, **URL Customizada...** ou **Recarregar Página**.
 
 ---
 
