@@ -1,4 +1,4 @@
-/* Módulo Cowork, Nathan-OS, Jarvis (First Wake, Visão/Clipboard, VAD) e ponte Electron. */
+/* Módulo Cowork somente leitura (Today, Sync, First Wake), VAD e mini-pet Electron. */
 (function () {
   'use strict';
 
@@ -17,8 +17,6 @@
     vadSessionId: 0,
     vadSpeaking: false,
     vadSilenceMs: 0,
-    pendingCaptureId: null,
-    pendingActionId: null,
     syncStatus: 'yellow',
   };
 
@@ -226,7 +224,6 @@
           panel.classList.toggle('hidden', panel.id !== `nathan-tab-${target}`);
         });
         if (target === 'today') loadToday();
-        if (target === 'actions') loadActions();
         if (target === 'sync') loadSync();
       });
     });
@@ -242,7 +239,7 @@
   async function loadFirstWake() {
     if (isMiniPet) return;
     try {
-      const resp = await fetch('/api/jarvis/first-wake');
+      const resp = await fetch('/api/first-wake');
       if (!resp.ok) return;
       const data = await resp.json();
       if (!data.should_brief || !data.today || !data.today.summary) return;
@@ -275,21 +272,6 @@
       if (!resp.ok) return;
       const data = await resp.json();
       const summary = data.summary || {};
-      const led = syncDotEmoji(data.sync_status);
-
-      const displayHeadline = el('display-today-headline');
-      const displayLed = el('display-sync-led');
-      const displayTop = el('display-today-top');
-      if (displayHeadline) displayHeadline.textContent = summary.headline || '—';
-      if (displayLed) displayLed.textContent = `${led} ${data.sync_status || 'yellow'}`;
-      if (displayTop) {
-        displayTop.innerHTML = '';
-        (summary.top || []).forEach((item) => {
-          const li = document.createElement('li');
-          li.textContent = `${item.id} — ${item.why}`;
-          displayTop.appendChild(li);
-        });
-      }
 
       const nathanHeadline = el('nathan-today-headline');
       const nathanTop = el('nathan-today-top');
@@ -343,225 +325,9 @@
     }
   }
 
-  async function loadActions() {
-    const container = el('nathan-actions-list');
-    if (!container) return;
-    try {
-      const resp = await fetch('/api/cowork/actions');
-      if (!resp.ok) return;
-      const data = await resp.json();
-      const actions = data.actions || [];
-      container.innerHTML = '';
-      if (!actions.length) {
-        container.innerHTML = '<p class="muted-note">Nenhuma ação encontrada em Cowork/app/actions.yaml.</p>';
-        return;
-      }
-      actions.forEach((act) => {
-        const row = document.createElement('div');
-        row.className = 'nathan-action-row';
-        const info = document.createElement('div');
-        info.innerHTML = `<strong>${escapeHtml(act.title)}</strong> <span class="panel-pill">${escapeHtml(act.risk)}</span>`;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = act.risk === 'read' ? 'btn-secondary btn-sm' : 'btn-primary btn-sm';
-        btn.textContent = act.risk === 'read' ? '▶ Executar' : '🛡️ Revisar & Executar';
-        btn.addEventListener('click', () => runCoworkAction(act.id));
-        row.appendChild(info);
-        row.appendChild(btn);
-        container.appendChild(row);
-      });
-    } catch (_) {
-      // Ignora
-    }
-  }
-
-  async function runCoworkAction(actionId) {
-    const logEl = el('nathan-actions-log');
-    try {
-      const resp = await fetch('/api/cowork/actions/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action_id: actionId, params: {} }),
-      });
-      const data = await resp.json();
-      if (data.requires_approval) {
-        let confirmed = false;
-        if (window.electronAPI && typeof window.electronAPI.confirmWrite === 'function') {
-          confirmed = await window.electronAPI.confirmWrite({
-            title: data.title,
-            message: `Executar ação (${data.risk})?`,
-            diff: data.diff || '',
-          });
-        } else {
-          confirmed = window.confirm(`Executar ${data.title}?\n\n${data.diff || ''}`);
-        }
-        if (!confirmed) {
-          if (logEl) logEl.textContent = 'Execução cancelada pelo usuário.';
-          return;
-        }
-        const applyResp = await fetch('/api/cowork/actions/apply', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ approval_id: data.approval_id }),
-        });
-        const applied = await applyResp.json();
-        if (logEl) {
-          logEl.textContent = `[exit ${applied.exit_code}]\n${applied.stdout || ''}\n${applied.stderr || ''}`.trim();
-        }
-        return;
-      }
-      if (logEl) {
-        logEl.textContent = `[exit ${data.exit_code}]\n${data.stdout || ''}\n${data.stderr || ''}`.trim();
-      }
-    } catch (err) {
-      if (logEl) logEl.textContent = `Erro: ${err.message || err}`;
-    }
-  }
-
-  async function previewAndApplyCapture(title, domain, due, previewTargetEl) {
-    if (!title.trim()) return;
-    const resp = await fetch('/api/cowork/capture/preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: 'add_task',
-        payload: { title: title.trim(), domain: domain || 'personal', due: due || '' },
-      }),
-    });
-    const preview = await resp.json();
-    if (!resp.ok) {
-      if (previewTargetEl) previewTargetEl.textContent = preview.detail || 'Erro no preview.';
-      return;
-    }
-    state.pendingCaptureId = preview.approval_id;
-    if (previewTargetEl) {
-      previewTargetEl.textContent = preview.diff || preview.summary;
-    }
-
-    let approved = false;
-    if (window.electronAPI && typeof window.electronAPI.confirmWrite === 'function') {
-      approved = await window.electronAPI.confirmWrite({
-        title: preview.summary,
-        message: `Confirmar gravação em ${preview.target_file}?`,
-        diff: preview.diff,
-      });
-    } else {
-      const btnApply = el('btn-capture-apply');
-      if (btnApply) {
-        btnApply.classList.remove('hidden');
-        return;
-      }
-      approved = window.confirm(`${preview.summary}\n\n${preview.diff}`);
-    }
-    if (approved) {
-      await applyPendingCapture(previewTargetEl);
-    }
-  }
-
-  async function applyPendingCapture(previewTargetEl) {
-    if (!state.pendingCaptureId) return;
-    const resp = await fetch('/api/cowork/capture/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approval_id: state.pendingCaptureId }),
-    });
-    const res = await resp.json();
-    state.pendingCaptureId = null;
-    const btnApply = el('btn-capture-apply');
-    if (btnApply) btnApply.classList.add('hidden');
-    if (previewTargetEl) {
-      previewTargetEl.textContent = res.ok
-        ? `✅ Salvo em ${res.target_file} (backup: ${res.backup_path || 'ok'})`
-        : res.detail || 'Falha ao salvar.';
-    }
-    loadToday();
-    loadSync();
-  }
-
-  function isLocalProviderUrl(rawUrl) {
-    try {
-      const url = new URL(rawUrl);
-      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) return false;
-      const host = url.hostname.toLowerCase();
-      return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
-    } catch (_) {
-      return false;
-    }
-  }
-
-  async function confirmExternalJarvisIfNeeded(endpoint) {
-    try {
-      const resp = await fetch('/api/llm/providers');
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      const active = data && data.active;
-      const knownProviders = Array.isArray(data && data.presets)
-        ? data.presets.map((preset) => preset && preset.id)
-        : [];
-      if (
-        !active ||
-        typeof active.provider_id !== 'string' ||
-        !knownProviders.includes(active.provider_id) ||
-        typeof active.base_url !== 'string' ||
-        !active.base_url.trim()
-      ) {
-        throw new Error('Dados do provedor ausentes ou desconhecidos.');
-      }
-      const providerUrl = new URL(active.base_url);
-      if (!['http:', 'https:'].includes(providerUrl.protocol) || !providerUrl.hostname) {
-        throw new Error('URL do provedor inválida.');
-      }
-      if (isLocalProviderUrl(active.base_url)) return true;
-
-      const targetLabel = endpoint.includes('clipboard') ? 'conteúdo do seu clipboard' : 'captura da sua tela';
-      const msg = `O provedor ativo (${active.provider_id} — ${providerUrl.host}) é externo.`;
-      const detail = `Deseja enviar ${targetLabel} para este provedor remoto?`;
-      if (window.electronAPI && typeof window.electronAPI.confirmWrite === 'function') {
-        return await window.electronAPI.confirmWrite({
-          title: 'Aviso de Privacidade — Jarvis',
-          message: msg,
-          diff: detail,
-        });
-      }
-      return window.confirm(`${msg}\n\n${detail}`);
-    } catch (err) {
-      return { blocked: true, reason: err.message || 'resposta inválida' };
-    }
-  }
-
-  async function triggerJarvisEndpoint(endpoint, promptText) {
-    const out = el('nathan-jarvis-output');
-    const allowed = await confirmExternalJarvisIfNeeded(endpoint);
-    if (allowed && allowed.blocked) {
-      if (out) {
-        out.textContent = `Não foi possível confirmar o provedor ativo (${allowed.reason}). Nenhuma captura foi enviada. Atualize os provedores em Diagnóstico e tente novamente.`;
-      }
-      return;
-    }
-    if (!allowed) {
-      if (out) out.textContent = 'Envio cancelado pelo usuário.';
-      return;
-    }
-    if (out) out.textContent = 'Processando...';
-    try {
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptText || '' }),
-      });
-      const data = await resp.json();
-      if (out) out.textContent = data.text || data.detail || 'Concluído.';
-      if (window.EmoFace && data.emotion) {
-        window.EmoFace.setEmotion(data.emotion);
-      }
-    } catch (err) {
-      if (out) out.textContent = `Erro: ${err.message || err}`;
-    }
-  }
-
   async function toggleVad() {
     const btn = el('btn-vad-toggle');
-    const output = el('nathan-jarvis-output');
+    const output = el('vad-status');
     if (state.vadEnabled || state.vadStarting) {
       state.vadEnabled = false;
       state.vadStarting = false;
@@ -717,45 +483,6 @@
 
     const btnVad = el('btn-vad-toggle');
     if (btnVad) btnVad.addEventListener('click', toggleVad);
-
-    const btnCapturePreview = el('btn-capture-preview');
-    if (btnCapturePreview) {
-      btnCapturePreview.addEventListener('click', () => {
-        const title = el('capture-task-title')?.value || '';
-        const domain = el('capture-task-domain')?.value || 'personal';
-        const due = el('capture-task-due')?.value || '';
-        previewAndApplyCapture(title, domain, due, el('capture-diff-preview'));
-      });
-    }
-
-    const btnCaptureApply = el('btn-capture-apply');
-    if (btnCaptureApply) {
-      btnCaptureApply.addEventListener('click', () => applyPendingCapture(el('capture-diff-preview')));
-    }
-
-    const btnDockQuick = el('btn-dock-cowork-add');
-    if (btnDockQuick) {
-      btnDockQuick.addEventListener('click', () => {
-        const title = el('dock-cowork-input')?.value || '';
-        previewAndApplyCapture(title, 'personal', '', el('dock-cowork-status'));
-      });
-    }
-
-    const btnVision = el('btn-jarvis-vision');
-    if (btnVision) {
-      btnVision.addEventListener('click', () => triggerJarvisEndpoint('/api/jarvis/vision', ''));
-    }
-
-    const btnClip = el('btn-jarvis-clipboard');
-    if (btnClip) {
-      btnClip.addEventListener('click', () => triggerJarvisEndpoint('/api/jarvis/clipboard', ''));
-    }
-
-    if (window.electronAPI && typeof window.electronAPI.onShortcutTrigger === 'function') {
-      window.electronAPI.onShortcutTrigger((kind) => {
-        if (kind === 'vision') triggerJarvisEndpoint('/api/jarvis/vision', '');
-      });
-    }
   }
 
   document.addEventListener('DOMContentLoaded', () => {

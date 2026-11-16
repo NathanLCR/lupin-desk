@@ -125,9 +125,7 @@ textarea {
 
 /* O pet permanece apenas na aba Pet */
 body.mode-dock .stage,
-body.mode-display .stage,
-body.mode-diagnostics .stage,
-body.mode-skills .stage,
+body.settings-open .stage,
 body.mode-nathan .stage {
   opacity: 0;
   pointer-events: none;
@@ -159,25 +157,47 @@ body.mode-nathan .stage {
   color: var(--text-muted);
 }
 
-.pet-pomodoro-chip {
+.pet-ambient {
   position: fixed;
   right: calc(18px + var(--safe-right));
   bottom: calc(86px + var(--safe-bottom));
   z-index: 15;
-  appearance: none;
-  border: 1px solid rgba(255, 190, 59, 0.45);
-  background: rgba(28, 20, 8, 0.85);
-  color: #ffe3a3;
-  border-radius: var(--radius-pill);
-  padding: 6px 12px;
-  font-size: 12.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(360px, 60vw);
+  font-size: 12px;
+}
+
+.pet-ambient-pomo,
+.pet-ambient-media {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  opacity: 0.8;
+}
+
+.pet-ambient .pomodoro-timer {
+  font-size: 18px;
+}
+
+.pet-ambient .media-title {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-ambient .media-artist {
+  display: none;
 }
 
 body:not(.mode-pet) .pet-clock,
-body:not(.mode-pet) .pet-pomodoro-chip {
+body:not(.mode-pet) .pet-ambient,
+body.settings-open .pet-ambient {
   display: none;
 }
 
@@ -429,7 +449,7 @@ body:not(.mode-pet) .pet-pomodoro-chip {
   color: #ffd0d0;
 }
 
-/* Painéis centrais dos modos Dock, Smart Display e Diagnóstico */
+/* Painéis centrais dos modos Dock e Nathan OS e do painel de Ajustes */
 .workspace-panel {
   position: fixed;
   left: calc(12px + var(--safe-left));
@@ -443,9 +463,7 @@ body:not(.mode-pet) .pet-pomodoro-chip {
 }
 
 body.mode-dock .workspace-panel,
-body.mode-display .workspace-panel,
-body.mode-diagnostics .workspace-panel,
-body.mode-skills .workspace-panel,
+body.settings-open .workspace-panel,
 body.mode-nathan .workspace-panel {
   top: calc(var(--hud-offset) + var(--safe-top));
 }
@@ -893,37 +911,6 @@ body.mode-nathan .workspace-panel {
   .cat-tab {
     transition: none;
   }
-}
-
-/* Modo 3: Smart Display Ambiente */
-.display-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 12px;
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-.display-eyebrow {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-
-.display-clock-time {
-  font-size: 40px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-  color: #e6fbff;
-  line-height: 1.05;
-}
-
-.display-clock-date {
-  font-size: 13.5px;
-  color: var(--text-muted);
-  text-transform: capitalize;
 }
 
 .pomodoro-timer {
@@ -2309,7 +2296,7 @@ body.is-minipet .workspace-panel,
 body.is-minipet .first-wake-card,
 body.is-minipet .audio-unlock-banner,
 body.is-minipet .pet-clock,
-body.is-minipet .pet-pomodoro-chip {
+body.is-minipet .pet-ambient {
   display: none !important;
 }
 
@@ -2397,28 +2384,12 @@ body.is-minipet .emo-face-svg {
   white-space: pre-wrap;
 }
 
-.cowork-quick-row,
-.cowork-capture-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.nathan-actions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.nathan-action-row {
+.settings-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 12px;
 }
 
 .muted-note {

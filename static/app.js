@@ -153,7 +153,7 @@
     };
   }
 
-  const MODES = ['pet', 'dock', 'display', 'skills', 'diagnostics', 'nathan'];
+  const MODES = ['pet', 'dock', 'nathan'];
 
   const FALLBACK_EMOTIONS = [
     'neutral',
@@ -228,8 +228,6 @@
     faceContainer: document.getElementById('face-container'),
     petClockTime: document.getElementById('pet-clock-time'),
     petClockDate: document.getElementById('pet-clock-date'),
-    petPomodoroChip: document.getElementById('pet-pomodoro-chip'),
-    petPomodoroText: document.getElementById('pet-pomodoro-text'),
     hud: document.getElementById('hud'),
     wsDot: document.getElementById('ws-dot'),
     wsStatusText: document.getElementById('ws-status-text'),
@@ -259,15 +257,10 @@
     shortcutCategoryTabs: Array.from(document.querySelectorAll('#shortcut-category-tabs .cat-tab')),
     btnVsdSize: document.getElementById('btn-vsd-size'),
     btnVsdEditMode: document.getElementById('btn-vsd-edit-mode'),
-    btnToggleDockCowork: document.getElementById('btn-toggle-dock-cowork'),
-    coworkQuickStrip: document.getElementById('cowork-quick-strip'),
     btnNewShortcut: document.getElementById('btn-new-shortcut'),
     btnConfigShortcuts: document.getElementById('btn-config-shortcuts'),
     shortcutsGrid: document.getElementById('shortcuts-grid'),
-    // Modo Smart Display
-    modeDisplay: document.getElementById('mode-display'),
-    displayClockTime: document.getElementById('display-clock-time'),
-    displayClockDate: document.getElementById('display-clock-date'),
+    // Pomodoro e Tocando no Mac (faixa pequena no modo Pet)
     pomodoroPhaseLabel: document.getElementById('pomodoro-phase-label'),
     pomodoroTimer: document.getElementById('pomodoro-timer'),
     btnPomoFocus: document.getElementById('btn-pomo-focus'),
@@ -279,24 +272,12 @@
     btnMediaPrev: document.getElementById('btn-media-prev'),
     btnMediaPlay: document.getElementById('btn-media-play'),
     btnMediaNext: document.getElementById('btn-media-next'),
-    btnRefreshWeather: document.getElementById('btn-refresh-weather'),
-    weatherIcon: document.getElementById('weather-icon'),
-    weatherTemp: document.getElementById('weather-temp'),
-    weatherDesc: document.getElementById('weather-desc'),
-    weatherCity: document.getElementById('weather-city'),
-    petMoodLabel: document.getElementById('pet-mood-label'),
-    macTelemetryApp: document.getElementById('mac-telemetry-app'),
-    macTelemetryBattery: document.getElementById('mac-telemetry-battery'),
-    macTelemetryVolume: document.getElementById('mac-telemetry-volume'),
-    petAffinityVal: document.getElementById('pet-affinity-val'),
-    petAffinityBar: document.getElementById('pet-affinity-bar'),
-    petEnergyVal: document.getElementById('pet-energy-val'),
-    petEnergyBar: document.getElementById('pet-energy-bar'),
-    // Modo Skills
-    modeSkills: document.getElementById('mode-skills'),
+    // Ajustes (Skills e Diagnóstico)
+    btnSettings: document.getElementById('btn-settings'),
+    btnSettingsClose: document.getElementById('btn-settings-close'),
+    settingsPanel: document.getElementById('settings-panel'),
+    settingsSubtabs: Array.from(document.querySelectorAll('.settings-subtab')),
     skillsRoot: document.getElementById('skills-root'),
-    // Modo Diagnóstico
-    modeDiagnostics: document.getElementById('mode-diagnostics'),
     diagnosticsRoot: document.getElementById('diagnostics-root'),
     // Modo Nathan OS (Electron)
     modeNathan: document.getElementById('mode-nathan'),
@@ -410,7 +391,8 @@
       intervalId: null,
     },
     musicPlaying: false,
-    displayPollTimer: null,
+    settingsOpen: false,
+    settingsTab: 'skills',
     // Push-to-Talk & Aprovação
     ptt: {
       active: false,
@@ -653,9 +635,6 @@
     document.body.classList.remove(
       'mode-pet',
       'mode-dock',
-      'mode-display',
-      'mode-skills',
-      'mode-diagnostics',
       'mode-nathan'
     );
     document.body.classList.add(`mode-${nextMode}`);
@@ -667,11 +646,6 @@
     });
 
     els.modeDock.classList.toggle('hidden', nextMode !== 'dock');
-    els.modeDisplay.classList.toggle('hidden', nextMode !== 'display');
-    if (els.modeSkills) {
-      els.modeSkills.classList.toggle('hidden', nextMode !== 'skills');
-    }
-    els.modeDiagnostics.classList.toggle('hidden', nextMode !== 'diagnostics');
     if (els.modeNathan) {
       els.modeNathan.classList.toggle('hidden', nextMode !== 'nathan');
     }
@@ -683,31 +657,11 @@
       api.setCompactMode(false);
     }
 
-    if (window.DeskDiagnostics) {
-      if (nextMode === 'diagnostics') {
-        window.DeskDiagnostics.activate();
-      } else {
-        window.DeskDiagnostics.deactivate();
-      }
-    }
-
-    if (nextMode === 'skills' && window.DeskSkills && typeof window.DeskSkills.activate === 'function') {
-      window.DeskSkills.activate();
-    }
+    setSettingsOpen(false);
 
     if (nextMode === 'dock') {
       fetchMacApps();
       fetchShortcuts();
-    } else if (nextMode === 'display') {
-      refreshSmartDisplay();
-    }
-
-    if (state.displayPollTimer) {
-      window.clearInterval(state.displayPollTimer);
-      state.displayPollTimer = null;
-    }
-    if (nextMode === 'display') {
-      state.displayPollTimer = window.setInterval(refreshSmartDisplay, 10000);
     }
 
     const aud = audioApi();
@@ -716,6 +670,40 @@
     }
 
     showHud();
+    syncHudOffset();
+  }
+
+  // Ajustes: Skills e Diagnóstico ficam num painel, não são modos de tela
+  function setSettingsOpen(open, tab) {
+    if (!els.settingsPanel) return;
+    if (tab) state.settingsTab = tab;
+    state.settingsOpen = Boolean(open);
+    document.body.classList.toggle('settings-open', state.settingsOpen);
+    els.settingsPanel.classList.toggle('hidden', !state.settingsOpen);
+    if (els.btnSettings) {
+      els.btnSettings.setAttribute('aria-expanded', String(state.settingsOpen));
+      els.btnSettings.classList.toggle('is-active', state.settingsOpen);
+    }
+    els.settingsSubtabs.forEach((btn) => {
+      const current = btn.dataset.subtab === state.settingsTab;
+      btn.classList.toggle('is-active', current);
+      const panel = document.getElementById(`settings-tab-${btn.dataset.subtab}`);
+      if (panel) panel.classList.toggle('hidden', !current);
+    });
+
+    const diagnosticsVisible = state.settingsOpen && state.settingsTab === 'diagnostics';
+    if (window.DeskDiagnostics) {
+      if (diagnosticsVisible) window.DeskDiagnostics.activate();
+      else window.DeskDiagnostics.deactivate();
+    }
+    if (
+      state.settingsOpen &&
+      state.settingsTab === 'skills' &&
+      window.DeskSkills &&
+      typeof window.DeskSkills.activate === 'function'
+    ) {
+      window.DeskSkills.activate();
+    }
     syncHudOffset();
   }
 
@@ -1389,12 +1377,6 @@
         renderMemoryState(msg.facts, msg.recent_messages_count);
         break;
       }
-      case 'companion_updated': {
-        if (msg.companion) {
-          renderCompanionState(msg.companion);
-        }
-        break;
-      }
       case 'error': {
         state.backendTurnActive = false;
         stopSpeaking({ resetState: false });
@@ -1433,10 +1415,6 @@
 
     const target = String(msg.target || '').toLowerCase();
     const kind = String(msg.kind || '').toLowerCase();
-    if (kind === 'vision' && target === 'screen' && ok && msg.result && msg.result.text) {
-      if (msg.result.emotion) applyFaceEmotion(msg.result.emotion);
-      setCaption(msg.result.text);
-    }
     if (kind === 'pomodoro' || target === 'pomodoro_start' || target === 'pomodoro_25') {
       if (target === 'stop' || target === 'pomodoro_stop') {
         stopPomodoro();
@@ -1447,8 +1425,6 @@
 
     if (state.mode === 'dock') {
       fetchMacApps();
-    } else if (state.mode === 'display') {
-      refreshSmartDisplay();
     }
   }
 
@@ -2358,7 +2334,7 @@
     });
   }
 
-  // Modo 3: Smart Display Ambiente, Relógio, Pomodoro, Clima & Telemetria
+  // Pet Mode: relógio, Pomodoro e Tocando no Mac
   function formatClockParts(date) {
     const hh = String(date.getHours()).padStart(2, '0');
     const mm = String(date.getMinutes()).padStart(2, '0');
@@ -2375,8 +2351,6 @@
     const parts = formatClockParts(new Date());
     if (els.petClockTime) els.petClockTime.textContent = parts.hm;
     if (els.petClockDate) els.petClockDate.textContent = parts.dateStr;
-    if (els.displayClockTime) els.displayClockTime.textContent = parts.hms;
-    if (els.displayClockDate) els.displayClockDate.textContent = parts.dateStr;
   }
 
   function formatMmSs(totalSeconds) {
@@ -2389,8 +2363,6 @@
   function syncPomodoroUI() {
     const label = formatMmSs(state.pomodoro.remainingSec);
     els.pomodoroTimer.textContent = label;
-    els.petPomodoroText.textContent = `${state.pomodoro.phase === 'break' ? '☕' : '🍅'} ${label}`;
-    els.petPomodoroChip.classList.toggle('hidden', !state.pomodoro.active);
 
     if (!state.pomodoro.active) {
       els.pomodoroPhaseLabel.textContent = 'Pronto';
@@ -2446,23 +2418,6 @@
       if (!res.ok) return;
       const data = await res.json();
 
-      const activeApp = data.active_app || '—';
-      els.macTelemetryApp.textContent = activeApp;
-
-      if (data.battery_percent !== null && data.battery_percent !== undefined) {
-        els.macTelemetryBattery.textContent = `${data.battery_percent}%${
-          data.charging ? ' ⚡' : ''
-        }`;
-      } else {
-        els.macTelemetryBattery.textContent = data.power_source || 'AC / Desktop';
-      }
-
-      if (data.volume !== null && data.volume !== undefined) {
-        els.macTelemetryVolume.textContent = data.muted ? 'Mudo' : `${data.volume}%`;
-      } else {
-        els.macTelemetryVolume.textContent = '—';
-      }
-
       const np = data.now_playing || {};
       const playing = Boolean(np.playing || np.state === 'playing');
       state.musicPlaying = playing;
@@ -2480,72 +2435,6 @@
     } catch {
       // Silencia erro transitório
     }
-  }
-
-  function mapWeatherEffect(codeOrDesc) {
-    const text = String(codeOrDesc || '').toLowerCase();
-    if (/chuva|garoa|rain|drizzle|tempest/.test(text)) return { effect: 'rain', icon: '🌧️' };
-    if (/neve|snow|geada/.test(text)) return { effect: 'snow', icon: '❄️' };
-    if (/limpo|sol|ensolarado|clear|sun/.test(text)) return { effect: 'sun', icon: '☀️' };
-    if (/nublado|nuvens|cloud/.test(text)) return { effect: 'none', icon: '⛅' };
-    return { effect: 'none', icon: '🌤️' };
-  }
-
-  async function fetchWeather() {
-    try {
-      const res = await fetch('/api/weather');
-      if (!res.ok) return;
-      const data = await res.json();
-      const temp =
-        data.temperature_c !== undefined && data.temperature_c !== null
-          ? `${Math.round(data.temperature_c)}°C`
-          : '--°C';
-      const desc = data.condition || data.description || 'Tempo estável';
-      const city = data.city || 'Local';
-      const mapped = mapWeatherEffect(data.effect || desc);
-
-      els.weatherTemp.textContent = temp;
-      els.weatherDesc.textContent = desc;
-      els.weatherCity.textContent = city;
-      els.weatherIcon.textContent = data.icon || mapped.icon;
-
-      const api = faceApi();
-      if (api && typeof api.setWeather === 'function') {
-        api.setWeather(data.effect || mapped.effect);
-      }
-    } catch {
-      // Silencia erro offline
-    }
-  }
-
-  function renderCompanionState(comp) {
-    if (!comp) return;
-    const affinity = Math.max(0, Math.min(100, Math.round(comp.affinity ?? 50)));
-    const energy = Math.max(0, Math.min(100, Math.round(comp.energy ?? 85)));
-    els.petAffinityVal.textContent = String(affinity);
-    els.petAffinityBar.style.width = `${affinity}%`;
-    els.petEnergyVal.textContent = String(energy);
-    els.petEnergyBar.style.width = `${energy}%`;
-    const pleasure = Number(comp.pleasure ?? 0.2);
-    const moodText = pleasure > 0.35 ? 'radiante' : pleasure < -0.2 ? 'carente' : 'sereno';
-    els.petMoodLabel.textContent = `Humor: ${moodText}`;
-  }
-
-  async function fetchCompanionState() {
-    try {
-      const res = await fetch('/api/memory/state');
-      if (!res.ok) return;
-      const data = await res.json();
-      renderCompanionState(data.companion || data);
-    } catch {
-      // Silencia erro transitório
-    }
-  }
-
-  function refreshSmartDisplay() {
-    fetchMacStatus();
-    fetchWeather();
-    fetchCompanionState();
   }
 
   async function triggerQuickMediaCommand(commandSlug) {
@@ -2566,7 +2455,7 @@
     }
   }
 
-  // Navegação por Gamepad D-Pad na Dock, Display, Skills & Nathan OS
+  // Navegação por Gamepad D-Pad na Dock, Ajustes & Nathan OS
   function getNavigableTiles() {
     if (state.pendingApprovalId) return getFocusableElements(els.approvalBanner);
     if (state.shortcutModalOpen) return getFocusableElements(els.shortcutModal);
@@ -2576,11 +2465,8 @@
     if (state.mode === 'dock') {
       return Array.from(els.modeDock.querySelectorAll('[data-nav-tile]')).filter(isElementAvailable);
     }
-    if (state.mode === 'display') {
-      return Array.from(els.modeDisplay.querySelectorAll('button')).filter(isElementAvailable);
-    }
-    if (state.mode === 'skills' && els.modeSkills) {
-      return Array.from(els.modeSkills.querySelectorAll('button, input[type="checkbox"]')).filter(
+    if (state.settingsOpen && els.settingsPanel) {
+      return Array.from(els.settingsPanel.querySelectorAll('button, input[type="checkbox"]')).filter(
         isElementAvailable
       );
     }
@@ -2939,6 +2825,9 @@
           closeShortcutModal();
         } else if (state.memoryOpen) {
           closeMemoryDrawer();
+        } else if (state.settingsOpen) {
+          setSettingsOpen(false);
+          els.btnSettings.focus();
         } else if (state.expressionsOpen) {
           toggleExpressionsBar();
           els.btnExpressions.focus();
@@ -2974,7 +2863,15 @@
       btn.addEventListener('click', () => setMode(btn.dataset.mode));
     });
 
-    els.petPomodoroChip.addEventListener('click', () => setMode('display'));
+    if (els.btnSettings) {
+      els.btnSettings.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
+    }
+    if (els.btnSettingsClose) {
+      els.btnSettingsClose.addEventListener('click', () => setSettingsOpen(false));
+    }
+    els.settingsSubtabs.forEach((btn) => {
+      btn.addEventListener('click', () => setSettingsOpen(true, btn.dataset.subtab));
+    });
     els.audioUnlockBanner.addEventListener('click', unlockAudio);
     els.btnHudPin.addEventListener('click', toggleHudPin);
     els.btnExpressions.addEventListener('click', toggleExpressionsBar);
@@ -3057,13 +2954,6 @@
 
     // Dock & Atalhos
     els.btnRefreshApps.addEventListener('click', fetchMacApps);
-    if (els.btnToggleDockCowork && els.coworkQuickStrip) {
-      els.btnToggleDockCowork.addEventListener('click', () => {
-        const isHidden = els.coworkQuickStrip.classList.toggle('hidden');
-        els.btnToggleDockCowork.setAttribute('aria-expanded', String(!isHidden));
-        els.btnToggleDockCowork.classList.toggle('is-active', !isHidden);
-      });
-    }
     if (els.btnVsdSize) {
       els.btnVsdSize.addEventListener('click', () => {
         state.vsdLargeKeys = !state.vsdLargeKeys;
@@ -3119,7 +3009,6 @@
     els.btnMediaPrev.addEventListener('click', () => triggerQuickMediaCommand('prev_track'));
     els.btnMediaPlay.addEventListener('click', () => triggerQuickMediaCommand('play_pause'));
     els.btnMediaNext.addEventListener('click', () => triggerQuickMediaCommand('next_track'));
-    els.btnRefreshWeather.addEventListener('click', fetchWeather);
 
     // Memória
     els.addFactForm.addEventListener('submit', addManualFact);
@@ -3244,13 +3133,14 @@
     initDiagnostics();
     connectWebSocket();
     fetchMemory();
-    fetchWeather();
+    fetchMacStatus();
     tickClocks();
     showHud();
     syncHudOffset();
     window.addEventListener('resize', syncHudOffset);
 
     window.setInterval(tickClocks, 1000);
+    window.setInterval(fetchMacStatus, 10000);
     window.setInterval(syncFaceBadges, 1000);
   }
 

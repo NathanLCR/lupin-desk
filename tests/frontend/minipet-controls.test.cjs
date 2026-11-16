@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const sourcePath = path.join(__dirname, '../../static/cowork_jarvis.js');
+const sourcePath = path.join(__dirname, '../../static/cowork.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
 
 class FakeElement {
@@ -151,7 +151,7 @@ function makeHarness({ mini = true, bridge = true } = {}) {
     setTimeout,
     clearTimeout,
   };
-  vm.runInNewContext(source, context, { filename: 'static/cowork_jarvis.js' });
+  vm.runInNewContext(source, context, { filename: 'static/cowork.js' });
   document.dispatch('DOMContentLoaded');
 
   return {
