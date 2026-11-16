@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
-from app.cowork import ActionsRunner, CoworkError, CoworkStore, get_git_sync_status
+from app.cowork import CoworkStore, get_git_sync_status
 from app.llm import LLMClient, LLMError
 from app.mac_control import MacController
 from app.memory import MemoryStore
@@ -144,32 +144,6 @@ class TTSRequest(BaseModel):
     output_format: str | None = None
 
 
-class CoworkCapturePreviewRequest(BaseModel):
-    """Payload para pré-visualizar mutação em `Cowork/state/*.yaml`."""
-
-    kind: str
-    payload: dict[str, Any] = Field(default_factory=dict)
-
-
-class CoworkApprovalApplyRequest(BaseModel):
-    """Payload para aplicar uma captura ou ação previamente confirmada."""
-
-    approval_id: str
-
-
-class CoworkActionRunRequest(BaseModel):
-    """Payload para executar uma ação do `Cowork/app/actions.yaml`."""
-
-    action_id: str
-    params: dict[str, Any] = Field(default_factory=dict)
-
-
-class JarvisVisionRequest(BaseModel):
-    """Payload para inspeção sob demanda da tela ou clipboard."""
-
-    prompt: str = ""
-
-
 def _decode_base64_audio(raw_data: str) -> bytes:
     """Decodifica string base64 (com ou sem prefixo data URL) para bytes."""
     cleaned = (raw_data or "").strip()
@@ -263,7 +237,6 @@ def create_app(
     stt_engine: LocalSTT | None = None,
     tts_engine: ServerTTS | None = None,
     cowork_store: CoworkStore | None = None,
-    actions_runner: ActionsRunner | None = None,
     today_engine: TodayEngine | None = None,
 ) -> FastAPI:
     """Cria e configura a instância FastAPI com memória, atalhos, Mac, voz e WebSocket."""
@@ -301,7 +274,6 @@ def create_app(
     )
     resolved_tts = tts_engine or ServerTTS(default_voice=resolved_settings.tts_voice)
     resolved_cowork = cowork_store or CoworkStore(resolved_settings.cowork_workspace_path)
-    resolved_actions = actions_runner or ActionsRunner(resolved_settings.cowork_workspace_path)
     resolved_today = today_engine or TodayEngine(resolved_settings, resolved_cowork)
     resolved_first_wake = FirstWakeTracker(resolved_memory)
 
@@ -329,7 +301,6 @@ def create_app(
     fastapi_app.state.stt = resolved_stt
     fastapi_app.state.tts = resolved_tts
     fastapi_app.state.cowork = resolved_cowork
-    fastapi_app.state.actions = resolved_actions
     fastapi_app.state.today = resolved_today
     fastapi_app.state.first_wake = resolved_first_wake
     fastapi_app.state.access_token = runtime_access_token
@@ -787,7 +758,7 @@ def create_app(
         }
 
     # ------------------------------------------------------------------
-    # Cowork (State, Today, Capture com Diff, Actions, Sync) & Jarvis
+    # Cowork (somente leitura: State, Today, Sync) & First Wake
     # ------------------------------------------------------------------
 
     @fastapi_app.get("/api/cowork/state")
@@ -801,46 +772,6 @@ def create_app(
     async def get_cowork_today() -> dict[str, Any]:
         """Gera o resumo Today validado contra alucinações via roteador unificado."""
         return await resolved_today.generate_today()
-
-    @fastapi_app.post("/api/cowork/capture/preview")
-    async def preview_cowork_capture(body: CoworkCapturePreviewRequest) -> dict[str, Any]:
-        """Pré-visualiza uma mutação em `Cowork/state/*.yaml` retornando o unified diff."""
-        try:
-            return await asyncio.to_thread(resolved_cowork.preview_capture, body.kind, body.payload)
-        except CoworkError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    @fastapi_app.post("/api/cowork/capture/apply")
-    async def apply_cowork_capture(body: CoworkApprovalApplyRequest) -> dict[str, Any]:
-        """Aplica uma captura previamente revisada após criação de snapshot em `.backup/`."""
-        try:
-            return await asyncio.to_thread(resolved_cowork.apply_capture, body.approval_id)
-        except CoworkError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-
-    @fastapi_app.get("/api/cowork/actions")
-    async def list_cowork_actions() -> dict[str, Any]:
-        """Lista as ações declaradas em `Cowork/app/actions.yaml`."""
-        actions = await asyncio.to_thread(resolved_actions.list_actions)
-        return {"actions": actions}
-
-    @fastapi_app.post("/api/cowork/actions/run")
-    async def run_cowork_action(body: CoworkActionRunRequest) -> dict[str, Any]:
-        """Executa ações `read` imediatamente e exige aprovação para ações `write`/`external`."""
-        try:
-            return await asyncio.to_thread(
-                resolved_actions.prepare_run, body.action_id, body.params
-            )
-        except CoworkError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    @fastapi_app.post("/api/cowork/actions/apply")
-    async def apply_cowork_action(body: CoworkApprovalApplyRequest) -> dict[str, Any]:
-        """Executa uma ação `write`/`external` previamente aprovada pelo usuário."""
-        try:
-            return await asyncio.to_thread(resolved_actions.apply_action, body.approval_id)
-        except CoworkError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     @fastapi_app.get("/api/cowork/sync")
     async def get_cowork_sync() -> dict[str, Any]:
@@ -860,8 +791,8 @@ def create_app(
             "git": git_info,
         }
 
-    @fastapi_app.get("/api/jarvis/first-wake")
-    async def check_jarvis_first_wake(mark: bool = Query(default=True)) -> dict[str, Any]:
+    @fastapi_app.get("/api/first-wake")
+    async def check_first_wake(mark: bool = Query(default=True)) -> dict[str, Any]:
         """Verifica se é a primeira interação do dia e retorna o card silencioso do Today."""
         should_brief = resolved_first_wake.should_trigger_today()
         if not should_brief:
@@ -872,72 +803,6 @@ def create_app(
         return {
             "should_brief": True,
             "today": today_res,
-        }
-
-    async def _collect_jarvis_reply(
-        prompt: str,
-        memory_query: str,
-        image_b64: str | None = None,
-    ) -> tuple[str, str]:
-        """Executa uma chamada única ao LLM para Jarvis Vision/Clipboard e retorna `(emotion, text)`."""
-        chunks: list[str] = []
-        emotion = "curious"
-        async for event in resolved_llm.stream_chat(
-            user_text=prompt,
-            history=[],
-            memory_context=resolved_memory.build_memory_context(query=memory_query),
-            temporal_context=resolved_memory.get_temporal_context(),
-            image_b64=image_b64,
-        ):
-            if event.get("type") == "emotion":
-                emotion = str(event.get("emotion") or emotion)
-            elif event.get("type") == "result":
-                chunks.append(str(event.get("text") or ""))
-        return emotion, "".join(chunks).strip()
-
-    @fastapi_app.post("/api/jarvis/vision")
-    async def jarvis_vision_inspect(body: JarvisVisionRequest) -> dict[str, Any]:
-        """Captura a tela sob demanda e envia para o modelo multimodal via roteador local."""
-        capture = await asyncio.to_thread(
-            resolved_mac.capture_screen_b64,
-            resolved_settings.jarvis_vision_max_dim,
-        )
-        if not capture.get("ok"):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=capture.get("error") or "Falha ao capturar tela.",
-            )
-        prompt = body.prompt.strip() or "Olhe minha tela atual e resuma em 2 frases curtas o que é mais relevante."
-        emotion, text = await _collect_jarvis_reply(
-            prompt=prompt,
-            memory_query=prompt,
-            image_b64=capture["image_b64"],
-        )
-        return {"ok": True, "emotion": emotion, "text": text}
-
-    @fastapi_app.post("/api/jarvis/clipboard")
-    async def jarvis_clipboard_inspect(body: JarvisVisionRequest) -> dict[str, Any]:
-        """Lê o clipboard do macOS sob demanda e resume/analisa via roteador local."""
-        clip = await asyncio.to_thread(resolved_mac.read_clipboard_text)
-        if not clip.get("ok"):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=clip.get("error") or "Falha ao ler clipboard.",
-            )
-        clip_text = str(clip.get("text") or "").strip()
-        if not clip_text:
-            return {"ok": True, "emotion": "neutral", "text": "Sua área de transferência está vazia."}
-        user_prompt = body.prompt.strip() or "Resuma de forma curta e útil o conteúdo do meu clipboard:"
-        full_prompt = f"{user_prompt}\n\n{clip_text}"
-        emotion, text = await _collect_jarvis_reply(
-            prompt=full_prompt,
-            memory_query=user_prompt,
-        )
-        return {
-            "ok": True,
-            "emotion": emotion,
-            "text": text,
-            "clipboard_length": clip.get("length", 0),
         }
 
     # ------------------------------------------------------------------
@@ -1057,46 +922,6 @@ def create_app(
                 )
                 return
 
-            if kind == "cowork":
-                # Ex.: [action:cowork:add_task:Revisar capítulo 3]
-                if target.startswith("add_task:"):
-                    title = target.split(":", 1)[1].strip()
-                    try:
-                        preview = await asyncio.to_thread(
-                            resolved_cowork.preview_capture,
-                            "add_task",
-                            {"title": title},
-                        )
-                    except CoworkError as exc:
-                        await safe_send(
-                            {
-                                "type": "action_executed",
-                                "kind": "cowork",
-                                "target": target,
-                                "ok": False,
-                                "error": str(exc),
-                            }
-                        )
-                        return
-                    approval_id = preview["approval_id"]
-                    pending_approvals[approval_id] = {
-                        "kind": "cowork_capture",
-                        "preview": preview,
-                    }
-                    await safe_send(
-                        {
-                            "type": "tool_approval_request",
-                            "approval_id": approval_id,
-                            "kind": "cowork_capture",
-                            "risk": "write",
-                            "target": preview["target_file"],
-                            "title": preview["summary"],
-                            "diff": preview["diff"],
-                            "message": f"Confirmar escrita em {preview['target_file']}?",
-                        }
-                    )
-                return
-
             if kind == "today":
                 today_res = await resolved_today.generate_today()
                 await safe_send(
@@ -1109,40 +934,6 @@ def create_app(
                         "result": today_res,
                     }
                 )
-                return
-
-            if kind == "vision":
-                approval_id = uuid.uuid4().hex[:10]
-                if target.strip().lower() == "clipboard":
-                    pending_approvals[approval_id] = {
-                        "kind": "vision_clipboard",
-                    }
-                    await safe_send(
-                        {
-                            "type": "tool_approval_request",
-                            "approval_id": approval_id,
-                            "kind": "vision_clipboard",
-                            "risk": "read_sensitive",
-                            "target": "clipboard",
-                            "title": "Ler área de transferência",
-                            "message": "Permitir que o Jarvis leia sua área de transferência?",
-                        }
-                    )
-                else:
-                    pending_approvals[approval_id] = {
-                        "kind": "vision_screen",
-                    }
-                    await safe_send(
-                        {
-                            "type": "tool_approval_request",
-                            "approval_id": approval_id,
-                            "kind": "vision_screen",
-                            "risk": "read_sensitive",
-                            "target": "screen",
-                            "title": "Capturar e analisar a tela",
-                            "message": "Permitir que o Jarvis capture e analise sua tela atual?",
-                        }
-                    )
                 return
 
             if kind == "pet":
@@ -1448,36 +1239,6 @@ def create_app(
                         )
                         continue
                     pending_kind = pending.get("kind", "shortcut")
-                    if pending_kind == "cowork_capture":
-                        preview = pending["preview"]
-                        if not approved:
-                            await safe_send(
-                                {
-                                    "type": "action_executed",
-                                    "approval_id": approval_id,
-                                    "kind": "cowork_capture",
-                                    "target": preview["target_file"],
-                                    "title": preview["summary"],
-                                    "ok": False,
-                                    "cancelled": True,
-                                    "error": "Escrita no Cowork recusada pelo usuário.",
-                                }
-                            )
-                            continue
-                        res = await asyncio.to_thread(resolved_cowork.apply_capture, approval_id)
-                        await safe_send(
-                            {
-                                "type": "action_executed",
-                                "approval_id": approval_id,
-                                "kind": "cowork_capture",
-                                "target": res["target_file"],
-                                "title": res["summary"],
-                                "ok": bool(res.get("ok")),
-                                "result": res,
-                            }
-                        )
-                        continue
-
                     if pending_kind == "mac_app":
                         app_name = str(pending.get("app") or "")
                         if not approved:
@@ -1505,87 +1266,6 @@ def create_app(
                                 "ok": bool(res.get("ok")),
                                 "result": res,
                                 "error": res.get("error"),
-                            }
-                        )
-                        continue
-
-                    if pending_kind == "vision_clipboard":
-                        if not approved:
-                            await safe_send(
-                                {
-                                    "type": "action_executed",
-                                    "approval_id": approval_id,
-                                    "kind": "vision",
-                                    "target": "clipboard",
-                                    "title": "Leitura do Clipboard",
-                                    "ok": False,
-                                    "cancelled": True,
-                                    "error": "Leitura do clipboard recusada pelo usuário.",
-                                }
-                            )
-                            continue
-                        clip = await asyncio.to_thread(resolved_mac.read_clipboard_text)
-                        await safe_send(
-                            {
-                                "type": "action_executed",
-                                "approval_id": approval_id,
-                                "kind": "vision",
-                                "target": "clipboard",
-                                "title": "Leitura do Clipboard",
-                                "ok": bool(clip.get("ok")),
-                                "result": clip,
-                                "error": clip.get("error"),
-                            }
-                        )
-                        continue
-
-                    if pending_kind == "vision_screen":
-                        if not approved:
-                            await safe_send(
-                                {
-                                    "type": "action_executed",
-                                    "approval_id": approval_id,
-                                    "kind": "vision",
-                                    "target": "screen",
-                                    "title": "Inspeção de Tela Sob Demanda",
-                                    "ok": False,
-                                    "cancelled": True,
-                                    "error": "Captura de tela recusada pelo usuário.",
-                                }
-                            )
-                            continue
-                        capture = await asyncio.to_thread(
-                            resolved_mac.capture_screen_b64,
-                            resolved_settings.jarvis_vision_max_dim,
-                        )
-                        if not capture.get("ok"):
-                            await safe_send(
-                                {
-                                    "type": "action_executed",
-                                    "approval_id": approval_id,
-                                    "kind": "vision",
-                                    "target": "screen",
-                                    "title": "Inspeção de Tela Sob Demanda",
-                                    "ok": False,
-                                    "error": capture.get("error") or "Falha ao capturar tela.",
-                                }
-                            )
-                            continue
-                        prompt = "Olhe minha tela atual e resuma em 2 frases curtas o que é mais relevante."
-                        emotion, vision_text = await _collect_jarvis_reply(
-                            prompt=prompt,
-                            memory_query=prompt,
-                            image_b64=capture["image_b64"],
-                        )
-                        await safe_send(
-                            {
-                                "type": "action_executed",
-                                "approval_id": approval_id,
-                                "kind": "vision",
-                                "target": "screen",
-                                "title": "Inspeção de Tela Sob Demanda",
-                                "ok": True,
-                                "result": {"emotion": emotion, "text": vision_text},
                             }
                         )
                         continue

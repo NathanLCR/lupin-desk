@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import base64
 import inspect
 import re
 import subprocess
-import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -869,59 +867,3 @@ class MacController:
                 "effect": "none",
                 "error": str(exc),
             }
-
-    def capture_screen_b64(self, max_dim: int | None = None) -> dict[str, Any]:
-        """Captura a tela atual sob demanda via `screencapture` (sem shell) e retorna base64."""
-        tmp_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(prefix="desk-jarvis-", suffix=".png", delete=False) as tf:
-                tmp_path = Path(tf.name)
-            proc = self._run_cmd(["/usr/sbin/screencapture", "-x", "-t", "png", str(tmp_path)], timeout=10.0)
-            if proc.returncode != 0 or not tmp_path.exists():
-                return {
-                    "ok": False,
-                    "error": (proc.stderr or proc.stdout or "Falha ao capturar tela.").strip(),
-                }
-            if max_dim is not None and int(max_dim) > 0:
-                self._run_cmd(
-                    ["/usr/bin/sips", "-Z", str(int(max_dim)), str(tmp_path)],
-                    timeout=5.0,
-                )
-            raw_bytes = tmp_path.read_bytes()
-            if not raw_bytes:
-                return {"ok": False, "error": "Captura de tela retornou arquivo vazio."}
-            return {
-                "ok": True,
-                "mime_type": "image/png",
-                "image_b64": base64.b64encode(raw_bytes).decode("ascii"),
-                "bytes": len(raw_bytes),
-            }
-        except Exception as exc:
-            return {"ok": False, "error": f"Erro ao capturar tela: {exc}"}
-        finally:
-            if tmp_path is not None and tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
-
-    def read_clipboard_text(self, max_chars: int = 8000) -> dict[str, Any]:
-        """Lê texto da área de transferência do macOS sob demanda via `/usr/bin/pbpaste`."""
-        try:
-            proc = self._run_cmd(["/usr/bin/pbpaste"], timeout=5.0)
-            if proc.returncode != 0:
-                return {
-                    "ok": False,
-                    "text": "",
-                    "error": (proc.stderr or "Falha ao ler clipboard.").strip(),
-                }
-            text = proc.stdout or ""
-            truncated = len(text) > max_chars
-            return {
-                "ok": True,
-                "text": text[:max_chars],
-                "length": len(text),
-                "truncated": truncated,
-            }
-        except Exception as exc:
-            return {"ok": False, "text": "", "error": f"Erro ao ler clipboard: {exc}"}
