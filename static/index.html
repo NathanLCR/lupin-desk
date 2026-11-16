@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Assistente de Mesa</title>
+  <!-- Estilos do rosto animado e da interface principal -->
+  <link rel="stylesheet" href="/static/face.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- Palco central ocupando toda a tela com o rosto do assistente -->
+  <main id="stage" class="stage">
+    <div id="face-container" aria-label="Rosto do assistente"></div>
+  </main>
+
+  <!-- HUD superior discreta com status e controles rápidos -->
+  <header id="hud" class="hud" aria-label="Controles superiores">
+    <div class="hud-left">
+      <div class="status-pill" id="ws-status" title="Status da conexão WebSocket">
+        <span class="status-dot is-disconnected" id="ws-dot" aria-hidden="true"></span>
+        <span id="ws-status-text">Conectando...</span>
+      </div>
+      <div class="face-badge" id="face-badge" title="Estado e emoção atuais do rosto">
+        <span id="state-label">idle</span>
+        <span class="badge-sep" aria-hidden="true">·</span>
+        <span id="emotion-label">neutral</span>
+      </div>
+    </div>
+
+    <nav class="hud-actions" aria-label="Ações da interface">
+      <button
+        id="btn-expressions"
+        type="button"
+        class="hud-btn"
+        aria-expanded="false"
+        aria-controls="expressions-bar"
+      >
+        🎭 Expressões
+      </button>
+      <button
+        id="btn-memory"
+        type="button"
+        class="hud-btn"
+        aria-expanded="false"
+        aria-controls="memory-drawer"
+      >
+        🧠 Memória (<span id="memory-count">0</span>)
+      </button>
+      <button
+        id="btn-tts"
+        type="button"
+        class="hud-btn is-active"
+        aria-pressed="true"
+        title="Ativar ou silenciar a voz do assistente"
+      >
+        🔊 Voz
+      </button>
+      <button
+        id="btn-caption"
+        type="button"
+        class="hud-btn is-active"
+        aria-pressed="true"
+        title="Mostrar ou ocultar legenda"
+      >
+        💬 Legenda
+      </button>
+      <button
+        id="btn-fullscreen"
+        type="button"
+        class="hud-btn"
+        aria-pressed="false"
+        title="Alternar tela cheia"
+      >
+        ⛶ Tela Cheia
+      </button>
+      <button
+        id="btn-hud-pin"
+        type="button"
+        class="hud-btn hud-btn-icon"
+        aria-pressed="false"
+        title="Fixar barra superior (evita ocultar automaticamente)"
+      >
+        📌
+      </button>
+    </nav>
+  </header>
+
+  <!-- Barra rápida para testar as 10 emoções e os 5 estados com 1 clique -->
+  <section
+    id="expressions-bar"
+    class="expressions-bar hidden"
+    aria-label="Testar expressões faciais e estados"
+  >
+    <div class="expressions-group">
+      <span class="expressions-title">Emoções</span>
+      <div id="emotion-chips" class="chips-list"></div>
+    </div>
+    <div class="expressions-group">
+      <span class="expressions-title">Estados</span>
+      <div id="state-chips" class="chips-list"></div>
+    </div>
+  </section>
+
+  <!-- Banner discreto para destravar áudio no navegador se ainda não houve interação -->
+  <button
+    id="audio-unlock-banner"
+    type="button"
+    class="audio-unlock-banner"
+    title="Clique para liberar a síntese de voz do navegador"
+  >
+    🔊 Toque em qualquer lugar para ativar a voz
+  </button>
+
+  <!-- Área inferior fixa: legenda em streaming + barra de entrada de texto -->
+  <footer class="bottom-dock">
+    <div id="caption-box" class="caption-box is-empty" aria-live="polite">
+      <p id="caption-text" class="caption-text"></p>
+    </div>
+
+    <form id="chat-form" class="chat-form" autocomplete="off">
+      <input
+        id="chat-input"
+        class="chat-input"
+        type="text"
+        placeholder="Converse com o assistente..."
+        aria-label="Converse com o assistente"
+        maxlength="1000"
+      />
+      <button id="btn-send" class="send-btn" type="submit">Enviar</button>
+    </form>
+  </footer>
+
+  <!-- Fundo escuro da gaveta lateral de memória -->
+  <div id="memory-backdrop" class="memory-backdrop hidden" aria-hidden="true"></div>
+
+  <!-- Gaveta lateral de memória de curto e longo prazo -->
+  <aside
+    id="memory-drawer"
+    class="memory-drawer hidden"
+    aria-hidden="true"
+    aria-labelledby="memory-drawer-title"
+  >
+    <div class="memory-header">
+      <h2 id="memory-drawer-title">🧠 Memória</h2>
+      <button
+        id="btn-close-memory"
+        type="button"
+        class="icon-close-btn"
+        aria-label="Fechar painel de memória"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="memory-body">
+      <!-- Bloco da janela de curto prazo -->
+      <section class="memory-section">
+        <div class="memory-section-head">
+          <h3>Conversa Atual</h3>
+          <span id="recent-messages-badge" class="count-pill">0 msgs</span>
+        </div>
+        <p class="memory-hint">
+          Mensagens recentes usadas como contexto imediato. Limpar não apaga o que aprendi sobre você.
+        </p>
+        <button id="btn-clear-chat" type="button" class="btn-secondary full-width">
+          Limpar conversa atual
+        </button>
+      </section>
+
+      <!-- Bloco de fatos aprendidos (longo prazo) -->
+      <section class="memory-section memory-facts-section">
+        <div class="memory-section-head">
+          <h3>Fatos Aprendidos</h3>
+          <span id="facts-count-badge" class="count-pill">0</span>
+        </div>
+
+        <form id="add-fact-form" class="add-fact-form" autocomplete="off">
+          <input
+            id="fact-input"
+            class="fact-input"
+            type="text"
+            placeholder="Adicionar fato manualmente..."
+            aria-label="Novo fato sobre você"
+            maxlength="240"
+          />
+          <div class="add-fact-row">
+            <select id="fact-category" class="fact-category" aria-label="Categoria do fato">
+              <option value="general">geral</option>
+              <option value="preference">preferência</option>
+              <option value="routine">rotina</option>
+              <option value="personal">pessoal</option>
+              <option value="work">trabalho</option>
+            </select>
+            <button id="btn-add-fact" type="submit" class="btn-primary">Adicionar</button>
+          </div>
+        </form>
+
+        <p id="facts-empty" class="facts-empty">
+          Nenhum fato salvo ainda. Conte algo sobre você ou adicione acima.
+        </p>
+        <ul id="facts-list" class="facts-list"></ul>
+      </section>
+    </div>
+
+    <!-- Rodapé discreto para reset completo com confirmação em duas etapas -->
+    <div class="memory-footer">
+      <button id="btn-reset-memory" type="button" class="btn-danger-ghost">
+        Resetar toda memória
+      </button>
+      <div id="reset-confirm-box" class="reset-confirm-box hidden">
+        <span>Apagar fatos e conversa?</span>
+        <div class="reset-confirm-actions">
+          <button id="btn-confirm-reset" type="button" class="btn-danger-solid">
+            Confirmar
+          </button>
+          <button id="btn-cancel-reset" type="button" class="btn-secondary">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Ordem obrigatória: face.js antes de app.js -->
+  <script src="/static/face.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
