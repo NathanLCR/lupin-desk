@@ -5,7 +5,7 @@
  * - Rosto SVG (window.EmoFace) + Áudio Procedural (window.EmoAudio)
  * - Gamepad RG406H (window.DeskGamepad) + Diagnóstico (window.DeskDiagnostics)
  * - WebSocket (/ws) com streaming frase-a-frase, Push-to-Talk, barge-in e ações
- * - TTS híbrido (Browser speechSynthesis vs Servidor Mac /api/tts)
+ * - TTS híbrido (Browser speechSynthesis vs Servidor Mac via Brain)
  */
 (() => {
   'use strict';
@@ -363,7 +363,9 @@
     ttsQueue: [],
     ttsPlaying: false,
     ttsGeneration: 0,
-    ttsAbortController: null,
+    audioChunks: new Map(),
+    activeBody: null,
+    mood: null,
     ttsCancelPlayback: null,
     serverAudioUrl: null,
     receivedSentenceStream: false,
@@ -851,9 +853,8 @@
       state.speechStartGuardTimer = null;
     }
 
-    const controller = state.ttsAbortController;
-    state.ttsAbortController = null;
-    if (controller) controller.abort();
+    // Descarta chunks de áudio ainda incompletos do Brain
+    state.audioChunks.clear();
     const cancelPlayback = state.ttsCancelPlayback;
     state.ttsCancelPlayback = null;
     if (cancelPlayback) cancelPlayback();
@@ -888,11 +889,40 @@
     const clean = (text || '').trim();
     if (!clean) return;
     if (!state.ttsEnabled && !forceMode) return;
+    // No modo servidor o áudio vem do Brain via evento `audio` (enqueueServerAudio)
+    if ((forceMode || state.ttsMode) === 'server') return;
 
     state.ttsQueue.push({ text: clean, mode: forceMode || state.ttsMode });
     if (!state.ttsPlaying) {
       pumpTtsQueue();
     }
+  }
+
+  function enqueueServerAudio(blob) {
+    if (!blob || blob.size === 0) return;
+    state.ttsQueue.push({ blob, mode: 'server' });
+    if (!state.ttsPlaying) pumpTtsQueue();
+  }
+
+  // Remonta os chunks base64 de uma sentença e enfileira o áudio quando `last` chega
+  function handleAudioChunk(msg) {
+    if (!state.ttsEnabled || state.ttsMode !== 'server') return;
+    if (typeof msg.data !== 'string') return;
+    const key = msg.sentence;
+    const entry = state.audioChunks.get(key) || [];
+    entry[Number.isInteger(msg.seq) ? msg.seq : entry.length] = msg.data;
+    state.audioChunks.set(key, entry);
+    if (!msg.last) return;
+    state.audioChunks.delete(key);
+    const parts = [];
+    for (const b64 of entry) {
+      if (typeof b64 !== 'string') continue;
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      parts.push(bytes);
+    }
+    enqueueServerAudio(new Blob(parts, { type: msg.mime || 'audio/mp4' }));
   }
 
   async function pumpTtsQueue() {
@@ -907,15 +937,19 @@
     state.ttsPlaying = true;
     const generation = state.ttsGeneration;
     const modeToUse = item.mode === 'server' ? 'server' : 'browser';
+    const isServer = modeToUse === 'server';
     const onDone = () => {
       if (generation !== state.ttsGeneration) return;
       state.ttsPlaying = false;
       pumpTtsQueue();
     };
 
-    if (modeToUse === 'server' || !supportsSpeechSynthesis()) {
-      // Fallback automático para TTS do servidor se o browser não suportar speechSynthesis
-      await playServerTtsItem(item.text, generation);
+    if (isServer) {
+      await playServerTtsItem(item.blob, generation);
+      onDone();
+      return;
+    }
+    if (!supportsSpeechSynthesis()) {
       onDone();
       return;
     }
@@ -989,24 +1023,12 @@
     }
   }
 
-  async function playServerTtsItem(clean, generation) {
-    const controller = new AbortController();
-    state.ttsAbortController = controller;
+  async function playServerTtsItem(blob, generation) {
     try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: clean, format: 'm4a' }),
-        signal: controller.signal,
-      });
-      if (generation !== state.ttsGeneration || controller.signal.aborted || !res.ok) return;
-      const blob = await res.blob();
-      if (generation !== state.ttsGeneration || controller.signal.aborted || !blob || blob.size === 0) {
-        return;
-      }
+      if (generation !== state.ttsGeneration || !blob || blob.size === 0) return;
 
       const audioUrl = URL.createObjectURL(blob);
-      if (generation !== state.ttsGeneration || controller.signal.aborted) {
+      if (generation !== state.ttsGeneration) {
         URL.revokeObjectURL(audioUrl);
         return;
       }
@@ -1049,9 +1071,7 @@
         }
       });
     } catch {
-      // Silencia erro de rede no TTS do servidor
-    } finally {
-      if (state.ttsAbortController === controller) state.ttsAbortController = null;
+      // Silencia erro de reprodução do áudio do Brain
     }
   }
 
@@ -1109,8 +1129,10 @@
   function syncPreferencesFromStorage(event) {
     if (event && event.key && !Object.values(PREFS).includes(event.key)) return;
     const wasTtsEnabled = state.ttsEnabled;
+    const wasTtsMode = state.ttsMode;
     state.ttsEnabled = loadBoolPref(PREFS.ttsEnabled, true);
     state.ttsMode = loadStringPref(PREFS.ttsMode, 'browser') === 'server' ? 'server' : 'browser';
+    if (state.ttsMode !== wasTtsMode) sendHello();
     state.petSoundsEnabled = loadBoolPref(PREFS.petSoundsEnabled, true);
     state.captionVisible = loadBoolPref(PREFS.captionVisible, true);
     state.vsdLargeKeys = loadBoolPref(PREFS.vsdLargeKeys, false);
@@ -1185,9 +1207,10 @@
     state.ttsMode = state.ttsMode === 'browser' ? 'server' : 'browser';
     savePref(PREFS.ttsMode, state.ttsMode);
     syncTtsUI();
+    sendHello();
     showToast(
       state.ttsMode === 'server'
-        ? 'Voz alterada para Servidor Mac (/api/tts)'
+        ? 'Voz alterada para Servidor Mac (Brain)'
         : 'Voz alterada para Navegador (speechSynthesis)'
     );
   }
@@ -1241,6 +1264,16 @@
     }, waitMs);
   }
 
+  // Handshake Brain↔Body (protocolo 1); `audio` só é anunciado no modo TTS do servidor
+  function sendHello() {
+    return sendWs({
+      type: 'hello',
+      body: 'rg406h-web',
+      protocol: 1,
+      audio: state.ttsMode === 'server' ? ['m4a'] : [],
+    });
+  }
+
   function connectWebSocket() {
     if (
       state.ws &&
@@ -1263,6 +1296,7 @@
       state.wsConnected = true;
       state.reconnectDelayMs = WS_RECONNECT_BASE_MS;
       setWsStatus('connected', 'Conectado');
+      sendHello();
       fetchMemory();
       const aud = audioApi();
       if (aud && typeof aud.wake === 'function' && state.audioUnlocked && state.petSoundsEnabled) {
@@ -1301,6 +1335,18 @@
     if (!msg || typeof msg.type !== 'string') return;
 
     switch (msg.type) {
+      case 'welcome': {
+        state.activeBody = msg.active_body || null;
+        break;
+      }
+      case 'mood': {
+        state.mood = msg;
+        break;
+      }
+      case 'audio': {
+        handleAudioChunk(msg);
+        break;
+      }
       case 'state': {
         if (msg.state) {
           if (msg.state === 'thinking') state.backendTurnActive = true;
@@ -1756,7 +1802,7 @@
         const now = Date.now();
         if (now - state.lastPetSentAt > 900) {
           state.lastPetSentAt = now;
-          sendWs({ type: 'pet', kind: 'pet' });
+          sendWs({ type: 'touch', kind: 'pet' });
         }
       }
     });
@@ -1778,7 +1824,7 @@
         if (api && typeof api.reactToTouch === 'function') {
           api.reactToTouch('poke', nx, ny);
         }
-        if (!isMiniPet) sendWs({ type: 'pet', kind: 'poke' });
+        if (!isMiniPet) sendWs({ type: 'touch', kind: 'poke' });
       }
       syncFaceBadges();
     };

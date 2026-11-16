@@ -135,6 +135,11 @@ class AppActivateRequest(BaseModel):
     name: str = ""
 
 
+# Protocolo Brain<->Body (docs/protocolo-cerebro-corpo.md).
+PROTOCOL_VERSION = 1
+_AUDIO_CHUNK_BYTES = 24 * 1024
+
+
 class TTSRequest(BaseModel):
     """Payload para síntese de voz offline no servidor Mac."""
 
@@ -826,6 +831,8 @@ def create_app(
         send_lock = asyncio.Lock()
         active_turn_task: asyncio.Task[None] | None = None
         pending_approvals: dict[str, dict[str, Any]] = {}
+        # Protocolo Brain<->Body v1: o Body declara em `hello` se quer áudio do servidor.
+        body_info: dict[str, Any] = {"body": None, "wants_audio": False}
 
         async def safe_send(payload: dict[str, Any]) -> None:
             async with send_lock:
@@ -967,10 +974,45 @@ def create_app(
                     }
                 )
 
+        async def audio_worker(queue: asyncio.Queue[str | None]) -> None:
+            """Sintetiza cada frase da fila e envia `audio` em chunks. Falha de TTS só pula o áudio."""
+            index = 0
+            while True:
+                sentence_text = await queue.get()
+                if sentence_text is None:
+                    return
+                sentence_index = index
+                index += 1
+                try:
+                    audio_bytes, _mime = await resolved_tts.synthesize_async(
+                        text=sentence_text, voice=None, output_format="m4a"
+                    )
+                except Exception as exc:
+                    logger.warning("TTS falhou para frase de áudio (%s); áudio pulado.", type(exc).__name__)
+                    continue
+                total = max(1, -(-len(audio_bytes) // _AUDIO_CHUNK_BYTES))
+                for seq in range(total):
+                    chunk = audio_bytes[seq * _AUDIO_CHUNK_BYTES : (seq + 1) * _AUDIO_CHUNK_BYTES]
+                    await safe_send(
+                        {
+                            "type": "audio",
+                            "sentence": sentence_index,
+                            "seq": seq,
+                            "last": seq == total - 1,
+                            "mime": "audio/mp4",
+                            "data": base64.b64encode(chunk).decode("ascii"),
+                        }
+                    )
+
         async def run_llm_turn(user_text: str) -> None:
             clean_text = ""
             raw_text = ""
             emotion = "neutral"
+            audio_queue: asyncio.Queue[str | None] | None = None
+            audio_task: asyncio.Task[None] | None = None
+            if body_info["wants_audio"] and resolved_tts.is_available():
+                audio_queue = asyncio.Queue()
+                audio_task = asyncio.create_task(audio_worker(audio_queue))
 
             try:
                 await safe_send({"type": "state", "state": "thinking"})
@@ -1010,6 +1052,8 @@ def create_app(
                         sentence_text = str(event.get("text") or "")
                         if sentence_text:
                             await safe_send({"type": "sentence", "text": sentence_text})
+                            if audio_queue is not None:
+                                audio_queue.put_nowait(sentence_text)
                     elif event_type == "action":
                         kind = str(event.get("kind") or "")
                         target = str(event.get("target") or "")
@@ -1041,6 +1085,9 @@ def create_app(
                         "companion": companion_state,
                     }
                 )
+                if audio_queue is not None and audio_task is not None:
+                    audio_queue.put_nowait(None)
+                    await audio_task
             except asyncio.CancelledError:
                 logger.info("Turno LLM interrompido por barge-in.")
                 raise
@@ -1057,6 +1104,13 @@ def create_app(
                 )
                 await safe_send({"type": "state", "state": "error"})
                 await safe_send({"type": "error", "message": _FRIENDLY_LLM_ERROR})
+            finally:
+                if audio_task is not None and not audio_task.done():
+                    audio_task.cancel()
+                    try:
+                        await audio_task
+                    except BaseException:
+                        pass
 
         async def run_audio_turn(audio_bytes: bytes, mime_type: str, language: str) -> None:
             try:
@@ -1131,6 +1185,19 @@ def create_app(
 
                 msg_type = data.get("type")
 
+                if msg_type == "hello":
+                    audio_formats = data.get("audio")
+                    body_info["body"] = str(data.get("body") or "unknown")
+                    body_info["wants_audio"] = isinstance(audio_formats, list) and len(audio_formats) > 0
+                    await safe_send(
+                        {
+                            "type": "welcome",
+                            "protocol": PROTOCOL_VERSION,
+                            "active_body": body_info["body"],
+                        }
+                    )
+                    continue
+
                 if msg_type == "typing":
                     active = bool(data.get("active", False))
                     await safe_send({"type": "state", "state": "listening" if active else "idle"})
@@ -1153,7 +1220,7 @@ def create_app(
                     )
                     continue
 
-                if msg_type == "pet":
+                if msg_type == "touch":
                     kind = str(data.get("kind") or "pet").strip().lower()
                     if kind == "pet":
                         intensity = float(data.get("intensity") or 1.0)
@@ -1162,7 +1229,7 @@ def create_app(
                         companion = resolved_memory.record_interaction(sentiment_delta=-0.02)
                     await safe_send(
                         {
-                            "type": "companion_updated",
+                            "type": "mood",
                             "kind": kind,
                             "companion": companion,
                             **companion,

@@ -826,9 +826,9 @@ def test_websocket_barge_in_interrupt_e_audio_pet(tmp_path: Path) -> None:
             assert {"type": "state", "state": "idle"} in interrupted_events
 
             # 2. Carinho (pet) aumenta afinidade
-            ws.send_json({"type": "pet", "kind": "pet", "intensity": 1.0})
+            ws.send_json({"type": "touch", "kind": "pet", "intensity": 1.0})
             pet_ev = ws.receive_json()
-            assert pet_ev["type"] == "companion_updated"
+            assert pet_ev["type"] == "mood"
             assert pet_ev["affinity"] > 50.0
 
             # 3. Atalho direto e ativar app via WS
