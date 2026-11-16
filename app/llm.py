@@ -1,7 +1,8 @@
-"""Cliente assíncrono de LLM em streaming e parser de tags emocionais/memória."""
+"""Cliente assíncrono de LLM em streaming e parser de tags emocionais/memória/ações."""
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
@@ -15,7 +16,7 @@ from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
-# Lista oficial de emoções suportadas pelo rosto estilo EMO.
+# Lista oficial de 12 emoções suportadas pelo rosto estilo EMO.
 SUPPORTED_EMOTIONS: tuple[str, ...] = (
     "neutral",
     "happy",
@@ -27,15 +28,22 @@ SUPPORTED_EMOTIONS: tuple[str, ...] = (
     "wink",
     "love",
     "sleepy",
+    "angry",
+    "dizzy",
 )
 VALID_EMOTIONS: frozenset[str] = frozenset(SUPPORTED_EMOTIONS)
 
 _EMOTION_TAG_RE = re.compile(r"^\[emotion\s*:\s*([a-zA-Z0-9_-]+)\s*\]$", re.IGNORECASE)
 _SHORT_EMOTION_TAG_RE = re.compile(r"^\[\s*([a-zA-Z0-9_-]+)\s*\]$")
 _FACT_TAG_RE = re.compile(r"^\[fact\s*:\s*(.*?)\s*\]$", re.IGNORECASE | re.DOTALL)
+_ACTION_TAG_RE = re.compile(
+    r"^\[action\s*:\s*(shortcut|app|pomodoro)\s*:\s*(.*?)\s*\]$",
+    re.IGNORECASE | re.DOTALL,
+)
 _KNOWN_TAG_PREFIXES: tuple[str, ...] = (
     "[emotion",
     "[fact",
+    "[action",
     *(f"[{emotion}" for emotion in SUPPORTED_EMOTIONS),
 )
 
@@ -47,10 +55,15 @@ class LLMError(Exception):
     """Erro seguro ao se comunicar com o provedor LLM (sem expor segredos)."""
 
 
-def build_system_prompt(memory_context: str = "") -> str:
-    """Constrói o system prompt em PT-BR para o assistente de mesa estilo EMO."""
+def build_system_prompt(
+    memory_context: str = "",
+    shortcuts_context: str = "",
+    companion_context: str = "",
+    temporal_context: str = "",
+) -> str:
+    """Constrói o system prompt em PT-BR com memória, contexto temporal, humor e ações no Mac."""
     emotions_list = ", ".join(SUPPORTED_EMOTIONS)
-    base_prompt = (
+    sections = [
         "Você é um assistente de mesa carismático, amigável e expressivo no estilo EMO. "
         "Responda sempre em português do Brasil, em 1 a 3 frases curtas, usando apenas "
         "texto puro e natural para ser lido em voz alta. "
@@ -60,25 +73,45 @@ def build_system_prompt(memory_context: str = "") -> str:
         f"[emotion:<nome>], escolhendo <nome> apenas entre: {emotions_list}.\n"
         "2. Quando o usuário compartilhar um fato pessoal duradouro, preferência, nome, "
         "rotina ou interesse real, adicione ao FINAL da resposta uma ou mais tags no formato "
-        "[fact: <fato curto e objetivo sobre o usuário>]. Nunca invente fatos nem suposições."
-    )
-    context = memory_context.strip()
-    if context:
-        return f"{base_prompt}\n\nMemória conhecida sobre o usuário:\n{context}"
-    return base_prompt
+        "[fact: <fato curto e objetivo sobre o usuário>]. Nunca invente fatos nem suposições.\n"
+        "3. REGRA SHOW, DON'T TELL: use os fatos conhecidos sobre o usuário de forma natural e "
+        "implícita como conhecimento de fundo, sem recitá-los roboticamente nem listar o que sabe.\n"
+        "4. AÇÕES NO MAC: sempre que o usuário pedir por voz ou texto para acionar um atalho, "
+        "controlar janelas/espaços/mídia/prints, abrir ou focar um aplicativo no Mac, ou iniciar/parar "
+        "o Pomodoro, emita a tag invisível correspondente usando o catálogo abaixo:\n"
+        "   - [action:shortcut:<slug>] para executar um atalho cadastrado\n"
+        "   - [action:app:<nome_do_app>] para abrir ou focar um aplicativo\n"
+        "   - [action:pomodoro:start] ou [action:pomodoro:stop] para o timer Pomodoro\n"
+        "   Nunca leia ou mencione colchetes ou nomes de tags no texto falado."
+    ]
+
+    if temporal_context.strip():
+        sections.append(f"Contexto temporal:\n{temporal_context.strip()}")
+
+    if companion_context.strip():
+        sections.append(f"Estado emocional do pet:\n{companion_context.strip()}")
+
+    if memory_context.strip():
+        sections.append(f"Memória conhecida sobre o usuário:\n{memory_context.strip()}")
+
+    if shortcuts_context.strip():
+        sections.append(f"Atalhos e apps disponíveis no Mac:\n{shortcuts_context.strip()}")
+
+    return "\n\n".join(sections)
 
 
 @dataclass
 class TagStreamParser:
-    """Parser incremental que remove tags `[emotion:...]`/`[<emocao>]` e `[fact:...]` no stream.
+    """Parser incremental que remove tags `[emotion:...]`, `[fact:...]` e `[action:...]` no stream.
 
-    Garante que nenhuma tag interna vaze nos eventos `delta` enviados ao frontend/TTS,
+    Garante que nenhuma tag interna vaze nos eventos `delta`/`sentence` enviados ao frontend/TTS,
     mesmo quando os colchetes ou o conteúdo da tag chegam divididos entre múltiplos chunks.
     """
 
     emotion_emitted: bool = False
     detected_emotion: str = "neutral"
     _buffer: str = ""
+    _sentence_buf: str = ""
     _raw_parts: list[str] = field(default_factory=list)
     _clean_parts: list[str] = field(default_factory=list)
     _has_emitted_text: bool = False
@@ -139,7 +172,7 @@ class TagStreamParser:
         events: list[dict[str, str]] = []
 
         if self._buffer:
-            # Se sobrou uma tag `[emotion...`, `[happy...` ou `[fact...` incompleta no fim do stream,
+            # Se sobrou uma tag `[emotion...`, `[fact...`, `[action...` ou `[happy...` incompleta,
             # descartamos para nunca vazar marcação ao usuário/TTS.
             if not self._looks_like_known_tag_prefix(self._buffer):
                 events.extend(self._emit_text(self._buffer))
@@ -150,13 +183,18 @@ class TagStreamParser:
             self.detected_emotion = "neutral"
             events.append({"type": "emotion", "emotion": "neutral"})
 
+        remainder = self._sentence_buf.strip()
+        self._sentence_buf = ""
+        if remainder and any(ch.isalnum() for ch in remainder):
+            events.append({"type": "sentence", "text": remainder})
+
         clean_text = "".join(self._clean_parts).strip()
         raw_text = "".join(self._raw_parts)
         return events, clean_text, raw_text, self.detected_emotion
 
     @staticmethod
     def _looks_like_known_tag_prefix(text: str) -> bool:
-        """Verifica se o início do buffer pode corresponder a `[emotion:`, `[fact:` ou `[<emoção>`."""
+        """Verifica se o início do buffer pode corresponder a uma tag conhecida do protocolo."""
         lower = text.lstrip().lower()
         for prefix in _KNOWN_TAG_PREFIXES:
             if lower.startswith(prefix) or prefix.startswith(lower):
@@ -189,11 +227,19 @@ class TagStreamParser:
             # Tag de fato fica apenas no raw_text para extração pela camada de memória.
             return []
 
+        action_match = _ACTION_TAG_RE.match(tag)
+        if action_match:
+            kind = action_match.group(1).strip().lower()
+            target = " ".join(action_match.group(2).strip().split())
+            if target:
+                return [{"type": "action", "kind": kind, "target": target}]
+            return []
+
         # Colchetes comuns que não pertencem a tags de controle viram texto falado.
         return self._emit_text(tag)
 
     def _emit_text(self, text: str) -> list[dict[str, str]]:
-        """Emite texto limpo garantindo que o evento de emoção venha antes de qualquer delta."""
+        """Emite texto limpo garantindo emoção antes de delta e emitindo frases fechadas."""
         events: list[dict[str, str]] = []
         if not self._has_emitted_text:
             text = text.lstrip()
@@ -208,7 +254,53 @@ class TagStreamParser:
         self._has_emitted_text = True
         self._clean_parts.append(text)
         events.append({"type": "delta", "text": text})
+
+        self._sentence_buf += text
+        events.extend(self._pop_complete_sentences())
         return events
+
+    def _pop_complete_sentences(self) -> list[dict[str, str]]:
+        """Extrai frases completas terminadas em `.`, `!` ou `?` do buffer de sentenças."""
+        emitted: list[dict[str, str]] = []
+        buf = self._sentence_buf
+        start = 0
+        i = 0
+        length = len(buf)
+
+        while i < length:
+            ch = buf[i]
+            if ch in ".!?":
+                # Mantém pontuação agrupada (`...`, `!?`, `!!`) junta na mesma frase.
+                if i + 1 < length and buf[i + 1] in ".!?":
+                    i += 1
+                    continue
+                # Evita quebrar decimais como `3.14` quando o dígito seguinte já está no buffer.
+                if (
+                    ch == "."
+                    and i > 0
+                    and buf[i - 1].isdigit()
+                    and i + 1 < length
+                    and buf[i + 1].isdigit()
+                ):
+                    i += 1
+                    continue
+
+                end = i + 1
+                # Inclui aspas/parênteses de fechamento logo após a pontuação, se houver.
+                while end < length and buf[end] in "\"')]}":
+                    end += 1
+
+                candidate = buf[start:end].strip()
+                if candidate and any(c.isalnum() for c in candidate):
+                    emitted.append({"type": "sentence", "text": candidate})
+                    start = end
+                    i = end
+                    continue
+            i += 1
+
+        if start > 0:
+            self._sentence_buf = buf[start:]
+        return emitted
 
 
 class LLMClient:
@@ -231,10 +323,19 @@ class LLMClient:
         user_text: str,
         history: list[dict[str, str]],
         memory_context: str = "",
+        shortcuts_context: str = "",
+        companion_context: str = "",
+        temporal_context: str = "",
     ) -> dict[str, Any]:
         """Monta o payload JSON para `/chat/completions`."""
+        system_prompt = build_system_prompt(
+            memory_context=memory_context,
+            shortcuts_context=shortcuts_context,
+            companion_context=companion_context,
+            temporal_context=temporal_context,
+        )
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": build_system_prompt(memory_context)}
+            {"role": "system", "content": system_prompt}
         ]
         for msg in history:
             role = msg.get("role", "")
@@ -270,18 +371,42 @@ class LLMClient:
         user_text: str,
         history: list[dict[str, str]],
         memory_context: str = "",
+        shortcuts_context: str = "",
+        companion_context: str = "",
+        temporal_context: str = "",
     ) -> AsyncIterator[dict[str, Any]]:
-        """Executa o streaming do LLM e emite eventos `emotion`, `delta` e `result`."""
+        """Executa o streaming do LLM e emite eventos `emotion`, `delta`, `sentence`, `action` e `result`."""
         if self._stream_fn is not None:
-            async for event in self._stream_fn(
-                user_text=user_text,
-                history=history,
-                memory_context=memory_context,
-            ):
+            kwargs: dict[str, Any] = {
+                "user_text": user_text,
+                "history": history,
+                "memory_context": memory_context,
+            }
+            sig = inspect.signature(self._stream_fn)
+            has_var_kw = any(
+                param.kind == inspect.Parameter.VAR_KEYWORD
+                for param in sig.parameters.values()
+            )
+            extra_kwargs = {
+                "shortcuts_context": shortcuts_context,
+                "companion_context": companion_context,
+                "temporal_context": temporal_context,
+            }
+            for key, value in extra_kwargs.items():
+                if has_var_kw or key in sig.parameters:
+                    kwargs[key] = value
+            async for event in self._stream_fn(**kwargs):
                 yield event
             return
 
-        payload = self._build_payload(user_text, history, memory_context)
+        payload = self._build_payload(
+            user_text=user_text,
+            history=history,
+            memory_context=memory_context,
+            shortcuts_context=shortcuts_context,
+            companion_context=companion_context,
+            temporal_context=temporal_context,
+        )
         parser = TagStreamParser()
 
         own_client = self._http_client is None

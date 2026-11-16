@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -217,5 +219,252 @@ def test_clear_short_term_preserves_facts_and_clear_all_wipes_both(tmp_path: Pat
         store.clear_all()
         assert store.get_recent_messages_count() == 0
         assert store.get_facts() == []
+    finally:
+        store.close()
+
+
+def test_load_settings_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Valida defaults e overrides das novas configurações opcionais em `Settings`."""
+    for key in (
+        "HTTPS_PORT",
+        "CERT_FILE",
+        "KEY_FILE",
+        "STT_MODEL",
+        "STT_LANGUAGE",
+        "TTS_VOICE",
+        "WEATHER_LATITUDE",
+        "WEATHER_LONGITUDE",
+        "WEATHER_CITY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    defaults = load_settings(env_path=tmp_path / "inexistente.env")
+    assert defaults.https_port == 8443
+    assert defaults.cert_file == BASE_DIR / "certs" / "cert.pem"
+    assert defaults.key_file == BASE_DIR / "certs" / "key.pem"
+    assert defaults.stt_model == "base"
+    assert defaults.stt_language == "pt"
+    assert defaults.tts_voice == "Luciana"
+    assert defaults.weather_latitude == pytest.approx(-23.5505)
+    assert defaults.weather_longitude == pytest.approx(-46.6333)
+    assert defaults.weather_city == "São Paulo"
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "HTTPS_PORT=9443",
+                "CERT_FILE=custom_certs/c.pem",
+                "KEY_FILE=custom_certs/k.pem",
+                "STT_MODEL=small",
+                "STT_LANGUAGE=en",
+                "TTS_VOICE=Eddy",
+                "WEATHER_LATITUDE=-22.9068",
+                "WEATHER_LONGITUDE=-43.1729",
+                "WEATHER_CITY=Rio de Janeiro",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_settings(env_path=env_file)
+    assert loaded.https_port == 9443
+    assert loaded.cert_file == (BASE_DIR / "custom_certs" / "c.pem").resolve()
+    assert loaded.key_file == (BASE_DIR / "custom_certs" / "k.pem").resolve()
+    assert loaded.stt_model == "small"
+    assert loaded.stt_language == "en"
+    assert loaded.tts_voice == "Eddy"
+    assert loaded.weather_latitude == pytest.approx(-22.9068)
+    assert loaded.weather_longitude == pytest.approx(-43.1729)
+    assert loaded.weather_city == "Rio de Janeiro"
+
+
+def test_idempotent_sqlite_migration_from_phase1_schema(tmp_path: Path) -> None:
+    """Garante migração segura e idempotente de um banco SQLite legado da Fase 1."""
+    db_file = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(db_file))
+    with conn:
+        conn.execute(
+            """
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                emotion TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE user_facts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT NOT NULL,
+                fact TEXT NOT NULL,
+                normalized_key TEXT NOT NULL UNIQUE,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO user_facts (category, fact, normalized_key, updated_at)
+            VALUES ('identity', 'Nome do usuário: Nathan', 'attr:name', '2026-01-01T10:00:00+00:00')
+            """
+        )
+    conn.close()
+
+    # Primeira abertura migra colunas, tabelas novas e FTS5.
+    store = MemoryStore(db_path=db_file)
+    try:
+        facts = store.get_facts()
+        assert len(facts) == 1
+        assert facts[0]["fact"] == "Nome do usuário: Nathan"
+        assert facts[0]["pinned"] is False
+        assert facts[0]["importance"] == 5
+        assert facts[0]["access_count"] == 1
+        assert facts[0]["last_accessed"] == "2026-01-01T10:00:00+00:00"
+        assert facts[0]["superseded_by"] is None
+        assert store.get_rolling_summary() == ""
+        state = store.get_companion_state()
+        assert state["energy"] > 0
+    finally:
+        store.close()
+
+    # Segunda abertura deve ser 100% idempotente.
+    store_again = MemoryStore(db_path=db_file)
+    try:
+        assert len(store_again.get_facts()) == 1
+        ctx = store_again.build_memory_context(query="Nathan")
+        assert "Nathan" in ctx
+    finally:
+        store_again.close()
+
+
+def test_pinned_facts_protected_from_eviction_and_importance_update(tmp_path: Path) -> None:
+    """Fatos marcados como `pinned=True` nunca são removidos quando `max_user_facts` é excedido."""
+    store = MemoryStore(db_path=tmp_path / "pinned.db", max_user_facts=3)
+    try:
+        core = store.add_fact("Nome do usuário: Nathan", category="identity", pinned=True, importance=10)
+        assert core["pinned"] is True
+        assert core["importance"] == 10
+
+        f2 = store.add_fact("Gosta de café")
+        updated_f2 = store.update_fact_importance(f2["id"], 9)
+        assert updated_f2 is not None
+        assert updated_f2["importance"] == 9
+        assert store.update_fact_importance(99999, 5) is None
+        assert store.set_fact_pinned(99999, True) is None
+
+        store.add_fact("Usa macOS")
+        store.add_fact("Prefere tema escuro")
+        store.add_fact("Usa atalho Cmd+Opt+F")
+
+        facts = store.get_facts()
+        texts = [f["fact"] for f in facts]
+        assert "Nome do usuário: Nathan" in texts
+        assert len(facts) == 3
+
+        # Também testa `set_fact_pinned` após criação.
+        dark_fact = next(f for f in facts if f["fact"] == "Prefere tema escuro")
+        pinned_dark = store.set_fact_pinned(dark_fact["id"], True)
+        assert pinned_dark is not None and pinned_dark["pinned"] is True
+        store.add_fact("Escuta synthwave")
+        texts_after = [f["fact"] for f in store.get_facts()]
+        assert "Nome do usuário: Nathan" in texts_after
+        assert "Prefere tema escuro" in texts_after
+    finally:
+        store.close()
+
+
+def test_rolling_summary_query_ranking_and_budget(tmp_path: Path) -> None:
+    """Valida `rolling_state`, priorização por relevância/`pinned` e respeito a `max_chars`."""
+    store = MemoryStore(db_path=tmp_path / "context.db")
+    try:
+        assert store.get_rolling_summary() == ""
+        saved_summary = store.update_rolling_summary("Nathan configurou atalhos no macOS.")
+        assert saved_summary == "Nathan configurou atalhos no macOS."
+        assert store.get_rolling_summary() == "Nathan configurou atalhos no macOS."
+
+        store.add_fact("Mora em São Paulo", category="location", pinned=True, importance=8)
+        store.add_fact("Prefere café preto sem açúcar", category="preference", importance=4)
+        store.add_fact("Usa editor Neovim para Python", category="work", importance=7)
+
+        ctx = store.build_memory_context(max_chars=120, query="Python Neovim")
+        assert len(ctx) <= 120
+        assert "São Paulo" in ctx
+        assert "Neovim" in ctx
+
+        full_ctx = store.build_memory_context(max_chars=1200, query="Python")
+        assert "Resumo recente:" in full_ctx
+        assert len(full_ctx) <= 1200
+    finally:
+        store.close()
+
+
+def test_companion_state_interactions_pet_and_decay(tmp_path: Path) -> None:
+    """Valida evolução emocional (`record_interaction`, `record_pet`), decaimento e prompt line."""
+    store = MemoryStore(db_path=tmp_path / "companion.db")
+    try:
+        initial = store.get_companion_state()
+        assert 0.0 <= initial["energy"] <= 100.0
+        assert 0.0 <= initial["affinity"] <= 100.0
+        assert -1.0 <= initial["pleasure"] <= 1.0
+
+        after_chat = store.record_interaction(sentiment_delta=0.12)
+        assert after_chat["affinity"] > initial["affinity"]
+        assert after_chat["pleasure"] >= initial["pleasure"]
+
+        after_pet = store.record_pet(intensity=1.5)
+        assert after_pet["affinity"] > after_chat["affinity"]
+        assert after_pet["energy"] >= after_chat["energy"]
+
+        prompt_line = store.get_companion_prompt_line()
+        assert "Estado do pet:" in prompt_line
+        assert "energia" in prompt_line
+        assert "afinidade" in prompt_line
+
+        # Simula 10 horas sem interação diretamente no SQLite para verificar decaimento.
+        ten_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=10)).isoformat()
+        with store._conn:
+            store._conn.execute(
+                "UPDATE companion_state SET last_interaction_at = ? WHERE id = 1",
+                (ten_hours_ago,),
+            )
+        decayed = store.get_companion_state()
+        assert decayed["energy"] < after_pet["energy"]
+        assert decayed["arousal"] < after_pet["arousal"]
+    finally:
+        store.close()
+
+
+def test_temporal_context_and_consolidate_facts(tmp_path: Path) -> None:
+    """Valida contexto temporal em PT-BR e consolidação de fatos duplicados/contraditórios."""
+    store = MemoryStore(db_path=tmp_path / "consolidate.db")
+    try:
+        temporal = store.get_temporal_context()
+        assert any(p in temporal for p in ("manhã", "tarde", "noite", "madrugada"))
+        assert "Última interação:" in temporal
+
+        old_fact = store.add_fact("Gosta de café", category="preference", pinned=True)
+        new_fact = store.add_fact("Não gosta de café", category="preference")
+        old_work = store.add_fact("Trabalha como dev júnior", category="work")
+        new_work = store.add_fact("Trabalha como engenheiro sênior", category="work")
+
+        consolidated = store.consolidate_facts()
+        assert consolidated == 2
+
+        active = store.get_facts()
+        active_ids = {f["id"] for f in active}
+        assert new_fact["id"] in active_ids
+        assert new_work["id"] in active_ids
+        assert old_fact["id"] not in active_ids
+        assert old_work["id"] not in active_ids
+
+        # Verifica transferência do `pinned=True` para o vencedor e `superseded_by` preenchido.
+        all_rows = store.get_facts(include_superseded=True)
+        by_id = {f["id"]: f for f in all_rows}
+        assert by_id[old_fact["id"]]["superseded_by"] == new_fact["id"]
+        assert by_id[old_work["id"]]["superseded_by"] == new_work["id"]
+        assert by_id[new_fact["id"]]["pinned"] is True
     finally:
         store.close()

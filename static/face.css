@@ -1,7 +1,7 @@
 /*
  * Estilos do rosto animado estilo EMO (/static/face.css)
  * Fundo #000000 profundo, olhos neon em SVG centralizados e responsivos
- * para tela 960x720 (4:3) e janelas desktop do macOS.
+ * para tela 960x720 (4:3), iPhone (PWA) e janelas desktop do macOS.
  */
 
 .emo-face-root {
@@ -23,6 +23,8 @@
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
+  transition: min-height 260ms ease;
 }
 
 /* Brilho ambiente bem sutil atrás dos olhos */
@@ -40,6 +42,16 @@
   pointer-events: none;
   transition: background 320ms ease, opacity 320ms ease;
   opacity: 0.55;
+}
+
+/* Camada leve de partículas (clima, corações, Zzz, vapor de raiva, inseto) */
+.emo-particles-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
 }
 
 /* Paletas por emoção */
@@ -69,6 +81,20 @@
   --emo-glow: rgba(36, 255, 255, 0.74);
   --emo-glow-soft: rgba(36, 255, 255, 0.3);
   --emo-accent: #c4ffff;
+}
+
+.emo-face-root[data-emotion="angry"] {
+  --emo-color: #ff5a36;
+  --emo-glow: rgba(255, 90, 54, 0.68);
+  --emo-glow-soft: rgba(255, 90, 54, 0.28);
+  --emo-accent: #ffb085;
+}
+
+.emo-face-root[data-emotion="dizzy"] {
+  --emo-color: #b983ff;
+  --emo-glow: rgba(185, 131, 255, 0.62);
+  --emo-glow-soft: rgba(185, 131, 255, 0.24);
+  --emo-accent: #e0c6ff;
 }
 
 .emo-face-root[data-emotion="sleepy"],
@@ -106,7 +132,7 @@
   display: block;
   overflow: visible;
   filter: drop-shadow(0 0 18px var(--emo-glow));
-  transition: filter 280ms ease;
+  transition: filter 280ms ease, width 240ms ease, max-height 240ms ease;
 }
 
 @media (max-height: 540px) {
@@ -114,6 +140,22 @@
     width: min(86%, 640px);
     max-height: 72vh;
   }
+}
+
+/* Modo compacto para faixa superior no modo Dock & Atalhos */
+.emo-face-root.emo-compact {
+  min-height: 84px;
+}
+
+.emo-face-root.emo-compact::before {
+  width: min(50vw, 320px);
+  height: 110px;
+  opacity: 0.35;
+}
+
+.emo-face-root.emo-compact .emo-face-svg {
+  width: min(72%, 250px);
+  max-height: 108px;
 }
 
 /* Formas dos olhos e transições suaves de cor */
@@ -153,6 +195,146 @@
 
 .emo-face-root.emo-state-error .emo-face-head {
   animation: emo-error-shake 420ms ease-in-out 1;
+}
+
+/* Olhos em espiral na emoção dizzy */
+.emo-dizzy-group {
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+
+.emo-dizzy-spiral {
+  fill: none;
+  stroke: var(--emo-color);
+  stroke-width: 9;
+  stroke-linecap: round;
+  transition: stroke 240ms ease;
+}
+
+.emo-dizzy-core {
+  fill: var(--emo-accent);
+}
+
+.emo-dizzy-spinner {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.emo-face-root[data-emotion="dizzy"] .emo-dizzy-spinner-left {
+  animation: emo-dizzy-spin-ccw 1.7s linear infinite;
+}
+
+.emo-face-root[data-emotion="dizzy"] .emo-dizzy-spinner-right {
+  animation: emo-dizzy-spin-cw 1.7s linear infinite;
+}
+
+/* Acessórios SVG sobre #emo-face-head */
+.emo-accessory {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease, transform 240ms ease;
+}
+
+.emo-face-root[data-accessory="blush"] .emo-acc-blush,
+.emo-face-root[data-accessory="sunglasses"] .emo-acc-sunglasses,
+.emo-face-root[data-accessory="headphones"] .emo-acc-headphones,
+.emo-face-root[data-accessory="pomodoro"] .emo-acc-pomodoro {
+  opacity: 1;
+}
+
+.emo-blush-oval {
+  fill: rgba(255, 92, 148, 0.34);
+}
+
+.emo-blush-stripe {
+  stroke: rgba(255, 146, 186, 0.72);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.emo-sunglasses-frame {
+  fill: rgba(12, 16, 26, 0.84);
+  stroke: var(--emo-accent);
+  stroke-width: 4.5;
+}
+
+.emo-sunglasses-bridge,
+.emo-sunglasses-arm {
+  fill: none;
+  stroke: var(--emo-accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.emo-sunglasses-glare {
+  fill: rgba(255, 255, 255, 0.22);
+}
+
+.emo-hp-band {
+  fill: none;
+  stroke: #2c3548;
+  stroke-width: 14;
+  stroke-linecap: round;
+}
+
+.emo-hp-band-cushion {
+  fill: none;
+  stroke: #495672;
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.emo-hp-cup {
+  fill: #1b2230;
+  stroke: #495672;
+  stroke-width: 3.5;
+}
+
+.emo-hp-cup-pad {
+  fill: #323c52;
+}
+
+.emo-hp-led {
+  fill: var(--emo-color);
+}
+
+.emo-pomo-rim,
+.emo-pomo-bridge,
+.emo-pomo-arm {
+  fill: rgba(0, 240, 255, 0.04);
+  stroke: #ffd166;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+}
+
+.emo-pomo-badge {
+  fill: #ff595e;
+}
+
+.emo-pomo-leaf {
+  fill: #52d681;
+}
+
+/* Gotinha de suor SVG */
+.emo-sweat-drop {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+.emo-face-root[data-sweat="true"] .emo-sweat-drop {
+  opacity: 1;
+  animation: emo-sweat-drip 1.9s ease-in-out infinite;
+}
+
+.emo-sweat-body {
+  fill: #56e2ff;
+  stroke: rgba(255, 255, 255, 0.65);
+  stroke-width: 2;
+}
+
+.emo-sweat-shine {
+  fill: rgba(255, 255, 255, 0.78);
 }
 
 /* Halo pulsante do estado listening */
@@ -372,14 +554,44 @@
   }
 }
 
+@keyframes emo-dizzy-spin-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes emo-dizzy-spin-ccw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes emo-sweat-drip {
+  0%,
+  100% {
+    transform: translate(652px, 124px) scale(0.96);
+  }
+  50% {
+    transform: translate(652px, 134px) scale(1.04);
+  }
+}
+
 /* Respeita preferência de movimento reduzido do sistema */
 @media (prefers-reduced-motion: reduce) {
   .emo-face-root[data-state="listening"] .emo-listening-halo,
   .emo-face-root[data-state="thinking"] .emo-thinking-dot,
   .emo-face-root[data-emotion="excited"] .emo-sparkle,
   .emo-face-root[data-emotion="love"] .emo-heart-shape,
+  .emo-face-root[data-emotion="dizzy"] .emo-dizzy-spinner,
   .emo-face-root[data-emotion="sleepy"] .emo-zzz-char,
   .emo-face-root[data-auto-sleepy="true"] .emo-zzz-char,
+  .emo-face-root[data-sweat="true"] .emo-sweat-drop,
   .emo-face-root.emo-state-error .emo-face-head {
     animation: none !important;
   }

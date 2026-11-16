@@ -2,19 +2,45 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Assistente de Mesa</title>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
+  <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="EMO Desk" />
+  <title>Desk Assistant</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+  <link rel="apple-touch-icon" href="/static/icon.svg" />
   <!-- Estilos do rosto animado e da interface principal -->
   <link rel="stylesheet" href="/static/face.css" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
-  <!-- Palco central ocupando toda a tela com o rosto do assistente -->
+<body class="mode-pet">
+  <!-- Palco do rosto animado (tela cheia no modo Pet, compacto nos modos Dock e Display) -->
   <main id="stage" class="stage">
     <div id="face-container" aria-label="Rosto do assistente"></div>
+
+    <!-- Relógio OLED discreto no modo Pet -->
+    <div id="pet-clock" class="pet-clock" aria-label="Relógio atual">
+      <span id="pet-clock-time">00:00</span>
+      <span id="pet-clock-date" class="pet-clock-date"></span>
+    </div>
+
+    <!-- Chip discreto de Pomodoro ativo no modo Pet -->
+    <button
+      id="pet-pomodoro-chip"
+      type="button"
+      class="pet-pomodoro-chip hidden"
+      title="Abrir Smart Display / Pomodoro"
+    >
+      <span id="pet-pomodoro-text">🍅 25:00</span>
+    </button>
   </main>
 
-  <!-- HUD superior discreta com status e controles rápidos -->
+  <!-- HUD superior com status, alternador de modos e controles rápidos -->
   <header id="hud" class="hud" aria-label="Controles superiores">
     <div class="hud-left">
       <div class="status-pill" id="ws-status" title="Status da conexão WebSocket">
@@ -27,6 +53,22 @@
         <span id="emotion-label">neutral</span>
       </div>
     </div>
+
+    <!-- Seletor dos 4 modos de tela -->
+    <nav id="mode-switcher" class="mode-switcher" aria-label="Modos de tela">
+      <button type="button" class="mode-btn is-active" data-mode="pet" aria-pressed="true">
+        🐾 Pet
+      </button>
+      <button type="button" class="mode-btn" data-mode="dock" aria-pressed="false">
+        🎛️ Dock
+      </button>
+      <button type="button" class="mode-btn" data-mode="display" aria-pressed="false">
+        🖥️ Display
+      </button>
+      <button type="button" class="mode-btn" data-mode="diagnostics" aria-pressed="false">
+        🩺 Diagnóstico
+      </button>
+    </nav>
 
     <nav class="hud-actions" aria-label="Ações da interface">
       <button
@@ -48,6 +90,15 @@
         🧠 Memória (<span id="memory-count">0</span>)
       </button>
       <button
+        id="btn-pet-sounds"
+        type="button"
+        class="hud-btn is-active"
+        aria-pressed="true"
+        title="Ativar ou silenciar os sons procedurais do pet"
+      >
+        🔔 Sons Pet
+      </button>
+      <button
         id="btn-tts"
         type="button"
         class="hud-btn is-active"
@@ -55,6 +106,14 @@
         title="Ativar ou silenciar a voz do assistente"
       >
         🔊 Voz
+      </button>
+      <button
+        id="btn-tts-mode"
+        type="button"
+        class="hud-btn"
+        title="Alternar origem da voz TTS: Browser vs Servidor Mac"
+      >
+        🗣️ Browser
       </button>
       <button
         id="btn-caption"
@@ -86,7 +145,7 @@
     </nav>
   </header>
 
-  <!-- Barra rápida para testar as 10 emoções e os 5 estados com 1 clique -->
+  <!-- Barra rápida para testar as emoções e os estados com 1 clique -->
   <section
     id="expressions-bar"
     class="expressions-bar hidden"
@@ -107,18 +166,179 @@
     id="audio-unlock-banner"
     type="button"
     class="audio-unlock-banner"
-    title="Clique para liberar a síntese de voz do navegador"
+    title="Toque para liberar áudio do pet e síntese de voz"
   >
-    🔊 Toque em qualquer lugar para ativar a voz
+    🔊 Toque em qualquer lugar para ativar som e voz
   </button>
 
-  <!-- Área inferior fixa: legenda em streaming + barra de entrada de texto -->
+  <!-- Toast discreto para ações executadas ([action:...], atalhos e avisos) -->
+  <div id="action-toast" class="action-toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- Painel de Modo 2: Dock Viva & Stream Deck de Atalhos do Mac -->
+  <section id="mode-dock" class="workspace-panel hidden" aria-label="Dock Viva e Stream Deck do Mac">
+    <div class="dock-layout">
+      <!-- Dock Viva do macOS -->
+      <div class="panel-card">
+        <div class="panel-head">
+          <div class="panel-title-row">
+            <h2>🖥️ Dock Viva do Mac</h2>
+            <span id="dock-active-app" class="panel-pill">Ativo: —</span>
+          </div>
+          <button id="btn-refresh-apps" type="button" class="btn-secondary btn-sm">
+            ↻ Atualizar Apps
+          </button>
+        </div>
+        <div id="dock-apps-grid" class="dock-apps-grid" role="list"></div>
+      </div>
+
+      <!-- Stream Deck de Atalhos -->
+      <div class="panel-card">
+        <div class="panel-head">
+          <div class="panel-title-row">
+            <h2>⚡ Stream Deck de Atalhos</h2>
+            <div id="shortcut-category-tabs" class="category-tabs" role="tablist">
+              <button type="button" class="cat-tab is-active" data-cat="all">Todos</button>
+              <button type="button" class="cat-tab" data-cat="spaces">Espaços</button>
+              <button type="button" class="cat-tab" data-cat="capture">Captura</button>
+              <button type="button" class="cat-tab" data-cat="editing">Edição</button>
+              <button type="button" class="cat-tab" data-cat="media">Mídia</button>
+              <button type="button" class="cat-tab" data-cat="apps">Apps</button>
+              <button type="button" class="cat-tab" data-cat="custom">Custom</button>
+            </div>
+          </div>
+          <div class="panel-head-actions">
+            <button id="btn-new-shortcut" type="button" class="btn-primary btn-sm">
+              ➕ Novo Atalho
+            </button>
+            <button id="btn-config-shortcuts" type="button" class="btn-secondary btn-sm">
+              ⚙️ Configurar Atalhos
+            </button>
+          </div>
+        </div>
+        <div id="shortcuts-grid" class="shortcuts-grid" role="list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Painel de Modo 3: Smart Display Ambiente -->
+  <section id="mode-display" class="workspace-panel hidden" aria-label="Smart Display Ambiente">
+    <div class="display-grid">
+      <!-- Relógio & Data OLED grandes -->
+      <article class="panel-card display-clock-card">
+        <div class="display-eyebrow">Relógio Ambiente</div>
+        <div id="display-clock-time" class="display-clock-time">00:00:00</div>
+        <div id="display-clock-date" class="display-clock-date">—</div>
+      </article>
+
+      <!-- Pomodoro Interativo -->
+      <article class="panel-card display-pomo-card">
+        <div class="panel-head">
+          <h2>🍅 Pomodoro Foco</h2>
+          <span id="pomodoro-phase-label" class="panel-pill">Pronto</span>
+        </div>
+        <div id="pomodoro-timer" class="pomodoro-timer">25:00</div>
+        <div class="pomo-actions">
+          <button id="btn-pomo-focus" type="button" class="btn-primary">▶ Foco 25m</button>
+          <button id="btn-pomo-break" type="button" class="btn-secondary">☕ Pausa 5m</button>
+          <button id="btn-pomo-stop" type="button" class="btn-danger-ghost-sm">⏹ Parar</button>
+        </div>
+      </article>
+
+      <!-- Now Playing do Mac -->
+      <article class="panel-card display-media-card">
+        <div class="panel-head">
+          <h2>🎵 Tocando no Mac</h2>
+          <span id="now-playing-state" class="panel-pill">Pausado</span>
+        </div>
+        <div id="now-playing-title" class="media-title">Nenhuma mídia ativa</div>
+        <div id="now-playing-artist" class="media-artist">Spotify / Apple Music</div>
+        <div class="media-controls">
+          <button id="btn-media-prev" type="button" class="btn-secondary" title="Faixa anterior">⏮</button>
+          <button id="btn-media-play" type="button" class="btn-primary" title="Play / Pause">⏯ Play/Pause</button>
+          <button id="btn-media-next" type="button" class="btn-secondary" title="Próxima faixa">⏭</button>
+        </div>
+      </article>
+
+      <!-- Clima -->
+      <article class="panel-card display-weather-card">
+        <div class="panel-head">
+          <h2>🌤️ Clima</h2>
+          <button id="btn-refresh-weather" type="button" class="btn-secondary btn-sm">↻</button>
+        </div>
+        <div class="weather-main">
+          <span id="weather-icon" class="weather-icon">☀️</span>
+          <div>
+            <div id="weather-temp" class="weather-temp">--°C</div>
+            <div id="weather-desc" class="weather-desc">Carregando...</div>
+            <div id="weather-city" class="weather-city">—</div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Telemetria do Mac & Afinidade do Pet -->
+      <article class="panel-card display-telemetry-card">
+        <div class="panel-head">
+          <h2>⚡ Mac & Estado do Pet</h2>
+          <span id="pet-mood-label" class="panel-pill">Humor: neutro</span>
+        </div>
+        <div class="telemetry-rows">
+          <div class="telemetry-kv">
+            <span>App Ativo</span>
+            <strong id="mac-telemetry-app">—</strong>
+          </div>
+          <div class="telemetry-kv">
+            <span>Bateria</span>
+            <strong id="mac-telemetry-battery">—</strong>
+          </div>
+          <div class="telemetry-kv">
+            <span>Volume</span>
+            <strong id="mac-telemetry-volume">—</strong>
+          </div>
+        </div>
+        <div class="pet-bars">
+          <div class="pet-bar-row">
+            <span>❤️ Afinidade (<strong id="pet-affinity-val">50</strong>)</span>
+            <div class="pet-bar-track"><div id="pet-affinity-bar" class="pet-bar-fill is-love"></div></div>
+          </div>
+          <div class="pet-bar-row">
+            <span>⚡ Energia (<strong id="pet-energy-val">85</strong>)</span>
+            <div class="pet-bar-track"><div id="pet-energy-bar" class="pet-bar-fill is-energy"></div></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- Painel de Modo 4: Estúdio de Diagnóstico -->
+  <section id="mode-diagnostics" class="workspace-panel hidden" aria-label="Estúdio de Diagnóstico">
+    <div id="diagnostics-root" class="diagnostics-root"></div>
+  </section>
+
+  <!-- Área inferior fixa: aprovação rápida + legenda + Push-to-Talk + entrada de texto -->
   <footer class="bottom-dock">
+    <!-- Confirmação rápida de tool_approval_request -->
+    <div id="approval-banner" class="approval-banner hidden" role="alertdialog" aria-live="assertive">
+      <span id="approval-text" class="approval-text">Confirmar execução?</span>
+      <div class="approval-actions">
+        <button id="btn-approve-action" type="button" class="btn-primary btn-sm">✓ Autorizar</button>
+        <button id="btn-deny-action" type="button" class="btn-secondary btn-sm">✕ Recusar</button>
+      </div>
+    </div>
+
     <div id="caption-box" class="caption-box is-empty" aria-live="polite">
       <p id="caption-text" class="caption-text"></p>
     </div>
 
     <form id="chat-form" class="chat-form" autocomplete="off">
+      <button
+        id="btn-ptt"
+        type="button"
+        class="ptt-btn"
+        title="Segure para falar (ou use Espaço / L2 / R2)"
+        aria-pressed="false"
+      >
+        🎤 Segure para falar
+      </button>
       <input
         id="chat-input"
         class="chat-input"
@@ -130,6 +350,211 @@
       <button id="btn-send" class="send-btn" type="submit">Enviar</button>
     </form>
   </footer>
+
+  <!-- Backdrop e Modal CRUD completo de Atalhos -->
+  <div id="shortcut-modal-backdrop" class="modal-backdrop hidden" aria-hidden="true"></div>
+  <section
+    id="shortcut-modal"
+    class="shortcut-modal hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="shortcut-modal-title"
+  >
+    <div class="modal-header">
+      <h2 id="shortcut-modal-title">⚙️ Configurar Atalhos do Mac</h2>
+      <button id="btn-close-shortcut-modal" type="button" class="icon-close-btn" aria-label="Fechar">
+        ×
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Formulário de criação / edição -->
+      <form id="shortcut-form" class="shortcut-form" autocomplete="off">
+        <input type="hidden" id="sc-id" value="" />
+        <h3 id="sc-form-heading" class="modal-subtitle">Novo Atalho</h3>
+
+        <div class="form-row-2">
+          <label class="field">
+            <span>Título</span>
+            <input id="sc-title" type="text" required maxlength="60" placeholder="Ex: Pesquisar e Substituir" />
+          </label>
+          <label class="field field-icon">
+            <span>Ícone</span>
+            <input id="sc-icon" type="text" maxlength="8" value="⚡" placeholder="⚡" />
+          </label>
+        </div>
+
+        <div class="emoji-quick-row" aria-label="Ícones rápidos">
+          <button type="button" class="emoji-chip" data-emoji="⚡">⚡</button>
+          <button type="button" class="emoji-chip" data-emoji="🔄">🔄</button>
+          <button type="button" class="emoji-chip" data-emoji="🔍">🔍</button>
+          <button type="button" class="emoji-chip" data-emoji="📸">📸</button>
+          <button type="button" class="emoji-chip" data-emoji="🖥️">🖥️</button>
+          <button type="button" class="emoji-chip" data-emoji="🎵">🎵</button>
+          <button type="button" class="emoji-chip" data-emoji="🍅">🍅</button>
+          <button type="button" class="emoji-chip" data-emoji="🚀">🚀</button>
+          <button type="button" class="emoji-chip" data-emoji="📋">📋</button>
+          <button type="button" class="emoji-chip" data-emoji="🔒">🔒</button>
+        </div>
+
+        <div class="form-row-3">
+          <label class="field">
+            <span>Categoria</span>
+            <select id="sc-category">
+              <option value="spaces">Espaços</option>
+              <option value="capture">Captura</option>
+              <option value="editing">Edição</option>
+              <option value="media">Mídia</option>
+              <option value="apps">Apps</option>
+              <option value="custom" selected>Custom</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Cor do Tile</span>
+            <select id="sc-color">
+              <option value="cyan">Ciano</option>
+              <option value="amber">Âmbar</option>
+              <option value="violet">Violeta</option>
+              <option value="emerald">Esmeralda</option>
+              <option value="rose">Rosa</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Tipo de Ação</span>
+            <select id="sc-action-type">
+              <option value="keystroke">Tecla / Atalho (keystroke)</option>
+              <option value="app_activate">Abrir / Focar App</option>
+              <option value="mac_command">Comando Seguro Mac</option>
+              <option value="agent_prompt">Prompt no Assistente</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Payload: keystroke -->
+        <div id="sc-payload-keystroke" class="payload-box">
+          <div class="payload-head">
+            <span>Combinação de Teclas</span>
+            <button id="btn-record-keys" type="button" class="btn-secondary btn-sm">
+              🎹 Gravar no Teclado
+            </button>
+          </div>
+          <input
+            id="sc-keys"
+            type="text"
+            placeholder="Ex: cmd+opt+f"
+            aria-label="Combinação de teclas"
+          />
+          <div class="builder-row" aria-label="Construtor por botões para toque">
+            <button type="button" class="mod-toggle" data-mod="cmd">⌘ Cmd</button>
+            <button type="button" class="mod-toggle" data-mod="opt">⌥ Opt</button>
+            <button type="button" class="mod-toggle" data-mod="ctrl">⌃ Ctrl</button>
+            <button type="button" class="mod-toggle" data-mod="shift">⇧ Shift</button>
+            <select id="sc-key-select" class="builder-key-select" aria-label="Selecionar tecla">
+              <option value="">+ Tecla...</option>
+              <option value="a">A</option>
+              <option value="c">C</option>
+              <option value="d">D</option>
+              <option value="f">F</option>
+              <option value="q">Q</option>
+              <option value="r">R</option>
+              <option value="s">S</option>
+              <option value="v">V</option>
+              <option value="w">W</option>
+              <option value="x">X</option>
+              <option value="z">Z</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="tab">Tab</option>
+              <option value="grave">Crase (`)</option>
+              <option value="space">Espaço</option>
+              <option value="enter">Enter</option>
+              <option value="esc">Esc</option>
+              <option value="left">Seta ⬅️</option>
+              <option value="right">Seta ➡️</option>
+              <option value="up">Seta ⬆️</option>
+              <option value="down">Seta ⬇️</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Payload: app_activate -->
+        <div id="sc-payload-app" class="payload-box hidden">
+          <label class="field">
+            <span>Nome do App no Mac</span>
+            <input id="sc-app-name" type="text" placeholder="Ex: Google Chrome" />
+          </label>
+        </div>
+
+        <!-- Payload: mac_command -->
+        <div id="sc-payload-command" class="payload-box hidden">
+          <label class="field">
+            <span>Comando Pré-Mapeado</span>
+            <select id="sc-mac-command">
+              <option value="mission_control">Mission Control</option>
+              <option value="app_expose">Exposé do App</option>
+              <option value="space_left">Espaço à Esquerda</option>
+              <option value="space_right">Espaço à Direita</option>
+              <option value="screenshot_clipboard">Print Seleção → Clipboard</option>
+              <option value="screenshot_area_file">Print Seleção → Arquivo</option>
+              <option value="screenshot_full">Print Tela Inteira</option>
+              <option value="play_pause">Play / Pause Mídia</option>
+              <option value="next_track">Próxima Faixa</option>
+              <option value="prev_track">Faixa Anterior</option>
+              <option value="volume_up">Aumentar Volume</option>
+              <option value="volume_down">Diminuir Volume</option>
+              <option value="volume_mute">Mudo / Som</option>
+              <option value="toggle_dock">Mostrar / Ocultar Dock</option>
+              <option value="lock_screen">Bloquear Tela</option>
+              <option value="pomodoro_start">Iniciar Pomodoro 25m</option>
+              <option value="pomodoro_stop">Parar Pomodoro</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Payload: agent_prompt -->
+        <div id="sc-payload-prompt" class="payload-box hidden">
+          <label class="field">
+            <span>Prompt enviado ao Assistente</span>
+            <textarea id="sc-agent-prompt" rows="2" placeholder="Ex: Resuma minhas tarefas de hoje"></textarea>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Gatilhos de voz (separados por vírgula)</span>
+          <input id="sc-voice-triggers" type="text" placeholder="Ex: pesquisar e substituir, substituir" />
+        </label>
+
+        <div class="checkbox-row">
+          <label class="check-item">
+            <input id="sc-pinned" type="checkbox" checked />
+            <span>Fixar no Stream Deck</span>
+          </label>
+          <label class="check-item">
+            <input id="sc-confirm" type="checkbox" />
+            <span>Pedir confirmação antes</span>
+          </label>
+        </div>
+
+        <div class="modal-form-actions">
+          <button id="btn-sc-save" type="submit" class="btn-primary">💾 Salvar Atalho</button>
+          <button id="btn-sc-reset-form" type="button" class="btn-secondary">➕ Limpar / Novo</button>
+          <button id="btn-sc-delete" type="button" class="btn-danger-ghost-sm hidden">🗑️ Remover</button>
+        </div>
+      </form>
+
+      <!-- Lista de atalhos cadastrados para editar/trocar/reordenar/restaurar -->
+      <div class="shortcut-manage-pane">
+        <div class="manage-head">
+          <h3 class="modal-subtitle">Atalhos Cadastrados</h3>
+          <button id="btn-sc-reset-defaults" type="button" class="btn-secondary btn-sm">
+            ↺ Restaurar Padrões
+          </button>
+        </div>
+        <ul id="sc-manage-list" class="sc-manage-list"></ul>
+      </div>
+    </div>
+  </section>
 
   <!-- Fundo escuro da gaveta lateral de memória -->
   <div id="memory-backdrop" class="memory-backdrop hidden" aria-hidden="true"></div>
@@ -222,8 +647,14 @@
     </div>
   </aside>
 
-  <!-- Ordem obrigatória: face.js antes de app.js -->
+  <!-- Áudio oculto destravado no primeiro toque para TTS do servidor (iPhone Safari / Android) -->
+  <audio id="server-tts-audio" class="hidden" playsinline preload="auto"></audio>
+
+  <!-- Ordem obrigatória de carregamento dos módulos -->
+  <script src="/static/audio_synth.js"></script>
   <script src="/static/face.js"></script>
+  <script src="/static/gamepad.js"></script>
+  <script src="/static/diagnostics.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

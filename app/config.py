@@ -17,6 +17,15 @@ _DEFAULT_LLM_BASE_URL = "http://127.0.0.1:31415/v1"
 _DEFAULT_LLM_MODEL = "claude-haiku-4-5"
 _DEFAULT_HOST = "0.0.0.0"
 _DEFAULT_PORT = 8000
+_DEFAULT_HTTPS_PORT = 8443
+_DEFAULT_CERT_FILE = BASE_DIR / "certs" / "cert.pem"
+_DEFAULT_KEY_FILE = BASE_DIR / "certs" / "key.pem"
+_DEFAULT_STT_MODEL = "base"
+_DEFAULT_STT_LANGUAGE = "pt"
+_DEFAULT_TTS_VOICE = "Luciana"
+_DEFAULT_WEATHER_LATITUDE = -23.5505
+_DEFAULT_WEATHER_LONGITUDE = -46.6333
+_DEFAULT_WEATHER_CITY = "São Paulo"
 _DEFAULT_MAX_SHORT_TERM_MESSAGES = 10
 _DEFAULT_MAX_USER_FACTS = 25
 _DEFAULT_DB_PATH = BASE_DIR / "data" / "memory.db"
@@ -40,6 +49,15 @@ class Settings:
     max_short_term_messages: int = _DEFAULT_MAX_SHORT_TERM_MESSAGES
     max_user_facts: int = _DEFAULT_MAX_USER_FACTS
     db_path: Path = _DEFAULT_DB_PATH
+    https_port: int = _DEFAULT_HTTPS_PORT
+    cert_file: Path = _DEFAULT_CERT_FILE
+    key_file: Path = _DEFAULT_KEY_FILE
+    stt_model: str = _DEFAULT_STT_MODEL
+    stt_language: str = _DEFAULT_STT_LANGUAGE
+    tts_voice: str = _DEFAULT_TTS_VOICE
+    weather_latitude: float = _DEFAULT_WEATHER_LATITUDE
+    weather_longitude: float = _DEFAULT_WEATHER_LONGITUDE
+    weather_city: str = _DEFAULT_WEATHER_CITY
 
 
 def _parse_int(raw: str | None, default: int) -> int:
@@ -55,14 +73,32 @@ def _parse_int(raw: str | None, default: int) -> int:
         return default
 
 
-def _resolve_db_path(raw: str | None) -> Path:
-    """Resolve o caminho do banco SQLite relativo ao `BASE_DIR` quando não for absoluto."""
+def _parse_float(raw: str | None, default: float) -> float:
+    """Converte variável de ambiente em ponto flutuante com fallback seguro."""
+    if raw is None:
+        return default
+    cleaned = raw.strip()
+    if not cleaned:
+        return default
+    try:
+        return float(cleaned)
+    except ValueError:
+        return default
+
+
+def _resolve_path(raw: str | None, default: Path) -> Path:
+    """Resolve caminho relativo ao `BASE_DIR` quando não for absoluto."""
     if raw is None or not raw.strip():
-        return _DEFAULT_DB_PATH
+        return default
     candidate = Path(raw.strip()).expanduser()
     if not candidate.is_absolute():
         return (BASE_DIR / candidate).resolve()
     return candidate
+
+
+def _resolve_db_path(raw: str | None) -> Path:
+    """Resolve o caminho do banco SQLite relativo ao `BASE_DIR` quando não for absoluto."""
+    return _resolve_path(raw, _DEFAULT_DB_PATH)
 
 
 def load_settings(env_path: Path | None = None) -> Settings:
@@ -79,6 +115,17 @@ def load_settings(env_path: Path | None = None) -> Settings:
     model = os.getenv("LLM_MODEL", _DEFAULT_LLM_MODEL).strip() or _DEFAULT_LLM_MODEL
     host = os.getenv("HOST", _DEFAULT_HOST).strip() or _DEFAULT_HOST
     port = _parse_int(os.getenv("PORT"), _DEFAULT_PORT)
+    https_port = _parse_int(os.getenv("HTTPS_PORT"), _DEFAULT_HTTPS_PORT)
+    if https_port <= 0:
+        https_port = _DEFAULT_HTTPS_PORT
+    cert_file = _resolve_path(os.getenv("CERT_FILE"), _DEFAULT_CERT_FILE)
+    key_file = _resolve_path(os.getenv("KEY_FILE"), _DEFAULT_KEY_FILE)
+    stt_model = os.getenv("STT_MODEL", _DEFAULT_STT_MODEL).strip() or _DEFAULT_STT_MODEL
+    stt_language = os.getenv("STT_LANGUAGE", _DEFAULT_STT_LANGUAGE).strip() or _DEFAULT_STT_LANGUAGE
+    tts_voice = os.getenv("TTS_VOICE", _DEFAULT_TTS_VOICE).strip() or _DEFAULT_TTS_VOICE
+    weather_latitude = _parse_float(os.getenv("WEATHER_LATITUDE"), _DEFAULT_WEATHER_LATITUDE)
+    weather_longitude = _parse_float(os.getenv("WEATHER_LONGITUDE"), _DEFAULT_WEATHER_LONGITUDE)
+    weather_city = os.getenv("WEATHER_CITY", _DEFAULT_WEATHER_CITY).strip() or _DEFAULT_WEATHER_CITY
     max_short_term = max(
         1,
         _parse_int(os.getenv("MAX_SHORT_TERM_MESSAGES"), _DEFAULT_MAX_SHORT_TERM_MESSAGES),
@@ -98,6 +145,15 @@ def load_settings(env_path: Path | None = None) -> Settings:
         max_short_term_messages=max_short_term,
         max_user_facts=max_facts,
         db_path=db_path,
+        https_port=https_port,
+        cert_file=cert_file,
+        key_file=key_file,
+        stt_model=stt_model,
+        stt_language=stt_language,
+        tts_voice=tts_voice,
+        weather_latitude=weather_latitude,
+        weather_longitude=weather_longitude,
+        weather_city=weather_city,
     )
 
 
