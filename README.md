@@ -1,95 +1,230 @@
-# Desk Assistant (Estilo EMO)
+# Desk Assistant (Pet Vivo + Copiloto LLM + Dock & Stream Deck Mac)
 
-Assistente de mesa carismático com rosto animado em fundo preto (`960x720` / 4:3 e janelas responsivas), streaming de respostas via WebSocket, síntese de voz no navegador (`Web Speech API`) e memória persistente em duas camadas usando SQLite.
+Assistente de mesa carismático estilo **EMO / Vector / Cozmo** em tela cheia sobre fundo preto `#000000`, projetado nativamente para **Anbernic RG406H** (Android 13, `960×720`, Gamepad API), **macOS** (Desktop / tela externa) e **iPhone** (iOS Safari / PWA).
+
+Combina um **pet de mesa vivo** (rosto SVG + partículas em Canvas + áudio procedural 100% Web Audio API), **copiloto LLM com memória cognitiva em SQLite**, **voz bidirecional com barge-in**, **Dock Viva do macOS** e um **Stream Deck de atalhos configuráveis** acionável por toque, controle físico ou voz.
+
+---
 
 ## Arquitetura do Projeto
 
-- **Backend (`app/main.py`, `app/llm.py`, `app/config.py`)**: servidor FastAPI com canal WebSocket (`/ws`), API REST para gestão da memória (`/api/memory*`), endpoint de saúde (`/health`) e cliente assíncrono em streaming compatível com a API OpenAI (`/chat/completions`).
-  - O `TagStreamParser` filtra tags `[emotion:<nome>]` (e a forma abreviada `[<nome>]`) além de `[fact: <fato>]` em tempo real para que nunca apareçam nas legendas nem sejam lidas pelo TTS.
-  - Tokens internos de raciocínio (`delta.reasoning`) emitidos por modelos locais são ignorados do texto falado, mantendo o rosto no estado `thinking` até a resposta útil começar.
-  - Logs aplicam redação automática (`SecretRedactingFilter`) para impedir vazamento de chaves de API.
-- **Frontend (`static/`)**: palco central `#000000` com olhos animados em SVG (`face.js` / `face.css`), HUD discreta, barra de legenda em streaming, envio de texto, indicador de digitação e controle de voz em `pt-BR`.
+### Backend (`app/`)
+- **`app/main.py`**: servidor FastAPI com canal WebSocket concorrente (`/ws`), endpoints REST de memória (`/api/memory*`), Stream Deck (`/api/shortcuts*`), Dock Viva & telemetria do Mac (`/api/mac/*`, `/api/weather`), voz (`/api/tts`, `/api/tts/voices`, `/api/stt`), diagnóstico (`/api/diagnostics`), saúde (`/health`) e manifesto PWA (`/manifest.json`).
+- **`app/llm.py`**: cliente assíncrono em streaming (`/chat/completions`) com 12 emoções suportadas (`neutral`, `happy`, `excited`, `curious`, `skeptical`, `surprised`, `sad`, `wink`, `love`, `sleepy`, `angry`, `dizzy`). O `TagStreamParser` remove tags `[emotion:...]`, `[fact:...]`, `[action:shortcut:...]`, `[action:app:...]` e `[action:pomodoro:...]`, ignora `delta.reasoning` e emite eventos incrementais `sentence` para TTS frase-a-frase de baixa latência.
+- **`app/memory.py`**: memória cognitiva persistente em SQLite (`WAL`):
+  - **Curto Prazo (`messages`)**: janela deslizante configurável (`MAX_SHORT_TERM_MESSAGES=10`).
+  - **Resumo Contínuo (`rolling_state`)**: resumo conciso de contexto quando mensagens antigas saem da janela.
+  - **Longo Prazo (`user_facts`)**: fatos com `pinned` (Core Memory protegida), `importance`, decaimento por recência, busca `FTS5` e consolidação (`consolidate_facts()`), respeitando o orçamento de prompt (`1200` chars) e regra *Show, Don't Tell*.
+  - **Estado Emocional (`companion_state`)**: `pleasure`, `arousal`, `energy` e `affinity` (sobe com conversas e carinhos `pet`, decai suavemente ao longo do tempo).
+- **`app/shortcuts.py`**: `ShortcutStore` em SQLite com seed automático de 24 atalhos padrão (`spaces`, `capture`, `editing`, `apps`, `media`, `custom`), CRUD completo, reordenação, busca por gatilho de voz e `build_agent_shortcuts_prompt()` para mapear dinamicamente os atalhos e apps abertos para o LLM.
+- **`app/mac_control.py`**: `MacController` com execução estrita via `subprocess.run(..., shell=False)` em listas `argv`:
+  - Whitelist de modificadores (`cmd`, `opt`, `ctrl`, `shift`), teclas seguras e comandos (`VALID_MAC_COMMANDS`).
+  - Validação estrita de nomes de apps (`_APP_NAME_RE`, bloqueando `..` e flags).
+  - Diagnóstico explícito de permissão de Acessibilidade do macOS.
+  - Dock Viva (`list_running_apps`), telemetria leve com cache de 3s (`get_mac_status`: app ativo, bateria, volume, Spotify/Music *Now Playing*) e clima via Open-Meteo com cache de 15 min (`get_weather`).
+- **`app/stt.py`**: `LocalSTT` com carregamento sob demanda (*lazy-load*) para `mlx-whisper` ou `faster-whisper`, conversão de áudio via `PyAV` (`av`) ou `/usr/bin/afconvert` (`shell=False`) e fallback limpo quando nenhum motor Whisper estiver instalado.
+- **`app/tts.py`**: `ServerTTS` 100% offline no macOS via `/usr/bin/say` + `/usr/bin/afconvert` (`shell=False`), gerando `.m4a` (`audio/mp4`) ou `.wav` (`audio/wav`) com listagem de vozes priorizando `pt_BR` (`Luciana`).
+- **`app/config.py`**: carregamento de `.env` (`Settings`) e `SecretRedactingFilter` nos logs para impedir qualquer vazamento de `LLM_API_KEY` ou tokens `freellmapi-*` / `sk-*`.
 
-### Arquitetura de Memória em 2 Camadas (`app/memory.py`)
+### Frontend (`static/`)
+- **`static/audio_synth.js` (`window.EmoAudio`)**: sintetizador procedural via Web Audio API (0 KB de MP3/WAV) para `chirp(emotion)`, `purr(active)` (~60Hz com LFO), `click()`, `alert()`, `wake()` e `getPulseLevel()`.
+- **`static/face.js` & `static/face.css` (`window.EmoFace`)**: rosto SVG em 60fps + camada `<canvas class="emo-particles-canvas">` com física *squash-and-stretch*, curiosidade direcional (`|lookX| > 0.6`), micro-eventos autônomos em `idle` (inseto virtual, bocejo, espiar canto) antes de `sleepy` aos 90s, toque direto `reactToTouch('poke' | 'pet', nx, ny)`, acessórios (`none`, `sunglasses`, `headphones`, `pomodoro`, `blush`), clima (`rain`, `snow`, `sun`), gotinha de suor (`setSweat`) e modo compacto (`.emo-compact`).
+- **`static/gamepad.js` (`window.DeskGamepad`)**: suporte nativo ao controle do **Anbernic RG406H** via Gamepad API com *haptics* (`navigator.vibrate`) e snapshot ao vivo.
+- **`static/diagnostics.js` (`window.DeskDiagnostics`)**: Estúdio de Diagnóstico de `isSecureContext`, microfones, loopback de 3s, vozes TTS, Gamepad e sensores.
+- **`static/app.js`, `static/index.html`, `static/style.css`, `static/manifest.json`, `static/icon.svg`**: interface responsiva multiplataforma (`960×720`, desktop Mac e iPhone `100dvh` + `safe-area-inset-*`).
 
-1. **Camada 1 — Curto Prazo (Janela Deslizante)**:
-   - Armazena o histórico recente da conversa na tabela `messages` do SQLite.
-   - Apenas as últimas `MAX_SHORT_TERM_MESSAGES` (padrão: `10`) mensagens são enviadas ao modelo em ordem cronológica, mantendo o contexto leve e previsível.
-2. **Camada 2 — Longo Prazo (Fatos sobre o Usuário)**:
-   - Armazena fatos duradouros (nome, preferências, interesses, rotina) na tabela `user_facts`, com normalização para atualizar fatos semelhantes sem duplicar.
-   - Os fatos são extraídos tanto das tags `[fact: ...]` geradas pelo modelo quanto de declarações explícitas do usuário, respeitando o limite `MAX_USER_FACTS` (padrão: `25`).
-   - A cada turno, `build_memory_context()` injeta esses fatos no *system prompt* dentro de um orçamento fixo de caracteres (`1200` chars).
-   - Limpar o histórico da conversa (`Limpar conversa atual` ou `clear_history`) apaga apenas a Camada 1 e preserva os fatos aprendidos na Camada 2.
+---
+
+## Os 4 Modos de Tela
+
+Alterne pela barra superior ou pelos botões **`L1` / `R1`** no RG406H:
+
+1. **🐾 Pet Vivo (Padrão)**: rosto em tela cheia `#000000`, sons procedurais, relógio OLED discreto no canto, chip de Pomodoro ativo e interação por toque:
+   - **Tap (`poke`)**: o olho atingido semicerra e olha para o ponto; toques rápidos repetidos ativam `skeptical` e `angry` brincalhão.
+   - **Arrastar (`pet`)**: carinho contínuo com olhos seguindo o dedo, partículas de coração, ronronar (`EmoAudio.purr`) e aumento de afinidade no SQLite.
+   - **Tocar durante a fala**: dispara **barge-in** imediato.
+2. **🎛️ Dock & Atalhos do Mac**: rosto compacto na faixa superior reagindo às ações + **Dock Viva do Mac** (apps abertos com destaque para o frontal + favoritos) + **Stream Deck de Atalhos** filtrável por categoria (`Todos`, `Espaços`, `Captura`, `Edição`, `Mídia`, `Apps`, `Custom`) + modal **⚙️ Configurar Atalhos**.
+3. **🖥️ Smart Display Ambiente**: relógio e data grandes, timer **Pomodoro** (`25m` foco / `5m` pausa), *Now Playing* (Spotify / Apple Music com Play/Pause, Anterior, Próxima), clima via Open-Meteo e telemetria do Mac + barras de afinidade e energia do pet.
+4. **🩺 Estúdio de Diagnóstico**: validação de contexto seguro (`isSecureContext`), seletor de microfone + medidor em tempo real + gravação **Loopback 3s**, inspetor de vozes TTS (Browser vs Servidor Mac), inspetor ao vivo do Gamepad RG406H e leitura de giroscópio/acelerômetro (com botão de permissão para iOS 13+).
+
+---
+
+## Stream Deck, Dock Viva & Comandos por Voz no Agente
+
+### Gerenciar Atalhos na Interface
+No modo **🎛️ Dock**, clique em **➕ Novo Atalho**, **✏️** no tile ou **⚙️ Configurar Atalhos**:
+- **Tipos suportados**:
+  - `keystroke`: combinação de teclas no Mac (ex.: `cmd+opt+f` para *Pesquisar e Substituir*).
+  - `app_activate`: abrir ou trazer aplicativo para frente (ex.: `Google Chrome`).
+  - `mac_command`: comandos seguros pré-mapeados (`mission_control`, `app_expose`, `space_left`, `space_right`, `screenshot_clipboard`, `screenshot_area_file`, `screenshot_full`, `play_pause`, `next_track`, `prev_track`, `volume_up`, `volume_down`, `volume_mute`, `toggle_dock`, `lock_screen`, `pomodoro_start`, `pomodoro_stop`).
+  - `agent_prompt`: envia um prompt pré-definido direto para o assistente.
+- **Gravador + Construtor de Teclas**:
+  - No **Mac**: clique em **🎹 Gravar no Teclado** e pressione a combinação física (ex.: `Cmd + Option + F`).
+  - No **RG406H / iPhone**: monte a combinação tocando nos modificadores `⌘ Cmd`, `⌥ Opt`, `⌃ Ctrl`, `⇧ Shift` + tecla.
+- **Confirmação de Segurança**: marque *Pedir confirmação antes* em atalhos sensíveis para exigir aprovação explícita (`tool_approval_request`) antes da execução.
+
+### Comandos por Voz / Texto no Copiloto
+A cada turno, o catálogo atual do SQLite e os apps abertos são injetados no *system prompt*. Exemplos naturais:
+- *"Pesquisar e substituir"* → dispara `[action:shortcut:find_replace]` (`cmd+opt+f`).
+- *"Vai pro espaço da direita"* / *"Abre o Mission Control"* → aciona espaços/janelas sem precisar decorar atalhos.
+- *"Tira um print de seleção pro clipboard"* → dispara `cmd+ctrl+shift+4`.
+- *"Abre o Chrome"* / *"Traz o VS Code pra frente"* → dispara `[action:app:Google Chrome]`.
+- *"Inicia um Pomodoro"* / *"Para o Pomodoro"* → dispara `[action:pomodoro:start|stop]`.
+
+> **Importante (macOS Acessibilidade)**: para `keystroke` e `app_expose` funcionarem via `System Events`, conceda permissão de Acessibilidade ao terminal/processo que executa o Uvicorn em **Ajustes do Sistema → Privacidade e Segurança → Acessibilidade**.
+
+---
+
+## Controles no Anbernic RG406H (Gamepad API)
+
+| Controle RG406H | Ação no Desk Assistant |
+| :--- | :--- |
+| **Analógico Esquerdo** | Move o olhar do pet (`EmoFace.lookAt`) |
+| **Segurar `L2` ou `R2`** | **Push-to-Talk** (segurar grava, soltar envia áudio + vibração háptica) |
+| **`L1` / `R1`** | Alterna entre os 4 modos (`Pet` ↔ `Dock` ↔ `Display` ↔ `Diagnóstico`) |
+| **`D-Pad`** | Navega pelos apps da Dock Viva e tiles do Stream Deck / Display |
+| **`A`** | Executa o app/atalho selecionado (ou abre Expressões no modo Pet) |
+| **`B`** | **Barge-in** (interrompe fala/LLM na hora) ou fecha modal aberto |
+| **`X`** | Mostra / oculta a legenda |
+| **`Y`** | Alterna TTS entre **Browser** e **Servidor Mac (`/api/tts`)** |
+| **`Select`** | Alterna Tela Cheia + WakeLock |
+| **`Start`** | Abre/fecha Gaveta de Memória (ou Config. de Atalhos no modo Dock) |
+
+**Atalhos no teclado do Mac**: segurar **`Espaço`** (fora de campos de texto) ativa o **Push-to-Talk**; **`Esc`** dispara **barge-in** ou fecha modais.
+
+---
 
 ## Configuração (`.env`)
 
-1. Na pasta do projeto, crie o arquivo `.env` a partir do modelo:
+Crie o arquivo local a partir do exemplo (nunca versione `.env`, `certs/`, `.venv/` ou `data/*.db*`):
 
 ```bash
 cp .env.example .env
 ```
 
-2. Edite o `.env` com suas configurações locais (nunca versione o `.env` no Git):
+Principais variáveis:
 
 ```env
 LLM_BASE_URL=http://127.0.0.1:31415/v1
 LLM_API_KEY=sua-chave-aqui
 LLM_MODEL=claude-haiku-4-5
+
 HOST=0.0.0.0
 PORT=8000
+HTTPS_PORT=8443
+CERT_FILE=certs/cert.pem
+KEY_FILE=certs/key.pem
+
 MAX_SHORT_TERM_MESSAGES=10
 MAX_USER_FACTS=25
+DB_PATH=data/memory.db
+
+STT_MODEL=base
+STT_LANGUAGE=pt
+TTS_VOICE=Luciana
+
+WEATHER_CITY=São Paulo
+WEATHER_LATITUDE=-23.5505
+WEATHER_LONGITUDE=-46.6333
 ```
 
-## Como Rodar o Servidor
+---
 
-Dentro da pasta do projeto, certifique-se de que sua API LLM local está rodando (por padrão em `http://127.0.0.1:31415/v1`).
+## Como Rodar o Servidor (HTTP, Túnel ADB e HTTPS na LAN)
 
-**Usando `.venv` diretamente:**
+Certifique-se de que sua API LLM local está rodando (padrão `http://127.0.0.1:31415/v1`).
+
+### 1. Subir em HTTP (Mac local e Túnel USB ADB no RG406H)
 
 ```bash
 .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-**Ou usando `uv`:**
+No Anbernic RG406H conectado via USB com depuração ADB:
 
 ```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+adb reverse tcp:8000 tcp:8000
 ```
 
-Depois, abra no navegador do Mac: `http://localhost:8000`
+Acesse no Chrome do RG406H em `http://localhost:8000` (tratado como contexto seguro pelo navegador para liberar microfone e Gamepad).
 
-## Como Rodar os Testes
+### 2. Setup HTTPS na LAN (Wi-Fi no RG406H e iPhone)
 
-Execute toda a suíte de testes automatizados (memória, parser de tags, HTTP e WebSocket) a partir da pasta do projeto:
+Microfone (`getUserMedia`), sensores de movimento e instalação PWA pela rede Wi-Fi exigem **HTTPS** (`isSecureContext === true`). Gere os certificados locais em `certs/` usando `mkcert` (se instalado) ou fallback `openssl`:
 
 ```bash
+.venv/bin/python scripts/setup_https.py
+```
+
+Suba o servidor com TLS na porta `8443`:
+
+```bash
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8443 \
+  --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
+```
+
+*(Opcional para túnel USB em HTTPS: `adb reverse tcp:8443 tcp:8443`.)*
+
+Acesse pelo IP exibido pelo script (ex.: `https://192.168.0.125:8443`). Ao usar certificado autoassinado no Chrome Android ou iOS Safari pela primeira vez, aceite o aviso de certificado local (ou instale a CA raiz do `mkcert`).
+
+### 3. Voz Local (STT e TTS)
+- **TTS do Servidor Mac (`/api/tts`)**: funciona nativamente no macOS via `/usr/bin/say` + `/usr/bin/afconvert` sem dependências extras. Recomendado no **iPhone Safari** e no **RG406H** usando o botão **🗣️ Browser / 🖥️ Mac TTS** na HUD.
+- **STT Local (`/api/stt` e Push-to-Talk)**: requer `faster-whisper` (ou `mlx-whisper` no Apple Silicon) instalado no `.venv`. Caso não esteja instalado, o servidor continua funcionando normalmente e informa a ausência do motor no `/api/diagnostics`. Para habilitar:
+
+```bash
+/Users/nathanlucio/Desktop/desk-assistant/.venv/bin/pip install faster-whisper
+# ou no Apple Silicon:
+# /Users/nathanlucio/Desktop/desk-assistant/.venv/bin/pip install mlx-whisper
+```
+
+---
+
+## Troubleshooting de Microfone & Fallback USB-C / Bluetooth
+
+1. **Erro *"Microfone exige HTTPS ou localhost"* / `navigator.mediaDevices` indefinido**:
+   - Você abriu `http://192.168.x.x:8000` pela rede Wi-Fi. Use `https://<IP_DO_MAC>:8443` ou o túnel USB `http://localhost:8000` via `adb reverse`.
+2. **Permissão bloqueada no Android / RG406H**:
+   - No Chrome do RG406H, toque no ícone de cadeado/configurações da barra de endereço → **Permissões → Microfone → Permitir**.
+   - Se estiver via ADB, confirme a permissão do pacote Chrome no Android (`RECORD_AUDIO`).
+3. **Como confirmar captação real (Estúdio de Diagnóstico)**:
+   - Abra a aba **🩺 Diagnóstico** → card **🎙️ Microfone & Loopback**.
+   - Clique em **↻ Listar**, escolha a entrada desejada e clique em **⏺️ Gravar 3s e reproduzir**.
+4. **Fallback com Microfone USB-C ou Fone Bluetooth**:
+   - Se o microfone interno do portátil estiver baixo ou com ruído, conecte um microfone/headset **USB-C** ou **Bluetooth** no RG406H (ou no Mac/iPhone), clique em **↻ Listar** no card **🎙️ Microfone & Loopback**, selecione o dispositivo na lista e valide no loopback de 3s. O botão **🎤 Segure para falar** usará automaticamente o microfone selecionado no Diagnóstico.
+5. **Sem áudio de TTS no iPhone Safari**:
+   - Toque uma vez na tela (ou no banner *Toque em qualquer lugar para ativar som e voz*) para destravar o `AudioContext` e o `<audio>` oculto.
+   - Alterne o botão na HUD para **🖥️ Mac TTS** para reproduzir áudio `.m4a` gerado pelo Mac, evitando travamentos do `speechSynthesis` no iOS.
+6. **Giroscópio/Acelerômetro não atualiza no iPhone**:
+   - No modo **🩺 Diagnóstico**, clique em **📱 Ativar Sensores (iOS / Movimento)** para disparar `DeviceMotionEvent.requestPermission()`.
+
+---
+
+## Testes Automatizados
+
+```bash
+node --check static/*.js
 .venv/bin/pytest tests -v
 ```
 
-Ou com `uv`:
+---
 
-```bash
-uv run pytest tests -v
-```
+## Checklist de Validação
 
-## Checklist de Validação — Fase 1 (Navegador do Mac)
+### Mac (Desktop / Tela Externa)
+- [ ] Abrir `http://localhost:8000` e confirmar fundo `#000000`, status **Conectado** (verde) e sons procedurais ao trocar expressões ou tocar/arrastar no rosto (`poke` / `pet`).
+- [ ] Segurar **`Espaço`** fora do campo de texto para Push-to-Talk (ou enviar texto) e testar **barge-in** com **`Esc`** ou tocando no rosto durante a fala.
+- [ ] Abrir **🎛️ Dock**, verificar **Dock Viva do Mac**, acionar *Pesquisar e Substituir* (`cmd+opt+f`), criar um novo atalho com o gravador de teclas e testar pelo agente via chat (*"executa pesquisar e substituir"*).
+- [ ] Abrir **🖥️ Display** e validar relógio, Pomodoro, *Now Playing*, clima e barras de afinidade/energia.
+- [ ] Abrir **🩺 Diagnóstico**, validar `isSecureContext: OK`, loopback de 3s e botões **Testar Browser** / **Testar Servidor Mac**.
 
-1. **Conexão e Visual**:
-   - Abrir `http://localhost:8000` (em janela `960x720` ou tela cheia) e confirmar fundo `#000000`, olhos ciano centralizados, piscadas naturais e badge WebSocket conectado (verde).
-2. **Expressões e Estados**:
-   - Abrir o painel **Expressões** na HUD superior e testar as 10 emoções (`neutral`, `happy`, `excited`, `curious`, `skeptical`, `surprised`, `sad`, `wink`, `love`, `sleepy`) e os 5 estados (`idle`, `listening`, `thinking`, `speaking`, `error`).
-3. **Chat em Streaming + TTS**:
-   - Digitar na caixa inferior e observar o rosto olhar sutilmente para baixo e entrar em `listening`.
-   - Enviar uma mensagem (ex.: `"Oi! Meu nome é Nathan e eu gosto de café."`) e verificar:
-     - Estado `thinking` enquanto o modelo raciocina (sem vazar `reasoning` nem tags `[emotion:...]`/`[<emoção>]` ou `[fact:...]`).
-     - Legenda recebendo texto limpo em streaming e transição para a emoção retornada.
-     - Fala automática em voz `pt-BR` com animação de `speaking` (ou alternar `Voz`/`Mudo`).
-4. **Memória em 2 Camadas**:
-   - Abrir a gaveta **Memória** e confirmar que o fato aprendido aparece listado.
-   - Adicionar um fato manualmente, remover um fato com `×`, clicar em **Limpar conversa atual** (confirmando que os fatos permanecem) e testar **Resetar toda memória**.
+### Anbernic RG406H (Android 13, `960×720`)
+- [ ] Validar acesso via túnel USB (`http://localhost:8000`) e via Wi-Fi HTTPS (`https://<IP>:8443`).
+- [ ] Confirmar layout 4:3 sem corte nos 4 modos e texto legível.
+- [ ] Testar Gamepad: analógico esquerdo move os olhos, `L1`/`R1` troca de modo, `D-Pad` + `A` navega e executa na Dock Viva / Stream Deck, `L2`/`R2` faz Push-to-Talk com vibração, `B` faz barge-in, `Y` alterna TTS Browser/Servidor Mac.
+- [ ] Conferir no Estúdio de Diagnóstico que botões/eixos do RG406H acendem ao vivo e que o loopback de 3s grava e reproduz (interno ou USB-C/Bluetooth).
 
-## Fases Futuras (Reservado)
-
-- **Fase 2 — Acesso no Anbernic RG406H via LAN**: acesso pelo navegador do Anbernic RG406H na rede local via HTTPS local (`mkcert`/certificado confiável para liberar recursos web seguros) e modo tela cheia otimizado para a tela 4:3 (`960x720`).
-- **Fase 3 — Entrada de Voz (Push-to-Talk & STT)**: diagnóstico de microfone no RG406H, botão segurar-para-falar (*Push-to-Talk*), transcrição local com `faster-whisper` no Mac e fallback de áudio via USB-C/Bluetooth.
+### iPhone (iOS Safari / PWA "Adicionar à Tela de Início")
+- [ ] Abrir `https://<IP>:8443` no Safari e validar `safe-area-inset-*` em retrato e paisagem (sem sobreposição no notch/Dynamic Island ou barra home).
+- [ ] Usar **Compartilhar → Adicionar à Tela de Início** e confirmar abertura em modo `standalone` (`manifest.json` + `icon.svg`).
+- [ ] Tocar uma vez para destravar áudio, alternar para **🖥️ Mac TTS** e confirmar reprodução contínua em `.m4a`.
+- [ ] No **🩺 Diagnóstico**, testar **📱 Ativar Sensores (iOS / Movimento)** e o loopback de microfone.

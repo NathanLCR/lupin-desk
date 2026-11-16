@@ -1,7 +1,7 @@
 /**
  * Rosto animado estilo EMO (/static/face.js)
- * Renderiza os olhos e expressões em SVG puro com animações a 60fps via
- * requestAnimationFrame, expondo a API pública em window.EmoFace.
+ * Renderiza os olhos e expressões em SVG puro + camada leve de partículas em Canvas
+ * a 60fps via requestAnimationFrame, expondo a API pública em window.EmoFace.
  */
 (function (global) {
   'use strict';
@@ -15,7 +15,7 @@
     'error',
   ]);
 
-  // Expressões faciais suportadas
+  // Expressões faciais suportadas (12 emoções)
   const SUPPORTED_EMOTIONS = Object.freeze([
     'neutral',
     'happy',
@@ -27,7 +27,24 @@
     'wink',
     'love',
     'sleepy',
+    'angry',
+    'dizzy',
   ]);
+
+  // Acessórios suportados sobre #emo-face-head
+  const SUPPORTED_ACCESSORIES = Object.freeze([
+    'none',
+    'sunglasses',
+    'headphones',
+    'pomodoro',
+    'blush',
+  ]);
+
+  // Efeitos climáticos na camada de partículas
+  const SUPPORTED_WEATHER = Object.freeze(['none', 'rain', 'snow', 'sun']);
+
+  // Animações one-shot suportadas
+  const SUPPORTED_ANIMATIONS = Object.freeze(['laugh', 'confused', 'yawn']);
 
   // Dimensões base dos olhos no viewBox 800x480
   const EYE_WIDTH = 148;
@@ -41,6 +58,9 @@
 
   // Tempo de inatividade em idle para entrar no modo sonolento visual (90s)
   const IDLE_SLEEP_TIMEOUT_MS = 90000;
+  // Janela de micro-eventos autônomos em idle (25s a 45s)
+  const IDLE_MICRO_MIN_MS = 25000;
+  const IDLE_MICRO_SPAN_MS = 20000;
 
   // Helpers numéricos
   function clamp(value, min, max) {
@@ -52,6 +72,12 @@
 
   function lerp(current, target, factor) {
     return current + (target - current) * factor;
+  }
+
+  function nowMs() {
+    return typeof performance !== 'undefined' && performance.now
+      ? performance.now()
+      : Date.now();
   }
 
   function createDefaultEyePose() {
@@ -68,6 +94,7 @@
       capsuleOpacity: 1,
       heartOpacity: 0,
       errorOpacity: 0,
+      dizzyOpacity: 0,
       highlightOpacity: 1,
     };
   }
@@ -209,6 +236,45 @@
         right.scaleY = 0.94;
         break;
 
+      case 'angry':
+        // Sobrancelhas fechadas em diagonal (\ /)
+        left.upperOuter = -66;
+        left.upperMid = -20;
+        left.upperInner = 20;
+        left.lowerOuter = 72;
+        left.lowerMid = 64;
+        left.lowerInner = 74;
+        left.rx = 34;
+        left.scaleX = 1.04;
+        left.scaleY = 0.92;
+
+        right.upperOuter = -66;
+        right.upperMid = -20;
+        right.upperInner = 20;
+        right.lowerOuter = 72;
+        right.lowerMid = 64;
+        right.lowerInner = 74;
+        right.rx = 34;
+        right.scaleX = 1.04;
+        right.scaleY = 0.92;
+        headTiltDeg = 1.5;
+        break;
+
+      case 'dizzy':
+        left.capsuleOpacity = 0;
+        left.dizzyOpacity = 1;
+        left.highlightOpacity = 0;
+        left.scaleX = 1.02;
+        left.scaleY = 1.02;
+
+        right.capsuleOpacity = 0;
+        right.dizzyOpacity = 1;
+        right.highlightOpacity = 0;
+        right.scaleX = 0.96;
+        right.scaleY = 0.96;
+        headTiltDeg = -4;
+        break;
+
       case 'neutral':
       default:
         break;
@@ -233,11 +299,13 @@
       // Olhos em X no estado de erro
       left.capsuleOpacity = 0;
       left.heartOpacity = 0;
+      left.dizzyOpacity = 0;
       left.errorOpacity = 1;
       left.highlightOpacity = 0;
 
       right.capsuleOpacity = 0;
       right.heartOpacity = 0;
+      right.dizzyOpacity = 0;
       right.errorOpacity = 1;
       right.highlightOpacity = 0;
     }
@@ -271,7 +339,7 @@
     return `M -92 140 L 92 140 L 92 ${rightEdgeY.toFixed(2)} Q 0 ${midY.toFixed(2)} -92 ${leftEdgeY.toFixed(2)} Z`;
   }
 
-  // Cria a estrutura HTML/SVG interna do rosto
+  // Cria a estrutura HTML/SVG interna do rosto + camada canvas de partículas
   function buildFaceMarkup() {
     const xPos = -EYE_HALF_W;
     const yPos = -EYE_HALF_H;
@@ -320,12 +388,32 @@
             <rect class="emo-error-x-bar" x="-64" y="-12" width="128" height="24" rx="12" transform="rotate(45)"></rect>
             <rect class="emo-error-x-bar" x="-64" y="-12" width="128" height="24" rx="12" transform="rotate(-45)"></rect>
           </g>
+
+          <g class="emo-dizzy-group" data-dizzy-group="${side}" style="opacity: 0;">
+            <g class="emo-dizzy-spinner emo-dizzy-spinner-${side}">
+              <path
+                class="emo-dizzy-spiral"
+                d="M 0 0 m 0 -6 a 6 6 0 1 1 -6 6 a 12 12 0 1 1 12 12 a 20 20 0 1 1 -22 -20 a 30 30 0 1 1 34 30 a 42 42 0 1 1 -46 -42 a 55 55 0 0 1 56 -8"
+              ></path>
+              <circle class="emo-dizzy-core" cx="0" cy="0" r="6"></circle>
+            </g>
+          </g>
         </g>
       </g>
     `;
 
     return `
-      <div class="emo-face-root emo-state-idle emo-emotion-neutral" data-state="idle" data-emotion="neutral" data-auto-sleepy="false">
+      <div
+        class="emo-face-root emo-state-idle emo-emotion-neutral"
+        data-state="idle"
+        data-emotion="neutral"
+        data-auto-sleepy="false"
+        data-accessory="none"
+        data-weather="none"
+        data-sweat="false"
+        data-compact="false"
+      >
+        <canvas class="emo-particles-canvas" aria-hidden="true"></canvas>
         <svg id="emo-face-svg" class="emo-face-svg" viewBox="0 0 800 480" role="img" aria-label="Rosto animado do assistente">
           <defs>
             <clipPath id="emo-clip-left">
@@ -346,6 +434,59 @@
             </g>
             <g id="emo-eye-right" class="emo-eye-group emo-eye-right" transform="translate(${RIGHT_EYE_X}, ${EYE_CENTER_Y})">
               ${eyeInnerMarkup('right')}
+            </g>
+
+            <!-- Acessórios SVG sobre a cabeça -->
+            <g id="emo-accessories" class="emo-accessories">
+              <!-- Rubor (blush) nas bochechas -->
+              <g class="emo-accessory emo-acc-blush" aria-hidden="true">
+                <ellipse class="emo-blush-oval" cx="192" cy="332" rx="44" ry="19"></ellipse>
+                <ellipse class="emo-blush-oval" cx="608" cy="332" rx="44" ry="19"></ellipse>
+                <line class="emo-blush-stripe" x1="176" y1="338" x2="188" y2="324"></line>
+                <line class="emo-blush-stripe" x1="194" y1="338" x2="206" y2="324"></line>
+                <line class="emo-blush-stripe" x1="594" y1="338" x2="606" y2="324"></line>
+                <line class="emo-blush-stripe" x1="612" y1="338" x2="624" y2="324"></line>
+              </g>
+
+              <!-- Óculos escuros cyber -->
+              <g class="emo-accessory emo-acc-sunglasses" aria-hidden="true">
+                <path class="emo-sunglasses-frame" d="M 154 152 L 352 152 Q 368 152 370 172 L 364 258 Q 360 288 320 290 L 204 290 Q 160 288 156 254 L 148 172 Q 146 152 154 152 Z"></path>
+                <path class="emo-sunglasses-frame" d="M 448 152 L 646 152 Q 654 152 652 172 L 644 254 Q 640 288 596 290 L 480 290 Q 440 288 436 258 L 430 172 Q 432 152 448 152 Z"></path>
+                <path class="emo-sunglasses-bridge" d="M 366 176 Q 400 162 434 176"></path>
+                <line class="emo-sunglasses-arm" x1="148" y1="174" x2="114" y2="184"></line>
+                <line class="emo-sunglasses-arm" x1="652" y1="174" x2="686" y2="184"></line>
+                <polygon class="emo-sunglasses-glare" points="184,166 226,166 196,274 168,274"></polygon>
+                <polygon class="emo-sunglasses-glare" points="480,166 522,166 492,274 464,274"></polygon>
+              </g>
+
+              <!-- Fones de ouvido sobre a cabeça -->
+              <g class="emo-accessory emo-acc-headphones" aria-hidden="true">
+                <path class="emo-hp-band" d="M 122 216 C 122 66, 678 66, 678 216"></path>
+                <path class="emo-hp-band-cushion" d="M 272 95 Q 400 72 528 95"></path>
+                <rect class="emo-hp-cup" x="92" y="164" width="44" height="124" rx="20"></rect>
+                <rect class="emo-hp-cup-pad" x="128" y="176" width="16" height="100" rx="8"></rect>
+                <rect class="emo-hp-led" x="103" y="204" width="10" height="44" rx="5"></rect>
+                <rect class="emo-hp-cup" x="664" y="164" width="44" height="124" rx="20"></rect>
+                <rect class="emo-hp-cup-pad" x="656" y="176" width="16" height="100" rx="8"></rect>
+                <rect class="emo-hp-led" x="687" y="204" width="10" height="44" rx="5"></rect>
+              </g>
+
+              <!-- Óculos de estudo Pomodoro -->
+              <g class="emo-accessory emo-acc-pomodoro" aria-hidden="true">
+                <rect class="emo-pomo-rim" x="166" y="136" width="188" height="172" rx="44"></rect>
+                <rect class="emo-pomo-rim" x="446" y="136" width="188" height="172" rx="44"></rect>
+                <path class="emo-pomo-bridge" d="M 354 202 Q 400 186 446 202"></path>
+                <line class="emo-pomo-arm" x1="166" y1="196" x2="128" y2="202"></line>
+                <line class="emo-pomo-arm" x1="634" y1="196" x2="672" y2="202"></line>
+                <circle class="emo-pomo-badge" cx="626" cy="146" r="10"></circle>
+                <path class="emo-pomo-leaf" d="M 626 136 Q 631 129 637 132 Q 631 138 626 136 Z"></path>
+              </g>
+            </g>
+
+            <!-- Gotinha de suor SVG -->
+            <g id="emo-sweat-drop" class="emo-sweat-drop" transform="translate(652, 126)" aria-hidden="true">
+              <path class="emo-sweat-body" d="M 0 -22 C 11 -4, 16 8, 16 16 A 16 16 0 1 1 -16 16 C -16 8, -11 -4, 0 -22 Z"></path>
+              <ellipse class="emo-sweat-shine" cx="-5" cy="12" rx="4" ry="7" transform="rotate(-14 -5 12)"></ellipse>
             </g>
 
             <!-- Estrelinhas para emoção excited -->
@@ -394,6 +535,11 @@
     autoSleepy: false,
     lastInteractionAt: 0,
 
+    accessory: 'none',
+    weather: 'none',
+    sweat: false,
+    compactMode: false,
+
     // Olhar (gaze) e micro-sacadas
     manualLookX: 0,
     manualLookY: 0,
@@ -409,12 +555,31 @@
     nextThinkingFlipAt: 0,
     thinkingSide: -1,
 
-    // Piscadas
+    // Piscadas e física squash-and-stretch
     blinkActive: false,
     blinkStartAt: 0,
     blinkDuration: 155,
     blinkPendingDouble: false,
     nextAutoBlinkAt: 0,
+    leftStretch: 0,
+    leftStretchVel: 0,
+    rightStretch: 0,
+    rightStretchVel: 0,
+
+    // Micro-eventos autônomos em idle (inseto virtual, bocejo rápido, espiar canto)
+    nextIdleMicroEventAt: 0,
+    microEvent: null,
+
+    // Animação one-shot (laugh | confused | yawn)
+    activeAnim: null,
+
+    // Interação direta por toque (poke / pet)
+    leftPokeUntil: 0,
+    rightPokeUntil: 0,
+    pokeTimestamps: [],
+    petStreak: 0,
+    lastPetAt: 0,
+    petPurrTimer: null,
 
     // Áudio e pop de expressão
     targetAudioLevel: 0,
@@ -425,13 +590,17 @@
     // Poses interpoladas de cada olho
     leftPose: createDefaultEyePose(),
     rightPose: createDefaultEyePose(),
-  };
 
-  function nowMs() {
-    return typeof performance !== 'undefined' && performance.now
-      ? performance.now()
-      : Date.now();
-  }
+    // Camada de partículas em Canvas
+    canvasCtx: null,
+    canvasWidth: 0,
+    canvasHeight: 0,
+    canvasDpr: 1,
+    weatherParticles: [],
+    fxParticles: [],
+    lastFxSpawnAt: 0,
+    bugTrail: [],
+  };
 
   function registerInteraction(ts) {
     const t = ts || nowMs();
@@ -439,6 +608,9 @@
     if (internal.autoSleepy) {
       internal.autoSleepy = false;
       syncDomAttributes();
+    }
+    if (internal.nextIdleMicroEventAt < t + 12000) {
+      scheduleNextMicroEvent(t);
     }
   }
 
@@ -450,15 +622,24 @@
     root.dataset.state = internal.state;
     root.dataset.emotion = internal.emotion;
     root.dataset.autoSleepy = internal.autoSleepy ? 'true' : 'false';
+    root.dataset.accessory = internal.accessory;
+    root.dataset.weather = internal.weather;
+    root.dataset.sweat = internal.sweat ? 'true' : 'false';
+    root.dataset.compact = internal.compactMode ? 'true' : 'false';
 
-    // Atualiza classes de estado e emoção para seletores CSS
+    // Atualiza classes de estado, emoção e acessórios para seletores CSS
     SUPPORTED_STATES.forEach((s) => {
       root.classList.toggle(`emo-state-${s}`, s === internal.state);
     });
     SUPPORTED_EMOTIONS.forEach((e) => {
       root.classList.toggle(`emo-emotion-${e}`, e === internal.emotion);
     });
+    SUPPORTED_ACCESSORIES.forEach((acc) => {
+      root.classList.toggle(`emo-accessory-${acc}`, acc === internal.accessory && acc !== 'none');
+    });
     root.classList.toggle('emo-auto-sleepy', internal.autoSleepy);
+    root.classList.toggle('emo-has-sweat', internal.sweat);
+    root.classList.toggle('emo-compact', internal.compactMode);
   }
 
   function startBlink(ts) {
@@ -473,10 +654,21 @@
     internal.nextAutoBlinkAt = ts + minDelay + Math.random() * span;
   }
 
+  function scheduleNextMicroEvent(ts) {
+    internal.nextIdleMicroEventAt = ts + IDLE_MICRO_MIN_MS + Math.random() * IDLE_MICRO_SPAN_MS;
+  }
+
+  function triggerStretchImpulse(leftAmount, rightAmount) {
+    internal.leftStretchVel += leftAmount;
+    internal.rightStretchVel += rightAmount != null ? rightAmount : leftAmount;
+  }
+
   function cacheElements(rootEl) {
     const q = (sel) => rootEl.querySelector(sel);
     const voiceBars = Array.from(rootEl.querySelectorAll('.emo-voice-bar'));
+    const canvas = q('.emo-particles-canvas');
     return {
+      canvas,
       head: q('#emo-face-head'),
       voiceWave: q('#emo-voice-wave'),
       voiceBars,
@@ -490,6 +682,7 @@
         lidLower: q('[data-lid-lower="left"]'),
         heartGroup: q('[data-heart-group="left"]'),
         errorX: q('[data-error-x="left"]'),
+        dizzyGroup: q('[data-dizzy-group="left"]'),
       },
       right: {
         look: q('[data-eye-look="right"]'),
@@ -501,14 +694,341 @@
         lidLower: q('[data-lid-lower="right"]'),
         heartGroup: q('[data-heart-group="right"]'),
         errorX: q('[data-error-x="right"]'),
+        dizzyGroup: q('[data-dizzy-group="right"]'),
       },
     };
   }
 
-  function applyEyePoseToDom(pose, els, isLeft, blinkAmount, popBoost, speakingPulse) {
-    const sx = pose.scaleX * (1 + popBoost) * (1 + speakingPulse * 0.4);
-    const blinkScaleY = 1 - blinkAmount * (pose.heartOpacity > 0.3 ? 0.9 : 0.06);
-    const sy = pose.scaleY * (1 + popBoost) * (1 + speakingPulse) * blinkScaleY;
+  // -------------------- Partículas em Canvas --------------------
+
+  function syncCanvasSize() {
+    const canvas = internal.els && internal.els.canvas;
+    const root = internal.rootEl;
+    if (!canvas || !root) {
+      return false;
+    }
+    const width = Math.max(1, root.clientWidth || 800);
+    const height = Math.max(1, root.clientHeight || 480);
+    const dpr = Math.min(2, (global.devicePixelRatio || 1));
+
+    if (
+      internal.canvasWidth !== width ||
+      internal.canvasHeight !== height ||
+      internal.canvasDpr !== dpr
+    ) {
+      internal.canvasWidth = width;
+      internal.canvasHeight = height;
+      internal.canvasDpr = dpr;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      internal.canvasCtx = canvas.getContext('2d');
+    } else if (!internal.canvasCtx) {
+      internal.canvasCtx = canvas.getContext('2d');
+    }
+    return Boolean(internal.canvasCtx);
+  }
+
+  function spawnHeartParticle(nx, ny, count) {
+    const w = internal.canvasWidth || 800;
+    const h = internal.canvasHeight || 480;
+    const baseX = (0.5 + clamp(nx || 0, -1, 1) * 0.34) * w;
+    const baseY = (0.48 + clamp(ny || 0, -1, 1) * 0.25) * h;
+    const total = count || 1;
+
+    for (let i = 0; i < total; i += 1) {
+      if (internal.fxParticles.length > 48) {
+        internal.fxParticles.shift();
+      }
+      internal.fxParticles.push({
+        kind: 'heart',
+        x: baseX + (Math.random() - 0.5) * 44,
+        y: baseY + (Math.random() - 0.5) * 26,
+        vx: (Math.random() - 0.5) * 26,
+        vy: -38 - Math.random() * 44,
+        size: 7 + Math.random() * 7,
+        life: 0,
+        maxLife: 1.15 + Math.random() * 0.55,
+        wobbleSeed: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function spawnAngerSteam(count) {
+    const w = internal.canvasWidth || 800;
+    const h = internal.canvasHeight || 480;
+    const total = count || 2;
+    for (let i = 0; i < total; i += 1) {
+      if (internal.fxParticles.length > 48) {
+        internal.fxParticles.shift();
+      }
+      const side = Math.random() < 0.5 ? 0.34 : 0.66;
+      internal.fxParticles.push({
+        kind: 'steam',
+        x: w * side + (Math.random() - 0.5) * 32,
+        y: h * 0.26 + (Math.random() - 0.5) * 14,
+        vx: (Math.random() - 0.5) * 22,
+        vy: -32 - Math.random() * 28,
+        size: 6 + Math.random() * 7,
+        life: 0,
+        maxLife: 0.9 + Math.random() * 0.45,
+        wobbleSeed: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function spawnZzzParticle() {
+    const w = internal.canvasWidth || 800;
+    const h = internal.canvasHeight || 480;
+    if (internal.fxParticles.length > 48) {
+      internal.fxParticles.shift();
+    }
+    internal.fxParticles.push({
+      kind: 'zzz',
+      x: w * 0.72 + (Math.random() - 0.5) * 26,
+      y: h * 0.34,
+      vx: 14 + Math.random() * 12,
+      vy: -24 - Math.random() * 14,
+      size: 13 + Math.random() * 6,
+      life: 0,
+      maxLife: 1.8,
+      wobbleSeed: Math.random() * Math.PI * 2,
+    });
+  }
+
+  function spawnSweatParticle() {
+    const w = internal.canvasWidth || 800;
+    const h = internal.canvasHeight || 480;
+    if (internal.fxParticles.length > 48) {
+      internal.fxParticles.shift();
+    }
+    internal.fxParticles.push({
+      kind: 'sweat',
+      x: w * 0.77 + (Math.random() - 0.5) * 8,
+      y: h * 0.32,
+      vx: 4,
+      vy: 56 + Math.random() * 24,
+      size: 3.5 + Math.random() * 2,
+      life: 0,
+      maxLife: 0.75,
+      wobbleSeed: 0,
+    });
+  }
+
+  function initWeatherPool(effect) {
+    internal.weatherParticles = [];
+    if (effect === 'none') {
+      return;
+    }
+    const w = internal.canvasWidth || 800;
+    const h = internal.canvasHeight || 480;
+    const count = effect === 'rain' ? 36 : effect === 'snow' ? 28 : 20;
+    for (let i = 0; i < count; i += 1) {
+      internal.weatherParticles.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        speed: effect === 'rain' ? 340 + Math.random() * 180 : effect === 'snow' ? 32 + Math.random() * 38 : 14 + Math.random() * 16,
+        size: effect === 'rain' ? 10 + Math.random() * 12 : effect === 'snow' ? 2 + Math.random() * 3.5 : 2 + Math.random() * 4.5,
+        phase: Math.random() * Math.PI * 2,
+        alpha: 0.28 + Math.random() * 0.45,
+      });
+    }
+  }
+
+  function drawHeart(ctx, x, y, size, alpha) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#ff4d8d';
+    ctx.beginPath();
+    const s = size * 0.08;
+    ctx.moveTo(0, 4 * s);
+    ctx.bezierCurveTo(-9 * s, -2 * s, -9 * s, -10 * s, -4 * s, -10 * s);
+    ctx.bezierCurveTo(-1 * s, -10 * s, 0, -7 * s, 0, -6 * s);
+    ctx.bezierCurveTo(0, -7 * s, 1 * s, -10 * s, 4 * s, -10 * s);
+    ctx.bezierCurveTo(9 * s, -10 * s, 9 * s, -2 * s, 0, 4 * s);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function updateAndRenderParticles(ts, dt, bugCoords) {
+    if (!syncCanvasSize()) {
+      return;
+    }
+    const ctx = internal.canvasCtx;
+    const w = internal.canvasWidth;
+    const h = internal.canvasHeight;
+    const dpr = internal.canvasDpr;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // 1. Clima ambiente (chuva, neve ou sol)
+    if (internal.weather !== 'none') {
+      if (internal.weatherParticles.length === 0) {
+        initWeatherPool(internal.weather);
+      }
+      if (internal.weather === 'sun') {
+        const grad = ctx.createRadialGradient(w * 0.88, h * 0.1, 8, w * 0.88, h * 0.1, Math.min(w, h) * 0.42);
+        grad.addColorStop(0, 'rgba(255, 210, 96, 0.18)');
+        grad.addColorStop(1, 'rgba(255, 210, 96, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      for (let i = 0; i < internal.weatherParticles.length; i += 1) {
+        const p = internal.weatherParticles[i];
+        if (internal.weather === 'rain') {
+          p.y += p.speed * dt;
+          p.x -= p.speed * 0.12 * dt;
+          if (p.y > h + 20) {
+            p.y = -20;
+            p.x = Math.random() * (w + 60);
+          }
+          ctx.strokeStyle = `rgba(110, 225, 255, ${p.alpha.toFixed(2)})`;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x - 2.5, p.y + p.size);
+          ctx.stroke();
+        } else if (internal.weather === 'snow') {
+          p.y += p.speed * dt;
+          p.x += Math.sin(ts * 0.0018 + p.phase) * 18 * dt;
+          if (p.y > h + 10) {
+            p.y = -10;
+            p.x = Math.random() * w;
+          }
+          ctx.fillStyle = `rgba(224, 246, 255, ${p.alpha.toFixed(2)})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (internal.weather === 'sun') {
+          p.y -= p.speed * 0.55 * dt;
+          p.x += Math.sin(ts * 0.0012 + p.phase) * 10 * dt;
+          if (p.y < -12) {
+            p.y = h + 12;
+            p.x = Math.random() * w;
+          }
+          ctx.fillStyle = `rgba(255, 218, 118, ${(p.alpha * 0.72).toFixed(2)})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // 2. Emissão automática sutil de partículas para love / angry / sleepy / sweat
+    if (ts - internal.lastFxSpawnAt > 580) {
+      if (internal.emotion === 'love') {
+        spawnHeartParticle((Math.random() - 0.5) * 1.1, -0.1, 1);
+        internal.lastFxSpawnAt = ts;
+      } else if (internal.emotion === 'angry') {
+        spawnAngerSteam(1);
+        internal.lastFxSpawnAt = ts;
+      } else if (internal.emotion === 'sleepy' || internal.autoSleepy) {
+        if (Math.random() < 0.55) {
+          spawnZzzParticle();
+        }
+        internal.lastFxSpawnAt = ts;
+      } else if (internal.sweat) {
+        spawnSweatParticle();
+        internal.lastFxSpawnAt = ts;
+      }
+    }
+
+    // 3. Atualiza e desenha partículas transitórias
+    for (let i = internal.fxParticles.length - 1; i >= 0; i -= 1) {
+      const fp = internal.fxParticles[i];
+      fp.life += dt;
+      if (fp.life >= fp.maxLife) {
+        internal.fxParticles.splice(i, 1);
+        continue;
+      }
+      const progress = fp.life / fp.maxLife;
+      const alpha = (1 - progress) * 0.85;
+      fp.x += fp.vx * dt + Math.sin(fp.life * 4 + fp.wobbleSeed) * 10 * dt;
+      fp.y += fp.vy * dt;
+
+      if (fp.kind === 'heart') {
+        drawHeart(ctx, fp.x, fp.y, fp.size, alpha);
+      } else if (fp.kind === 'steam') {
+        ctx.fillStyle = `rgba(255, 118, 72, ${(alpha * 0.65).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.arc(fp.x, fp.y, fp.size * (0.7 + progress * 0.8), 0, Math.PI * 2);
+        ctx.fill();
+      } else if (fp.kind === 'zzz') {
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.72;
+        ctx.fillStyle = '#8fe3ee';
+        ctx.font = `700 ${Math.round(fp.size)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.fillText('z', fp.x, fp.y);
+        ctx.restore();
+      } else if (fp.kind === 'sweat') {
+        ctx.fillStyle = `rgba(110, 230, 255, ${alpha.toFixed(2)})`;
+        ctx.beginPath();
+        ctx.arc(fp.x, fp.y, fp.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 4. Inseto virtual (vagalume) quando o micro-evento estiver ativo
+    if (bugCoords) {
+      const bx = (0.5 + bugCoords.x * 0.42) * w;
+      const by = (0.48 + bugCoords.y * 0.36) * h;
+      internal.bugTrail.push({ x: bx, y: by });
+      if (internal.bugTrail.length > 10) {
+        internal.bugTrail.shift();
+      }
+      for (let i = 0; i < internal.bugTrail.length; i += 1) {
+        const pt = internal.bugTrail[i];
+        const ratio = (i + 1) / internal.bugTrail.length;
+        ctx.fillStyle = `rgba(190, 255, 110, ${(ratio * 0.35).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 1.5 + ratio * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#d8ff7a';
+      ctx.beginPath();
+      ctx.arc(bx, by, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (internal.bugTrail.length > 0) {
+      internal.bugTrail.length = 0;
+    }
+  }
+
+  // -------------------- Aplicação das poses no SVG --------------------
+
+  function applyEyePoseToDom(
+    pose,
+    els,
+    isLeft,
+    blinkAmount,
+    popBoost,
+    speakingPulse,
+    synthPulse,
+    stretchVal,
+    curiosityScaleY,
+    pokeSquint
+  ) {
+    // Squash-and-stretch preservando área aproximada (scaleX * scaleY ≈ 1)
+    const blinkFactorY = 1 - blinkAmount * (pose.heartOpacity > 0.3 ? 0.88 : 0.16);
+    const blinkFactorX = pose.heartOpacity > 0.3 ? 1 + blinkAmount * 0.12 : 1 / Math.max(0.75, blinkFactorY);
+    const springFactorY = clamp(1 + stretchVal, 0.72, 1.32);
+    const springFactorX = 1 / springFactorY;
+
+    const pulseScale = 1 + speakingPulse + synthPulse * 0.045;
+    const sx =
+      pose.scaleX *
+      (1 + popBoost) *
+      (1 + speakingPulse * 0.4) *
+      blinkFactorX *
+      springFactorX;
+    const sy =
+      pose.scaleY *
+      (1 + popBoost) *
+      pulseScale *
+      blinkFactorY *
+      springFactorY *
+      curiosityScaleY;
 
     els.motion.setAttribute('transform', `scale(${sx.toFixed(4)} ${sy.toFixed(4)})`);
 
@@ -522,9 +1042,13 @@
     els.highlights.style.opacity = pose.highlightOpacity.toFixed(3);
     els.heartGroup.style.opacity = pose.heartOpacity.toFixed(3);
     els.errorX.style.opacity = pose.errorOpacity.toFixed(3);
+    if (els.dizzyGroup) {
+      els.dizzyGroup.style.opacity = pose.dizzyOpacity.toFixed(3);
+    }
 
-    els.lidUpper.setAttribute('d', buildUpperLidPath(pose, isLeft, blinkAmount));
-    els.lidLower.setAttribute('d', buildLowerLidPath(pose, isLeft, blinkAmount));
+    const effectiveBlink = clamp(Math.max(blinkAmount, pokeSquint), 0, 1);
+    els.lidUpper.setAttribute('d', buildUpperLidPath(pose, isLeft, effectiveBlink));
+    els.lidLower.setAttribute('d', buildLowerLidPath(pose, isLeft, effectiveBlink));
   }
 
   // Loop principal de animação (60fps)
@@ -546,7 +1070,93 @@
       ts - internal.lastInteractionAt >= IDLE_SLEEP_TIMEOUT_MS
     ) {
       internal.autoSleepy = true;
+      internal.microEvent = null;
       syncDomAttributes();
+    }
+
+    // 1b. Micro-eventos autônomos em idle (a cada 25-45s antes dos 90s)
+    if (
+      internal.state === 'idle' &&
+      !internal.autoSleepy &&
+      internal.emotion === 'neutral' &&
+      !internal.activeAnim &&
+      !internal.microEvent &&
+      ts >= internal.nextIdleMicroEventAt &&
+      ts - internal.lastInteractionAt < IDLE_SLEEP_TIMEOUT_MS - 3500
+    ) {
+      const choices = ['bug', 'yawn', 'peek_corner'];
+      const pick = choices[Math.floor(Math.random() * choices.length)];
+      if (pick === 'bug') {
+        internal.microEvent = {
+          kind: 'bug',
+          startAt: ts,
+          duration: 3600,
+          seed: Math.random() * Math.PI * 2,
+        };
+      } else if (pick === 'yawn') {
+        internal.microEvent = {
+          kind: 'yawn',
+          startAt: ts,
+          duration: 2100,
+        };
+      } else {
+        internal.microEvent = {
+          kind: 'peek_corner',
+          startAt: ts,
+          duration: 2400,
+          x: (Math.random() < 0.5 ? -1 : 1) * (0.72 + Math.random() * 0.14),
+          y: Math.random() < 0.5 ? -0.46 : 0.4,
+        };
+      }
+    }
+
+    // Avança ou encerra micro-evento atual
+    let bugCoords = null;
+    let microYawnFactor = 0;
+    if (internal.microEvent) {
+      const ev = internal.microEvent;
+      const elapsed = ts - ev.startAt;
+      if (elapsed >= ev.duration) {
+        internal.microEvent = null;
+        startBlink(ts);
+        scheduleNextMicroEvent(ts);
+      } else if (ev.kind === 'bug') {
+        const p = elapsed / ev.duration;
+        const bx = clamp(Math.sin(p * Math.PI * 2.5 + ev.seed) * 0.78, -0.88, 0.88);
+        const by = clamp(Math.cos(p * Math.PI * 3.2 + ev.seed * 0.7) * 0.55, -0.7, 0.7);
+        bugCoords = { x: bx, y: by };
+      } else if (ev.kind === 'yawn') {
+        const p = elapsed / ev.duration;
+        microYawnFactor = Math.sin(p * Math.PI);
+      }
+    }
+
+    // 1c. Avança animação one-shot (laugh | confused | yawn)
+    let animBounceY = 0;
+    let animTiltDeg = 0;
+    let animYawnFactor = 0;
+    let animConfused = false;
+    if (internal.activeAnim) {
+      const anim = internal.activeAnim;
+      const elapsed = ts - anim.startAt;
+      if (elapsed >= anim.duration) {
+        internal.activeAnim = null;
+        if (anim.name === 'yawn') {
+          startBlink(ts);
+        }
+      } else {
+        const p = elapsed / anim.duration;
+        if (anim.name === 'laugh') {
+          animBounceY = -Math.abs(Math.sin(p * Math.PI * 6)) * 14 * (1 - p * 0.3);
+          animTiltDeg = Math.sin(p * Math.PI * 4) * 3.5;
+        } else if (anim.name === 'confused') {
+          animConfused = true;
+          animTiltDeg = Math.sin(p * Math.PI * 2.5) * 9;
+        } else if (anim.name === 'yawn') {
+          animYawnFactor = Math.sin(p * Math.PI);
+          animTiltDeg = -4 * animYawnFactor;
+        }
+      }
     }
 
     // 2. Atualiza piscada natural e ocasional piscada dupla
@@ -555,6 +1165,8 @@
       const elapsed = ts - internal.blinkStartAt;
       if (elapsed >= internal.blinkDuration) {
         internal.blinkActive = false;
+        // Rebote elástico sutil ao abrir os olhos
+        triggerStretchImpulse(0.65, 0.65);
         if (internal.blinkPendingDouble) {
           internal.blinkPendingDouble = false;
           internal.blinkStartAt = ts + 110;
@@ -565,15 +1177,57 @@
       } else if (elapsed >= 0) {
         const p = elapsed / internal.blinkDuration;
         // Fechamento rápido e abertura suave
-        blinkAmount = p < 0.42 ? Math.sin((p / 0.42) * (Math.PI / 2)) : Math.cos(((p - 0.42) / 0.58) * (Math.PI / 2));
+        blinkAmount =
+          p < 0.42
+            ? Math.sin((p / 0.42) * (Math.PI / 2))
+            : Math.cos(((p - 0.42) / 0.58) * (Math.PI / 2));
       }
     } else if (ts >= internal.nextAutoBlinkAt && internal.state !== 'error') {
       internal.blinkPendingDouble = Math.random() < 0.18;
       startBlink(ts);
     }
 
+    // 2b. Atualiza mola squash-and-stretch dos olhos
+    const springK = 190;
+    const springDamp = 16;
+    internal.leftStretchVel += (-springK * internal.leftStretch - springDamp * internal.leftStretchVel) * dt;
+    internal.leftStretch += internal.leftStretchVel * dt;
+    internal.rightStretchVel += (-springK * internal.rightStretch - springDamp * internal.rightStretchVel) * dt;
+    internal.rightStretch += internal.rightStretchVel * dt;
+
     // 3. Atualiza alvos de expressão/estado e interpola poses dos olhos
     const targets = resolveEyeTargets(internal.emotion, internal.state, internal.autoSleepy);
+
+    // Ajustes temporários de animações one-shot e bocejo autônomo
+    const yawnTotal = Math.max(animYawnFactor, microYawnFactor);
+    if (yawnTotal > 0.02) {
+      targets.left.upperOuter = lerp(targets.left.upperOuter, 4, yawnTotal);
+      targets.left.upperMid = lerp(targets.left.upperMid, 12, yawnTotal);
+      targets.left.upperInner = lerp(targets.left.upperInner, 4, yawnTotal);
+      targets.left.lowerMid = lerp(targets.left.lowerMid, 72, yawnTotal);
+      targets.left.scaleY *= 1 + yawnTotal * 0.06;
+
+      targets.right.upperOuter = lerp(targets.right.upperOuter, 4, yawnTotal);
+      targets.right.upperMid = lerp(targets.right.upperMid, 12, yawnTotal);
+      targets.right.upperInner = lerp(targets.right.upperInner, 4, yawnTotal);
+      targets.right.lowerMid = lerp(targets.right.lowerMid, 72, yawnTotal);
+      targets.right.scaleY *= 1 + yawnTotal * 0.06;
+    } else if (internal.activeAnim && internal.activeAnim.name === 'laugh') {
+      targets.left.lowerOuter = 50;
+      targets.left.lowerMid = -34;
+      targets.left.lowerInner = 50;
+      targets.right.lowerOuter = 50;
+      targets.right.lowerMid = -34;
+      targets.right.lowerInner = 50;
+    } else if (animConfused) {
+      targets.left.upperOuter = -18;
+      targets.left.upperMid = -18;
+      targets.left.upperInner = -18;
+      targets.left.scaleY *= 0.92;
+      targets.right.scaleX *= 1.12;
+      targets.right.scaleY *= 1.15;
+    }
+
     const poseRate = 1 - Math.exp(-dt * 12);
     const keys = [
       'upperOuter',
@@ -588,6 +1242,7 @@
       'capsuleOpacity',
       'heartOpacity',
       'errorOpacity',
+      'dizzyOpacity',
       'highlightOpacity',
     ];
     for (let i = 0; i < keys.length; i += 1) {
@@ -596,13 +1251,19 @@
       internal.rightPose[k] = lerp(internal.rightPose[k], targets.right[k], poseRate);
     }
 
-    // 4. Atualiza olhar 2D (estado + manual + olhares curiosos em idle + micro-sacadas)
+    // 4. Atualiza olhar 2D (estado + manual + micro-eventos + olhares em idle + sacadas)
     let desiredX = targets.gazeBiasX;
     let desiredY = targets.gazeBiasY;
 
     if (ts < internal.manualLookUntil) {
       desiredX = internal.manualLookX;
       desiredY = internal.manualLookY;
+    } else if (bugCoords) {
+      desiredX = bugCoords.x;
+      desiredY = bugCoords.y;
+    } else if (internal.microEvent && internal.microEvent.kind === 'peek_corner') {
+      desiredX = internal.microEvent.x;
+      desiredY = internal.microEvent.y;
     } else if (internal.state === 'thinking') {
       if (ts >= internal.nextThinkingFlipAt) {
         internal.thinkingSide *= -1;
@@ -615,7 +1276,6 @@
       desiredY = 0;
     } else if (internal.state === 'idle' && !internal.autoSleepy) {
       if (ts >= internal.nextIdleGlanceAt) {
-        // Olhares curiosos aleatórios a cada 2-4s, retornando ao centro com frequência
         if (Math.random() < 0.45) {
           internal.autoLookX = 0;
           internal.autoLookY = 0;
@@ -652,41 +1312,70 @@
     internal.els.left.highlights.setAttribute('transform', `translate(${hlX} ${hlY})`);
     internal.els.right.highlights.setAttribute('transform', `translate(${hlX} ${hlY})`);
 
-    // 5. Atualiza nível de áudio suavizado, bounce rítmico e respiração
+    // Curiosidade direcional: quando |lookX| > 0.6, aumenta levemente scaleY do olho externo
+    let leftCuriosityY = 1;
+    let rightCuriosityY = 1;
+    const absLookX = Math.abs(internal.currentLookX);
+    if (absLookX > 0.6 && internal.state !== 'error') {
+      const extra = ((absLookX - 0.6) / 0.4) * 0.14;
+      if (internal.currentLookX < 0) {
+        leftCuriosityY = 1 + extra;
+      } else {
+        rightCuriosityY = 1 + extra;
+      }
+    }
+
+    // 5. Atualiza nível de áudio suavizado, pulso do sintetizador, bounce e respiração
     const audioFactor = internal.targetAudioLevel > internal.smoothAudioLevel ? 0.3 : 0.16;
     internal.smoothAudioLevel = lerp(internal.smoothAudioLevel, internal.targetAudioLevel, audioFactor);
+
+    const synthPulse =
+      global.EmoAudio && typeof global.EmoAudio.getPulseLevel === 'function'
+        ? clamp(global.EmoAudio.getPulseLevel(), 0, 1)
+        : 0;
 
     const isSpeaking = internal.state === 'speaking' || internal.smoothAudioLevel > 0.02;
     const breathAmp = internal.autoSleepy || internal.emotion === 'sleepy' ? 2.8 : 4.5;
     const breathFreq = internal.autoSleepy || internal.emotion === 'sleepy' ? 1.1 : 1.65;
-    let headOffsetY = Math.sin(tSec * breathFreq) * breathAmp;
+    let headOffsetY = Math.sin(tSec * breathFreq) * breathAmp + animBounceY;
     let headOffsetX = 0;
 
     if (internal.emotion === 'excited') {
       headOffsetY += Math.abs(Math.sin(tSec * 5.5)) * -7;
     }
+    if (internal.emotion === 'dizzy') {
+      headOffsetX += Math.sin(tSec * 4.2) * 5.5;
+      headOffsetY += Math.cos(tSec * 3.1) * 3.5;
+    }
     if (isSpeaking) {
-      const energy = internal.state === 'speaking'
-        ? Math.max(0.18, internal.smoothAudioLevel)
-        : internal.smoothAudioLevel;
+      const energy =
+        internal.state === 'speaking'
+          ? Math.max(0.18, internal.smoothAudioLevel)
+          : internal.smoothAudioLevel;
       headOffsetY += Math.sin(tSec * 15.5) * (2.5 + energy * 8.5) - energy * 3.5;
     }
     if (internal.state === 'error') {
       headOffsetX = Math.sin(tSec * 11) * 1.8;
     }
 
-    internal.currentTiltDeg = lerp(internal.currentTiltDeg, targets.headTiltDeg, 1 - Math.exp(-dt * 10));
+    const desiredTilt = targets.headTiltDeg + animTiltDeg;
+    internal.currentTiltDeg = lerp(internal.currentTiltDeg, desiredTilt, 1 - Math.exp(-dt * 10));
     internal.els.head.setAttribute(
       'transform',
       `translate(${headOffsetX.toFixed(2)} ${headOffsetY.toFixed(2)}) rotate(${internal.currentTiltDeg.toFixed(2)} 400 ${EYE_CENTER_Y})`
     );
 
-    // 6. Pop de escala (ex.: surprised) e pulso na fala
+    // 6. Pop de escala, pulso de voz/sintetizador e semicerrar por poke
     internal.popBoost *= Math.exp(-dt * 11);
     if (internal.popBoost < 0.001) {
       internal.popBoost = 0;
     }
     const speakingPulse = isSpeaking ? internal.smoothAudioLevel * 0.068 : 0;
+
+    const leftPokeSquint =
+      ts < internal.leftPokeUntil ? Math.sin(((internal.leftPokeUntil - ts) / 420) * Math.PI) * 0.85 : 0;
+    const rightPokeSquint =
+      ts < internal.rightPokeUntil ? Math.sin(((internal.rightPokeUntil - ts) / 420) * Math.PI) * 0.85 : 0;
 
     applyEyePoseToDom(
       internal.leftPose,
@@ -694,7 +1383,11 @@
       true,
       blinkAmount,
       internal.popBoost,
-      speakingPulse
+      speakingPulse,
+      synthPulse,
+      internal.leftStretch,
+      leftCuriosityY,
+      clamp(leftPokeSquint, 0, 1)
     );
     applyEyePoseToDom(
       internal.rightPose,
@@ -702,16 +1395,21 @@
       false,
       blinkAmount,
       internal.popBoost,
-      speakingPulse
+      speakingPulse,
+      synthPulse,
+      internal.rightStretch,
+      rightCuriosityY,
+      clamp(rightPokeSquint, 0, 1)
     );
 
     // 7. Atualiza barras da onda de voz abaixo dos olhos
-    const showWave = internal.state === 'speaking' || internal.smoothAudioLevel > 0.02;
+    const showWave = internal.state === 'speaking' || internal.smoothAudioLevel > 0.02 || synthPulse > 0.06;
     internal.els.voiceWave.classList.toggle('is-active', showWave);
     if (showWave) {
-      const baseLevel = internal.state === 'speaking'
-        ? Math.max(0.14, internal.smoothAudioLevel)
-        : internal.smoothAudioLevel;
+      const baseLevel =
+        internal.state === 'speaking'
+          ? Math.max(0.14, internal.smoothAudioLevel, synthPulse * 0.7)
+          : Math.max(internal.smoothAudioLevel, synthPulse * 0.75);
       const bars = internal.els.voiceBars;
       const centerIdx = (bars.length - 1) / 2;
       for (let i = 0; i < bars.length; i += 1) {
@@ -723,6 +1421,9 @@
         bars[i].setAttribute('y', y.toFixed(2));
       }
     }
+
+    // 8. Atualiza partículas leves em canvas (clima, corações, Zzz, vapor, inseto)
+    updateAndRenderParticles(ts, dt, bugCoords);
 
     internal.rafId = global.requestAnimationFrame(step);
   }
@@ -743,11 +1444,18 @@
         global.cancelAnimationFrame(internal.rafId);
         internal.rafId = null;
       }
+      if (internal.petPurrTimer !== null) {
+        clearTimeout(internal.petPurrTimer);
+        internal.petPurrTimer = null;
+      }
 
       internal.container = targetEl;
       targetEl.innerHTML = buildFaceMarkup();
       internal.rootEl = targetEl.querySelector('.emo-face-root');
       internal.els = cacheElements(internal.rootEl);
+      internal.canvasCtx = null;
+      internal.canvasWidth = 0;
+      internal.canvasHeight = 0;
 
       const t = nowMs();
       internal.lastFrameTime = t;
@@ -756,6 +1464,7 @@
       internal.nextSaccadeAt = t + 900;
       internal.nextThinkingFlipAt = t + 1100;
       scheduleNextBlink(t);
+      scheduleNextMicroEvent(t);
       syncDomAttributes();
 
       if (typeof global.requestAnimationFrame === 'function') {
@@ -789,6 +1498,10 @@
         internal.targetAudioLevel = 0;
       }
 
+      if (state !== prevState) {
+        triggerStretchImpulse(0.75, 0.75);
+      }
+
       syncDomAttributes();
       return internal.state;
     },
@@ -806,11 +1519,18 @@
         internal.emotionTimer = null;
       }
 
+      const prevEmotion = internal.emotion;
       internal.emotion = emotion;
       registerInteraction();
 
       if (emotion === 'surprised') {
         internal.popBoost = 0.14;
+        triggerStretchImpulse(1.6, 1.6);
+      } else if (emotion === 'angry') {
+        internal.popBoost = 0.06;
+        triggerStretchImpulse(-0.9, -0.9);
+      } else if (emotion !== prevEmotion) {
+        triggerStretchImpulse(0.85, 0.85);
       }
 
       if (opts && typeof opts.durationMs === 'number' && opts.durationMs > 0) {
@@ -836,6 +1556,7 @@
       const t = nowMs();
       registerInteraction(t);
       internal.blinkPendingDouble = false;
+      triggerStretchImpulse(-0.55, -0.55);
       startBlink(t);
     },
 
@@ -861,6 +1582,187 @@
 
     getSupportedStates() {
       return SUPPORTED_STATES.slice();
+    },
+
+    /**
+     * Reage ao toque direto no rosto ('poke' ou 'pet') com coordenadas normalizadas (-1..1).
+     */
+    reactToTouch(kind, nx, ny) {
+      const t = nowMs();
+      const x = clamp(Number(nx) || 0, -1, 1);
+      const y = clamp(Number(ny) || 0, -1, 1);
+
+      if (kind === 'pet_end' || kind === 'release') {
+        if (internal.petPurrTimer !== null) {
+          clearTimeout(internal.petPurrTimer);
+          internal.petPurrTimer = null;
+        }
+        internal.petStreak = 0;
+        if (global.EmoAudio && typeof global.EmoAudio.purr === 'function') {
+          global.EmoAudio.purr(false);
+        }
+        return;
+      }
+
+      registerInteraction(t);
+
+      if (kind === 'poke') {
+        internal.manualLookX = x;
+        internal.manualLookY = y;
+        internal.manualLookUntil = t + 1800;
+
+        // Olho atingido pisca/semicerra com squash elástico
+        if (x < -0.1) {
+          internal.leftPokeUntil = t + 420;
+          triggerStretchImpulse(-2.1, 0.35);
+        } else if (x > 0.1) {
+          internal.rightPokeUntil = t + 420;
+          triggerStretchImpulse(0.35, -2.1);
+        } else {
+          internal.leftPokeUntil = t + 420;
+          internal.rightPokeUntil = t + 420;
+          triggerStretchImpulse(-1.8, -1.8);
+        }
+
+        // Registra toques rápidos em sequência (janela de 3.5s)
+        internal.pokeTimestamps = internal.pokeTimestamps.filter((ts) => t - ts < 3500);
+        internal.pokeTimestamps.push(t);
+
+        if (internal.pokeTimestamps.length >= 5) {
+          EmoFace.setEmotion('angry', { durationMs: 3600 });
+          spawnAngerSteam(4);
+          if (global.EmoAudio && typeof global.EmoAudio.chirp === 'function') {
+            global.EmoAudio.chirp('angry');
+          }
+        } else if (internal.pokeTimestamps.length >= 3) {
+          EmoFace.setEmotion('skeptical', { durationMs: 3000 });
+          if (global.EmoAudio && typeof global.EmoAudio.chirp === 'function') {
+            global.EmoAudio.chirp('skeptical');
+          }
+        } else if (global.EmoAudio && typeof global.EmoAudio.click === 'function') {
+          global.EmoAudio.click();
+        }
+        return;
+      }
+
+      if (kind === 'pet') {
+        EmoFace.lookAt(x, y);
+        if (t - internal.lastPetAt > 1200) {
+          internal.petStreak = 0;
+        }
+        internal.lastPetAt = t;
+        internal.petStreak += 1;
+
+        const targetExpr = internal.petStreak >= 3 ? 'love' : 'happy';
+        EmoFace.setEmotion(targetExpr, { durationMs: 2400 });
+        spawnHeartParticle(x, y, 2);
+
+        if (global.EmoAudio && typeof global.EmoAudio.purr === 'function') {
+          global.EmoAudio.purr(true);
+          if (internal.petPurrTimer !== null) {
+            clearTimeout(internal.petPurrTimer);
+          }
+          internal.petPurrTimer = setTimeout(() => {
+            internal.petPurrTimer = null;
+            internal.petStreak = 0;
+            if (global.EmoAudio && typeof global.EmoAudio.purr === 'function') {
+              global.EmoAudio.purr(false);
+            }
+          }, 480);
+        }
+      }
+    },
+
+    /**
+     * Define o acessório SVG exibido sobre #emo-face-head.
+     */
+    setAccessory(name) {
+      const normalized = typeof name === 'string' ? name.toLowerCase() : 'none';
+      if (!SUPPORTED_ACCESSORIES.includes(normalized)) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn(`[EmoFace] Acessório desconhecido ignorado: ${name}`);
+        }
+        return internal.accessory;
+      }
+      internal.accessory = normalized;
+      syncDomAttributes();
+      return internal.accessory;
+    },
+
+    /**
+     * Define o efeito climático na camada de partículas canvas.
+     */
+    setWeather(effect) {
+      const normalized = typeof effect === 'string' ? effect.toLowerCase() : 'none';
+      if (!SUPPORTED_WEATHER.includes(normalized)) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn(`[EmoFace] Efeito de clima desconhecido ignorado: ${effect}`);
+        }
+        return internal.weather;
+      }
+      internal.weather = normalized;
+      initWeatherPool(normalized);
+      syncDomAttributes();
+      return internal.weather;
+    },
+
+    /**
+     * Ativa ou oculta a gotinha de suor SVG.
+     */
+    setSweat(active) {
+      internal.sweat = Boolean(active);
+      syncDomAttributes();
+      return internal.sweat;
+    },
+
+    /**
+     * Alterna o modo compacto (.emo-compact) para a faixa superior no modo Dock & Atalhos.
+     */
+    setCompactMode(active) {
+      internal.compactMode = Boolean(active);
+      syncDomAttributes();
+      return internal.compactMode;
+    },
+
+    /**
+     * Executa uma animação one-shot ('laugh' | 'confused' | 'yawn').
+     */
+    playAnimation(name) {
+      const normalized = typeof name === 'string' ? name.toLowerCase() : '';
+      if (!SUPPORTED_ANIMATIONS.includes(normalized)) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn(`[EmoFace] Animação desconhecida ignorada: ${name}`);
+        }
+        return false;
+      }
+      const t = nowMs();
+      registerInteraction(t);
+
+      const durations = { laugh: 1600, confused: 1600, yawn: 2200 };
+      internal.activeAnim = {
+        name: normalized,
+        startAt: t,
+        duration: durations[normalized],
+      };
+
+      if (normalized === 'laugh') {
+        triggerStretchImpulse(1.2, 1.2);
+        if (global.EmoAudio && typeof global.EmoAudio.chirp === 'function') {
+          global.EmoAudio.chirp('happy');
+        }
+      } else if (normalized === 'confused') {
+        triggerStretchImpulse(-0.7, 1.1);
+        if (global.EmoAudio && typeof global.EmoAudio.chirp === 'function') {
+          global.EmoAudio.chirp('curious');
+        }
+      } else if (normalized === 'yawn') {
+        triggerStretchImpulse(0.9, 0.9);
+        if (global.EmoAudio && typeof global.EmoAudio.chirp === 'function') {
+          global.EmoAudio.chirp('sleepy');
+        }
+      }
+
+      return true;
     },
   };
 

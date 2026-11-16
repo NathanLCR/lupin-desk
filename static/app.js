@@ -1,10 +1,16 @@
 /**
- * Controlador principal da interface web do Assistente de Mesa.
- * Integra WebSocket (/ws), API de memória (/api/memory), síntese de voz (TTS),
- * expressões faciais (window.EmoFace), legendas em streaming e tela cheia.
+ * Controlador principal da interface web do Assistente de Mesa (/static/app.js).
+ * Integra:
+ * - 4 modos de tela (Pet Vivo, Dock & Atalhos do Mac, Smart Display, Diagnóstico)
+ * - Rosto SVG (window.EmoFace) + Áudio Procedural (window.EmoAudio)
+ * - Gamepad RG406H (window.DeskGamepad) + Diagnóstico (window.DeskDiagnostics)
+ * - WebSocket (/ws) com streaming frase-a-frase, Push-to-Talk, barge-in e ações
+ * - TTS híbrido (Browser speechSynthesis vs Servidor Mac /api/tts)
  */
 (() => {
   'use strict';
+
+  const MODES = ['pet', 'dock', 'display', 'diagnostics'];
 
   const FALLBACK_EMOTIONS = [
     'neutral',
@@ -17,6 +23,8 @@
     'wink',
     'love',
     'sleepy',
+    'angry',
+    'dizzy',
   ];
 
   const FALLBACK_STATES = ['idle', 'listening', 'thinking', 'speaking', 'error'];
@@ -32,6 +40,8 @@
     wink: 'piscando',
     love: 'carinhoso',
     sleepy: 'sonolento',
+    angry: 'bravo',
+    dizzy: 'tonto',
   };
 
   const STATE_LABELS_PT = {
@@ -57,21 +67,37 @@
   const HUD_AUTO_HIDE_MS = 5000;
   const WS_RECONNECT_BASE_MS = 2000;
   const WS_RECONNECT_MAX_MS = 8000;
-  const TTS_STORAGE_KEY = 'desk_assistant_tts_enabled';
-  const CAPTION_STORAGE_KEY = 'desk_assistant_caption_visible';
 
-  // Referências de DOM
+  const PREFS = {
+    ttsEnabled: 'desk_assistant_tts_enabled',
+    ttsMode: 'desk_assistant_tts_mode',
+    petSoundsEnabled: 'desk_assistant_pet_sounds_enabled',
+    captionVisible: 'desk_assistant_caption_visible',
+  };
+
+  // WAV silencioso mínimo (~44 bytes) para destravar <audio> no iOS Safari no primeiro toque
+  const SILENT_WAV_DATA_URI =
+    'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
   const els = {
+    stage: document.getElementById('stage'),
     faceContainer: document.getElementById('face-container'),
+    petClockTime: document.getElementById('pet-clock-time'),
+    petClockDate: document.getElementById('pet-clock-date'),
+    petPomodoroChip: document.getElementById('pet-pomodoro-chip'),
+    petPomodoroText: document.getElementById('pet-pomodoro-text'),
     hud: document.getElementById('hud'),
     wsDot: document.getElementById('ws-dot'),
     wsStatusText: document.getElementById('ws-status-text'),
     stateLabel: document.getElementById('state-label'),
     emotionLabel: document.getElementById('emotion-label'),
+    modeButtons: Array.from(document.querySelectorAll('#mode-switcher .mode-btn')),
     btnExpressions: document.getElementById('btn-expressions'),
     btnMemory: document.getElementById('btn-memory'),
     memoryCount: document.getElementById('memory-count'),
+    btnPetSounds: document.getElementById('btn-pet-sounds'),
     btnTts: document.getElementById('btn-tts'),
+    btnTtsMode: document.getElementById('btn-tts-mode'),
     btnCaption: document.getElementById('btn-caption'),
     btnFullscreen: document.getElementById('btn-fullscreen'),
     btnHudPin: document.getElementById('btn-hud-pin'),
@@ -79,10 +105,88 @@
     emotionChips: document.getElementById('emotion-chips'),
     stateChips: document.getElementById('state-chips'),
     audioUnlockBanner: document.getElementById('audio-unlock-banner'),
+    actionToast: document.getElementById('action-toast'),
+    // Modo Dock & Atalhos
+    modeDock: document.getElementById('mode-dock'),
+    dockActiveApp: document.getElementById('dock-active-app'),
+    btnRefreshApps: document.getElementById('btn-refresh-apps'),
+    dockAppsGrid: document.getElementById('dock-apps-grid'),
+    shortcutCategoryTabs: Array.from(document.querySelectorAll('#shortcut-category-tabs .cat-tab')),
+    btnNewShortcut: document.getElementById('btn-new-shortcut'),
+    btnConfigShortcuts: document.getElementById('btn-config-shortcuts'),
+    shortcutsGrid: document.getElementById('shortcuts-grid'),
+    // Modo Smart Display
+    modeDisplay: document.getElementById('mode-display'),
+    displayClockTime: document.getElementById('display-clock-time'),
+    displayClockDate: document.getElementById('display-clock-date'),
+    pomodoroPhaseLabel: document.getElementById('pomodoro-phase-label'),
+    pomodoroTimer: document.getElementById('pomodoro-timer'),
+    btnPomoFocus: document.getElementById('btn-pomo-focus'),
+    btnPomoBreak: document.getElementById('btn-pomo-break'),
+    btnPomoStop: document.getElementById('btn-pomo-stop'),
+    nowPlayingState: document.getElementById('now-playing-state'),
+    nowPlayingTitle: document.getElementById('now-playing-title'),
+    nowPlayingArtist: document.getElementById('now-playing-artist'),
+    btnMediaPrev: document.getElementById('btn-media-prev'),
+    btnMediaPlay: document.getElementById('btn-media-play'),
+    btnMediaNext: document.getElementById('btn-media-next'),
+    btnRefreshWeather: document.getElementById('btn-refresh-weather'),
+    weatherIcon: document.getElementById('weather-icon'),
+    weatherTemp: document.getElementById('weather-temp'),
+    weatherDesc: document.getElementById('weather-desc'),
+    weatherCity: document.getElementById('weather-city'),
+    petMoodLabel: document.getElementById('pet-mood-label'),
+    macTelemetryApp: document.getElementById('mac-telemetry-app'),
+    macTelemetryBattery: document.getElementById('mac-telemetry-battery'),
+    macTelemetryVolume: document.getElementById('mac-telemetry-volume'),
+    petAffinityVal: document.getElementById('pet-affinity-val'),
+    petAffinityBar: document.getElementById('pet-affinity-bar'),
+    petEnergyVal: document.getElementById('pet-energy-val'),
+    petEnergyBar: document.getElementById('pet-energy-bar'),
+    // Modo Diagnóstico
+    modeDiagnostics: document.getElementById('mode-diagnostics'),
+    diagnosticsRoot: document.getElementById('diagnostics-root'),
+    // Dock inferior
+    approvalBanner: document.getElementById('approval-banner'),
+    approvalText: document.getElementById('approval-text'),
+    btnApproveAction: document.getElementById('btn-approve-action'),
+    btnDenyAction: document.getElementById('btn-deny-action'),
     captionBox: document.getElementById('caption-box'),
     captionText: document.getElementById('caption-text'),
     chatForm: document.getElementById('chat-form'),
+    btnPtt: document.getElementById('btn-ptt'),
     chatInput: document.getElementById('chat-input'),
+    // Modal CRUD Atalhos
+    shortcutModalBackdrop: document.getElementById('shortcut-modal-backdrop'),
+    shortcutModal: document.getElementById('shortcut-modal'),
+    btnCloseShortcutModal: document.getElementById('btn-close-shortcut-modal'),
+    shortcutForm: document.getElementById('shortcut-form'),
+    scId: document.getElementById('sc-id'),
+    scFormHeading: document.getElementById('sc-form-heading'),
+    scTitle: document.getElementById('sc-title'),
+    scIcon: document.getElementById('sc-icon'),
+    scCategory: document.getElementById('sc-category'),
+    scColor: document.getElementById('sc-color'),
+    scActionType: document.getElementById('sc-action-type'),
+    scPayloadKeystroke: document.getElementById('sc-payload-keystroke'),
+    scPayloadApp: document.getElementById('sc-payload-app'),
+    scPayloadCommand: document.getElementById('sc-payload-command'),
+    scPayloadPrompt: document.getElementById('sc-payload-prompt'),
+    btnRecordKeys: document.getElementById('btn-record-keys'),
+    scKeys: document.getElementById('sc-keys'),
+    scKeySelect: document.getElementById('sc-key-select'),
+    modToggles: Array.from(document.querySelectorAll('.mod-toggle')),
+    scAppName: document.getElementById('sc-app-name'),
+    scMacCommand: document.getElementById('sc-mac-command'),
+    scAgentPrompt: document.getElementById('sc-agent-prompt'),
+    scVoiceTriggers: document.getElementById('sc-voice-triggers'),
+    scPinned: document.getElementById('sc-pinned'),
+    scConfirm: document.getElementById('sc-confirm'),
+    btnScResetForm: document.getElementById('btn-sc-reset-form'),
+    btnScDelete: document.getElementById('btn-sc-delete'),
+    btnScResetDefaults: document.getElementById('btn-sc-reset-defaults'),
+    scManageList: document.getElementById('sc-manage-list'),
+    // Gaveta de Memória
     memoryBackdrop: document.getElementById('memory-backdrop'),
     memoryDrawer: document.getElementById('memory-drawer'),
     btnCloseMemory: document.getElementById('btn-close-memory'),
@@ -98,10 +202,11 @@
     resetConfirmBox: document.getElementById('reset-confirm-box'),
     btnConfirmReset: document.getElementById('btn-confirm-reset'),
     btnCancelReset: document.getElementById('btn-cancel-reset'),
+    serverTtsAudio: document.getElementById('server-tts-audio'),
   };
 
-  // Estado da aplicação
   const state = {
+    mode: 'pet',
     ws: null,
     wsConnected: false,
     reconnectDelayMs: WS_RECONNECT_BASE_MS,
@@ -112,11 +217,18 @@
     hudTimer: null,
     expressionsOpen: false,
     memoryOpen: false,
-    captionVisible: loadBoolPref(CAPTION_STORAGE_KEY, true),
-    ttsEnabled: loadBoolPref(TTS_STORAGE_KEY, true),
+    shortcutModalOpen: false,
+    captionVisible: loadBoolPref(PREFS.captionVisible, true),
+    ttsEnabled: loadBoolPref(PREFS.ttsEnabled, true),
+    ttsMode: loadStringPref(PREFS.ttsMode, 'browser'),
+    petSoundsEnabled: loadBoolPref(PREFS.petSoundsEnabled, true),
     audioUnlocked: false,
     selectedVoice: null,
     activeUtterance: null,
+    ttsQueue: [],
+    ttsPlaying: false,
+    serverAudioUrl: null,
+    receivedSentenceStream: false,
     audioLevelTimer: null,
     speechStartGuardTimer: null,
     audioPhase: 0,
@@ -124,6 +236,39 @@
     facts: [],
     recentMessagesCount: 0,
     wakeLock: null,
+    // Dock & Atalhos
+    macApps: [],
+    shortcuts: [],
+    shortcutCategory: 'all',
+    gamepadFocusIndex: -1,
+    recordingShortcutKeys: false,
+    // Smart Display & Pomodoro
+    pomodoro: {
+      active: false,
+      phase: 'idle', // 'focus' | 'break' | 'idle'
+      remainingSec: 25 * 60,
+      intervalId: null,
+    },
+    musicPlaying: false,
+    displayPollTimer: null,
+    // Push-to-Talk & Aprovação
+    ptt: {
+      active: false,
+      stream: null,
+      recorder: null,
+      chunks: [],
+      mimeType: '',
+      spaceHeld: false,
+    },
+    pendingApprovalId: null,
+    toastTimer: null,
+    lastPetSentAt: 0,
+    pointerTouch: {
+      down: false,
+      moved: false,
+      startX: 0,
+      startY: 0,
+    },
   };
 
   function loadBoolPref(key, fallback) {
@@ -136,17 +281,30 @@
     }
   }
 
-  function saveBoolPref(key, value) {
+  function loadStringPref(key, fallback) {
     try {
-      window.localStorage.setItem(key, String(Boolean(value)));
+      const raw = window.localStorage.getItem(key);
+      return raw || fallback;
     } catch {
-      // Ignora erro de armazenamento em modo restrito
+      return fallback;
     }
   }
 
-  // Acesso seguro à API pública window.EmoFace
+  function savePref(key, value) {
+    try {
+      window.localStorage.setItem(key, String(value));
+    } catch {
+      // Ignora erro de armazenamento
+    }
+  }
+
+  // Helpers seguros para EmoFace e EmoAudio
   function faceApi() {
     return window.EmoFace || null;
+  }
+
+  function audioApi() {
+    return window.EmoAudio || null;
   }
 
   function applyFaceState(nextState) {
@@ -161,6 +319,10 @@
     const api = faceApi();
     if (api && typeof api.setEmotion === 'function') {
       api.setEmotion(nextEmotion, opts);
+    }
+    const aud = audioApi();
+    if (aud && typeof aud.chirp === 'function' && state.petSoundsEnabled && nextEmotion) {
+      aud.chirp(nextEmotion);
     }
     syncFaceBadges();
   }
@@ -179,6 +341,18 @@
     }
   }
 
+  function syncAccessoryForContext() {
+    const api = faceApi();
+    if (!api || typeof api.setAccessory !== 'function') return;
+    if (state.pomodoro.active) {
+      api.setAccessory('pomodoro');
+    } else if (state.musicPlaying) {
+      api.setAccessory('headphones');
+    } else {
+      api.setAccessory('none');
+    }
+  }
+
   function syncFaceBadges() {
     const api = faceApi();
     const currentState = api && typeof api.getState === 'function' ? api.getState() : 'idle';
@@ -193,13 +367,27 @@
 
   function updateChipSelection(container, activeValue) {
     if (!container) return;
-    const buttons = container.querySelectorAll('.chip-btn');
-    buttons.forEach((btn) => {
+    container.querySelectorAll('.chip-btn').forEach((btn) => {
       btn.classList.toggle('is-selected', btn.dataset.value === activeValue);
     });
   }
 
-  // Monta os chips de teste das 10 emoções e 5 estados
+  function showToast(message, { isError = false, durationMs = 2800 } = {}) {
+    if (!els.actionToast) return;
+    if (state.toastTimer) {
+      window.clearTimeout(state.toastTimer);
+      state.toastTimer = null;
+    }
+    els.actionToast.textContent = message;
+    els.actionToast.classList.toggle('is-error', isError);
+    els.actionToast.classList.remove('hidden');
+    state.toastTimer = window.setTimeout(() => {
+      els.actionToast.classList.add('hidden');
+      state.toastTimer = null;
+    }, durationMs);
+  }
+
+  // Chips de expressão/estado
   function buildExpressionChips() {
     const api = faceApi();
     const emotions =
@@ -218,9 +406,7 @@
       btn.className = 'chip-btn';
       btn.dataset.value = emotion;
       btn.textContent = `${emotion} (${EMOTION_LABELS_PT[emotion] || emotion})`;
-      btn.addEventListener('click', () => {
-        applyFaceEmotion(emotion);
-      });
+      btn.addEventListener('click', () => applyFaceEmotion(emotion));
       els.emotionChips.appendChild(btn);
     });
 
@@ -231,16 +417,14 @@
       btn.className = 'chip-btn';
       btn.dataset.value = st;
       btn.textContent = `${st} (${STATE_LABELS_PT[st] || st})`;
-      btn.addEventListener('click', () => {
-        applyFaceState(st);
-      });
+      btn.addEventListener('click', () => applyFaceState(st));
       els.stateChips.appendChild(btn);
     });
 
     syncFaceBadges();
   }
 
-  // Controle de visibilidade e auto-ocultar da HUD superior
+  // HUD auto-ocultar (somente no modo Pet quando nada está aberto)
   function showHud() {
     els.hud.classList.remove('is-hidden');
     scheduleHudAutoHide();
@@ -253,18 +437,22 @@
     }
 
     const canAutoHide =
+      state.mode === 'pet' &&
       !state.hudPinned &&
       !state.expressionsOpen &&
       !state.memoryOpen &&
+      !state.shortcutModalOpen &&
       document.activeElement !== els.chatInput;
 
     if (!canAutoHide) return;
 
     state.hudTimer = window.setTimeout(() => {
       const stillCanHide =
+        state.mode === 'pet' &&
         !state.hudPinned &&
         !state.expressionsOpen &&
         !state.memoryOpen &&
+        !state.shortcutModalOpen &&
         document.activeElement !== els.chatInput;
       if (stillCanHide) {
         els.hud.classList.add('is-hidden');
@@ -277,9 +465,82 @@
     els.btnHudPin.classList.toggle('is-active', state.hudPinned);
     els.btnHudPin.setAttribute('aria-pressed', String(state.hudPinned));
     showHud();
+    syncHudOffset();
   }
 
-  // Controle de legendas em streaming
+  function syncHudOffset() {
+    if (!els.hud) return;
+    window.requestAnimationFrame(() => {
+      const rect = els.hud.getBoundingClientRect();
+      if (rect && rect.height > 0) {
+        document.documentElement.style.setProperty('--hud-offset', `${Math.ceil(rect.height + 16)}px`);
+      }
+    });
+  }
+
+  // Alternador dos 4 modos de tela
+  function setMode(nextMode) {
+    if (!MODES.includes(nextMode)) return;
+    state.mode = nextMode;
+    state.gamepadFocusIndex = -1;
+
+    document.body.classList.remove('mode-pet', 'mode-dock', 'mode-display', 'mode-diagnostics');
+    document.body.classList.add(`mode-${nextMode}`);
+
+    els.modeButtons.forEach((btn) => {
+      const isCurrent = btn.dataset.mode === nextMode;
+      btn.classList.toggle('is-active', isCurrent);
+      btn.setAttribute('aria-pressed', String(isCurrent));
+    });
+
+    els.modeDock.classList.toggle('hidden', nextMode !== 'dock');
+    els.modeDisplay.classList.toggle('hidden', nextMode !== 'display');
+    els.modeDiagnostics.classList.toggle('hidden', nextMode !== 'diagnostics');
+
+    const api = faceApi();
+    if (api && typeof api.setCompactMode === 'function') {
+      api.setCompactMode(nextMode === 'dock' || nextMode === 'display');
+    }
+
+    if (window.DeskDiagnostics) {
+      if (nextMode === 'diagnostics') {
+        window.DeskDiagnostics.activate();
+      } else {
+        window.DeskDiagnostics.deactivate();
+      }
+    }
+
+    if (nextMode === 'dock') {
+      fetchMacApps();
+      fetchShortcuts();
+    } else if (nextMode === 'display') {
+      refreshSmartDisplay();
+    }
+
+    if (state.displayPollTimer) {
+      window.clearInterval(state.displayPollTimer);
+      state.displayPollTimer = null;
+    }
+    if (nextMode === 'display') {
+      state.displayPollTimer = window.setInterval(refreshSmartDisplay, 10000);
+    }
+
+    const aud = audioApi();
+    if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) {
+      aud.click();
+    }
+
+    showHud();
+    syncHudOffset();
+  }
+
+  function cycleMode(delta) {
+    const idx = MODES.indexOf(state.mode);
+    const nextIdx = (idx + delta + MODES.length) % MODES.length;
+    setMode(MODES[nextIdx]);
+  }
+
+  // Legenda em streaming
   function setCaption(text, { isError = false } = {}) {
     const clean = (text || '').trim();
     els.captionText.textContent = clean;
@@ -296,7 +557,7 @@
     els.btnCaption.setAttribute('aria-pressed', String(state.captionVisible));
   }
 
-  // Síntese de voz (TTS) via Web Speech API
+  // Áudio Procedural + TTS Híbrido (Browser + Servidor Mac)
   function supportsSpeechSynthesis() {
     return typeof window !== 'undefined' && 'speechSynthesis' in window;
   }
@@ -311,7 +572,6 @@
     const pool = ptBrVoices.length > 0 ? ptBrVoices : ptAnyVoices;
     if (pool.length === 0) return null;
 
-    // Prioriza vozes naturais conhecidas no macOS e Chrome
     const preferredPatterns = [
       /luciana/i,
       /felipe/i,
@@ -324,12 +584,14 @@
       const match = pool.find((v) => pattern.test(v.name));
       if (match) return match;
     }
-
     return pool[0];
   }
 
   function refreshVoices() {
     state.selectedVoice = pickBestPortugueseVoice();
+    if (window.DeskDiagnostics && typeof window.DeskDiagnostics.refreshVoices === 'function') {
+      window.DeskDiagnostics.refreshVoices();
+    }
   }
 
   function unlockAudio() {
@@ -337,20 +599,36 @@
     state.audioUnlocked = true;
     els.audioUnlockBanner.classList.add('hidden');
 
-    if (!supportsSpeechSynthesis()) return;
-    try {
-      window.speechSynthesis.resume();
-      // Utterance silenciosa curta destrava autoplay em navegadores baseados em WebKit/Blink
-      if (!window.speechSynthesis.speaking) {
-        const primer = new SpeechSynthesisUtterance(' ');
-        primer.volume = 0;
-        primer.rate = 10;
-        primer.lang = 'pt-BR';
-        window.speechSynthesis.speak(primer);
+    const aud = audioApi();
+    if (aud && typeof aud.unlock === 'function') {
+      aud.unlock();
+    }
+
+    // Destrava <audio> no iOS Safari com WAV silencioso no gesto do usuário
+    if (els.serverTtsAudio) {
+      try {
+        els.serverTtsAudio.src = SILENT_WAV_DATA_URI;
+        const p = els.serverTtsAudio.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch {
+        // Ignora bloqueio em ambiente headless
       }
-      refreshVoices();
-    } catch {
-      // Silencia eventuais bloqueios de ambiente headless
+    }
+
+    if (supportsSpeechSynthesis()) {
+      try {
+        window.speechSynthesis.resume();
+        if (!window.speechSynthesis.speaking) {
+          const primer = new SpeechSynthesisUtterance(' ');
+          primer.volume = 0;
+          primer.rate = 10;
+          primer.lang = 'pt-BR';
+          window.speechSynthesis.speak(primer);
+        }
+        refreshVoices();
+      } catch {
+        // Ignora bloqueio
+      }
     }
   }
 
@@ -371,45 +649,96 @@
     state.audioPhase = 0;
     state.audioLevelTimer = window.setInterval(() => {
       state.audioPhase += 0.48;
-      // Modulação orgânica simulando sílabas enquanto o navegador fala
       const wave =
         0.5 +
         0.26 * Math.sin(state.audioPhase) +
         0.16 * Math.sin(state.audioPhase * 2.3 + 0.7) +
         (Math.random() - 0.5) * 0.14;
-      const clamped = Math.max(0.15, Math.min(0.95, wave));
-      setAudioLevelSafe(clamped);
+      setAudioLevelSafe(Math.max(0.15, Math.min(0.95, wave)));
     }, 65);
   }
 
   function stopSpeaking({ resetState = true } = {}) {
+    state.ttsQueue = [];
+    state.ttsPlaying = false;
     state.activeUtterance = null;
     clearAudioLevelTimer();
+
+    if (els.serverTtsAudio) {
+      try {
+        els.serverTtsAudio.pause();
+        els.serverTtsAudio.currentTime = 0;
+      } catch {
+        // Ignora erro
+      }
+      if (state.serverAudioUrl) {
+        URL.revokeObjectURL(state.serverAudioUrl);
+        state.serverAudioUrl = null;
+      }
+    }
+
     if (supportsSpeechSynthesis()) {
       try {
         window.speechSynthesis.cancel();
       } catch {
-        // Ignora erro caso speechSynthesis não esteja ativo
+        // Ignora erro
       }
     }
+
     if (resetState) {
       applyFaceState('idle');
     }
   }
 
-  function speakText(text) {
+  function enqueueTtsSentence(text, forceMode) {
     const clean = (text || '').trim();
-    if (!state.ttsEnabled || !clean || !supportsSpeechSynthesis()) {
+    if (!clean) return;
+    if (!state.ttsEnabled && !forceMode) return;
+
+    state.ttsQueue.push({ text: clean, mode: forceMode || state.ttsMode });
+    if (!state.ttsPlaying) {
+      pumpTtsQueue();
+    }
+  }
+
+  async function pumpTtsQueue() {
+    if (state.ttsPlaying) return;
+    const item = state.ttsQueue.shift();
+    if (!item) {
+      clearAudioLevelTimer();
       applyFaceState('idle');
       return;
     }
 
-    stopSpeaking({ resetState: false });
-    refreshVoices();
+    state.ttsPlaying = true;
+    const modeToUse = item.mode === 'server' ? 'server' : 'browser';
 
+    if (modeToUse === 'server') {
+      await playServerTtsItem(item.text);
+      state.ttsPlaying = false;
+      pumpTtsQueue();
+      return;
+    }
+
+    if (!supportsSpeechSynthesis()) {
+      // Fallback automático para TTS do servidor se o browser não suportar speechSynthesis
+      await playServerTtsItem(item.text);
+      state.ttsPlaying = false;
+      pumpTtsQueue();
+      return;
+    }
+
+    playBrowserTtsItem(item.text, () => {
+      state.ttsPlaying = false;
+      pumpTtsQueue();
+    });
+  }
+
+  function playBrowserTtsItem(clean, onDone) {
+    refreshVoices();
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = 'pt-BR';
-    utterance.rate = 1.02;
+    utterance.rate = 1.03;
     utterance.pitch = 1.0;
     if (state.selectedVoice) {
       utterance.voice = state.selectedVoice;
@@ -417,6 +746,17 @@
 
     state.activeUtterance = utterance;
     let started = false;
+    let finished = false;
+
+    const finishOnce = () => {
+      if (finished) return;
+      finished = true;
+      if (state.activeUtterance === utterance) {
+        state.activeUtterance = null;
+      }
+      clearAudioLevelTimer();
+      onDone();
+    };
 
     utterance.onstart = () => {
       if (state.activeUtterance !== utterance) return;
@@ -430,51 +770,142 @@
     };
 
     utterance.onboundary = () => {
-      if (state.activeUtterance !== utterance) return;
-      // Pequeno reforço rítmico no início de cada palavra quando o navegador emite onboundary
-      setAudioLevelSafe(0.88);
+      if (state.activeUtterance === utterance) {
+        setAudioLevelSafe(0.88);
+      }
     };
 
-    const handleFinish = () => {
-      if (state.activeUtterance !== utterance) return;
-      state.activeUtterance = null;
-      clearAudioLevelTimer();
-      applyFaceState('idle');
-    };
+    utterance.onend = finishOnce;
+    utterance.onerror = finishOnce;
 
-    utterance.onend = handleFinish;
-    utterance.onerror = handleFinish;
-
-    // Salvaguarda caso o navegador bloqueie autoplay ou não dispare onstart
     state.speechStartGuardTimer = window.setTimeout(() => {
-      if (
-        state.activeUtterance === utterance &&
-        !started &&
-        !window.speechSynthesis.speaking
-      ) {
-        state.activeUtterance = null;
-        clearAudioLevelTimer();
-        applyFaceState('idle');
+      if (state.activeUtterance === utterance && !started && !window.speechSynthesis.speaking) {
         if (!state.audioUnlocked) {
           els.audioUnlockBanner.classList.remove('hidden');
         }
+        finishOnce();
       }
-    }, 1000);
+    }, 1100);
 
     try {
       window.speechSynthesis.speak(utterance);
     } catch {
-      handleFinish();
+      finishOnce();
     }
+  }
+
+  async function playServerTtsItem(clean) {
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: clean, format: 'm4a' }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      if (!blob || blob.size === 0) return;
+
+      if (state.serverAudioUrl) {
+        URL.revokeObjectURL(state.serverAudioUrl);
+      }
+      state.serverAudioUrl = URL.createObjectURL(blob);
+
+      await new Promise((resolve) => {
+        const audioEl = els.serverTtsAudio;
+        if (!audioEl) {
+          resolve();
+          return;
+        }
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          audioEl.onended = null;
+          audioEl.onerror = null;
+          clearAudioLevelTimer();
+          resolve();
+        };
+
+        audioEl.onended = done;
+        audioEl.onerror = done;
+        audioEl.src = state.serverAudioUrl;
+        applyFaceState('speaking');
+        startAudioLevelAnimation();
+        const p = audioEl.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {
+            if (!state.audioUnlocked) {
+              els.audioUnlockBanner.classList.remove('hidden');
+            }
+            done();
+          });
+        }
+      });
+    } catch {
+      // Silencia erro de rede no TTS do servidor
+    }
+  }
+
+  function speakText(text) {
+    const clean = (text || '').trim();
+    if (!state.ttsEnabled || !clean) {
+      if (!state.ttsPlaying) applyFaceState('idle');
+      return;
+    }
+    enqueueTtsSentence(clean);
   }
 
   function syncTtsUI() {
     els.btnTts.textContent = state.ttsEnabled ? '🔊 Voz' : '🔇 Mudo';
     els.btnTts.classList.toggle('is-active', state.ttsEnabled);
     els.btnTts.setAttribute('aria-pressed', String(state.ttsEnabled));
+
+    els.btnTtsMode.textContent = state.ttsMode === 'server' ? '🖥️ Mac TTS' : '🗣️ Browser';
+    els.btnTtsMode.classList.toggle('is-active', state.ttsMode === 'server');
+
+    els.btnPetSounds.textContent = state.petSoundsEnabled ? '🔔 Sons Pet' : '🔕 Pet Mudo';
+    els.btnPetSounds.classList.toggle('is-active', state.petSoundsEnabled);
+    els.btnPetSounds.setAttribute('aria-pressed', String(state.petSoundsEnabled));
+
+    const aud = audioApi();
+    if (aud && typeof aud.setMuted === 'function') {
+      aud.setMuted(!state.petSoundsEnabled);
+    }
+
+    if (window.DeskDiagnostics && typeof window.DeskDiagnostics.refreshVoices === 'function') {
+      window.DeskDiagnostics.refreshVoices();
+    }
   }
 
-  // Conexão WebSocket com reconexão automática (backoff a partir de 2s)
+  function toggleTtsMode() {
+    unlockAudio();
+    state.ttsMode = state.ttsMode === 'browser' ? 'server' : 'browser';
+    savePref(PREFS.ttsMode, state.ttsMode);
+    syncTtsUI();
+    showToast(
+      state.ttsMode === 'server'
+        ? 'Voz alterada para Servidor Mac (/api/tts)'
+        : 'Voz alterada para Navegador (speechSynthesis)'
+    );
+  }
+
+  // Barge-in determinístico
+  function triggerBargeIn() {
+    const api = faceApi();
+    const currentFaceState = api && typeof api.getState === 'function' ? api.getState() : 'idle';
+    const isBusy =
+      state.ttsPlaying ||
+      state.ttsQueue.length > 0 ||
+      currentFaceState === 'speaking' ||
+      currentFaceState === 'thinking';
+
+    stopSpeaking({ resetState: true });
+    if (isBusy) {
+      sendWs({ type: 'interrupt' });
+    }
+  }
+
+  // WebSocket (/ws)
   function setWsStatus(mode, label) {
     els.wsDot.classList.remove('is-connected', 'is-reconnecting');
     if (mode === 'connected') {
@@ -525,6 +956,10 @@
       state.reconnectDelayMs = WS_RECONNECT_BASE_MS;
       setWsStatus('connected', 'Conectado');
       fetchMemory();
+      const aud = audioApi();
+      if (aud && typeof aud.wake === 'function' && state.audioUnlocked && state.petSoundsEnabled) {
+        aud.wake();
+      }
     });
 
     ws.addEventListener('message', (event) => {
@@ -565,11 +1000,28 @@
         }
         break;
       }
+      case 'transcript': {
+        const spoken = (msg.text || '').trim();
+        if (spoken) {
+          state.streamingText = '';
+          state.receivedSentenceStream = false;
+          setCaption(`🎤 "${spoken}"`);
+        }
+        break;
+      }
       case 'delta': {
         const chunk = typeof msg.text === 'string' ? msg.text : '';
         if (chunk) {
           state.streamingText += chunk;
           setCaption(state.streamingText);
+        }
+        break;
+      }
+      case 'sentence': {
+        const sentenceText = typeof msg.text === 'string' ? msg.text.trim() : '';
+        if (sentenceText) {
+          state.receivedSentenceStream = true;
+          enqueueTtsSentence(sentenceText);
         }
         break;
       }
@@ -583,11 +1035,34 @@
         if (msg.emotion) {
           applyFaceEmotion(msg.emotion);
         }
-        speakText(finalText);
+        if (!state.receivedSentenceStream) {
+          speakText(finalText);
+        } else if (!state.ttsPlaying && state.ttsQueue.length === 0) {
+          applyFaceState('idle');
+        }
+        state.receivedSentenceStream = false;
+        break;
+      }
+      case 'interrupted': {
+        stopSpeaking({ resetState: true });
+        break;
+      }
+      case 'action_executed': {
+        handleActionExecutedEvent(msg);
+        break;
+      }
+      case 'tool_approval_request': {
+        showToolApproval(msg);
         break;
       }
       case 'memory_updated': {
         renderMemoryState(msg.facts, msg.recent_messages_count);
+        break;
+      }
+      case 'companion_updated': {
+        if (msg.companion) {
+          renderCompanionState(msg.companion);
+        }
         break;
       }
       case 'error': {
@@ -603,7 +1078,195 @@
     }
   }
 
-  // Controle de digitação com debounce e olhar sutil para a caixa de texto
+  function handleActionExecutedEvent(msg) {
+    const label = msg.title || msg.target || msg.action || 'Ação executada';
+    const ok = msg.ok !== false;
+    const message = ok
+      ? `⚡ ${label}`
+      : `⚠️ ${msg.message || msg.error || `Falha em ${label}`}`;
+    showToast(message, { isError: !ok });
+
+    const target = String(msg.target || '').toLowerCase();
+    const kind = String(msg.kind || '').toLowerCase();
+    if (kind === 'pomodoro' || target === 'pomodoro_start' || target === 'pomodoro_25') {
+      if (target === 'stop' || target === 'pomodoro_stop') {
+        stopPomodoro();
+      } else {
+        startPomodoro(25 * 60, 'focus');
+      }
+    }
+
+    if (state.mode === 'dock') {
+      fetchMacApps();
+    } else if (state.mode === 'display') {
+      refreshSmartDisplay();
+    }
+  }
+
+  function showToolApproval(msg) {
+    state.pendingApprovalId = msg.approval_id || msg.id || null;
+    const desc = msg.title || msg.description || msg.target || 'executar atalho no Mac';
+    els.approvalText.textContent = `Confirmar ação: ${desc}?`;
+    els.approvalBanner.classList.remove('hidden');
+    const aud = audioApi();
+    if (aud && typeof aud.alert === 'function' && state.petSoundsEnabled) {
+      aud.alert();
+    }
+  }
+
+  function resolveToolApproval(approved) {
+    if (!state.pendingApprovalId) {
+      els.approvalBanner.classList.add('hidden');
+      return;
+    }
+    sendWs({
+      type: 'confirm_action',
+      approval_id: state.pendingApprovalId,
+      approved: Boolean(approved),
+    });
+    state.pendingApprovalId = null;
+    els.approvalBanner.classList.add('hidden');
+  }
+
+  // Push-to-Talk (Microfone -> Base64 -> WS {type:'audio'})
+  async function startPtt() {
+    if (state.ptt.active) return;
+    unlockAudio();
+    triggerBargeIn();
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast('Microfone indisponível neste navegador/origem (use HTTPS ou localhost).', {
+        isError: true,
+      });
+      return;
+    }
+    if (typeof window.MediaRecorder === 'undefined') {
+      showToast('Gravação MediaRecorder indisponível neste navegador.', { isError: true });
+      return;
+    }
+
+    state.ptt.active = true;
+    els.btnPtt.classList.add('is-recording');
+    els.btnPtt.textContent = '🔴 Ouvindo...';
+    els.btnPtt.setAttribute('aria-pressed', 'true');
+    applyFaceState('listening');
+
+    try {
+      const selectedMic =
+        window.DeskDiagnostics && typeof window.DeskDiagnostics.getSelectedMicId === 'function'
+          ? window.DeskDiagnostics.getSelectedMicId()
+          : '';
+      const audioConstraints = selectedMic
+        ? { deviceId: { exact: selectedMic }, echoCancellation: true, noiseSuppression: true }
+        : { echoCancellation: true, noiseSuppression: true };
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      if (!state.ptt.active) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      const preferred = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+      const mimeType = preferred.find((t) => window.MediaRecorder.isTypeSupported(t)) || '';
+      const recorder = mimeType
+        ? new window.MediaRecorder(stream, { mimeType })
+        : new window.MediaRecorder(stream);
+
+      state.ptt.stream = stream;
+      state.ptt.recorder = recorder;
+      state.ptt.chunks = [];
+      state.ptt.mimeType = mimeType || recorder.mimeType || 'audio/webm';
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          state.ptt.chunks.push(e.data);
+        }
+      };
+
+      recorder.start();
+    } catch (err) {
+      cancelPttUI();
+      showToast(`Erro ao abrir microfone: ${err.message || err}`, { isError: true });
+      applyFaceState('idle');
+    }
+  }
+
+  function cancelPttUI() {
+    state.ptt.active = false;
+    els.btnPtt.classList.remove('is-recording');
+    els.btnPtt.textContent = '🎤 Segure para falar';
+    els.btnPtt.setAttribute('aria-pressed', 'false');
+  }
+
+  async function stopPttAndSend() {
+    if (!state.ptt.active) return;
+    cancelPttUI();
+
+    const { recorder, stream, chunks, mimeType } = state.ptt;
+    state.ptt.recorder = null;
+    state.ptt.stream = null;
+    state.ptt.chunks = [];
+
+    if (!recorder || recorder.state === 'inactive') {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      applyFaceState('idle');
+      return;
+    }
+
+    await new Promise((resolve) => {
+      recorder.onstop = resolve;
+      try {
+        recorder.stop();
+      } catch {
+        resolve();
+      }
+    });
+
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+    }
+
+    const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+    if (blob.size < 400) {
+      applyFaceState('idle');
+      return;
+    }
+
+    try {
+      const base64 = await blobToBase64(blob);
+      state.streamingText = '';
+      state.receivedSentenceStream = false;
+      setCaption('🎤 Transcrevendo...');
+      applyFaceState('thinking');
+
+      const sent = sendWs({
+        type: 'audio',
+        data: base64,
+        mime_type: mimeType || 'audio/webm',
+      });
+      if (!sent) {
+        applyFaceState('error');
+        setCaption('Sem conexão no momento. Tentando reconectar...', { isError: true });
+      }
+    } catch {
+      applyFaceState('error');
+    }
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = String(reader.result || '');
+        const commaIdx = result.indexOf(',');
+        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+      };
+      reader.onerror = () => reject(new Error('Falha ao ler áudio'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Digitação e envio de texto
   function stopTypingSignal({ resetLook = true } = {}) {
     if (state.typingTimer) {
       window.clearTimeout(state.typingTimer);
@@ -639,12 +1302,9 @@
     }, TYPING_IDLE_MS);
   }
 
-  function handleChatSubmit(event) {
-    event.preventDefault();
-    unlockAudio();
-
-    const text = els.chatInput.value.trim();
-    if (!text) return;
+  function submitChatText(text) {
+    const clean = (text || '').trim();
+    if (!clean) return;
 
     stopSpeaking({ resetState: false });
     if (state.typingTimer) {
@@ -654,21 +1314,844 @@
     state.typingActive = false;
 
     state.streamingText = '';
+    state.receivedSentenceStream = false;
     setCaption('...');
 
-    const sent = sendWs({ type: 'text', text });
+    const sent = sendWs({ type: 'text', text: clean });
     if (!sent) {
       applyFaceState('error');
       setCaption('Sem conexão no momento. Tentando reconectar...', { isError: true });
       return;
     }
+  }
 
+  function handleChatSubmit(event) {
+    event.preventDefault();
+    unlockAudio();
+    const text = els.chatInput.value.trim();
+    if (!text) return;
+    submitChatText(text);
     els.chatInput.value = '';
     lookAtSafe(0, 0);
     scheduleHudAutoHide();
   }
 
-  // API HTTP e renderização do painel de memória
+  // Interação direta de toque/carinho no rosto
+  function computeNormalizedTouch(clientX, clientY) {
+    const rect = els.faceContainer.getBoundingClientRect();
+    if (!rect.width || !rect.height) return { nx: 0, ny: 0 };
+    const nx = Math.max(-1, Math.min(1, ((clientX - rect.left) / rect.width) * 2 - 1));
+    const ny = Math.max(-1, Math.min(1, ((clientY - rect.top) / rect.height) * 2 - 1));
+    return { nx, ny };
+  }
+
+  function bindFaceTouchEvents() {
+    if (!els.faceContainer) return;
+
+    els.faceContainer.addEventListener('pointerdown', (e) => {
+      unlockAudio();
+      const api = faceApi();
+      const faceState = api && typeof api.getState === 'function' ? api.getState() : 'idle';
+      if (faceState === 'speaking' || state.ttsPlaying) {
+        triggerBargeIn();
+        return;
+      }
+      state.pointerTouch.down = true;
+      state.pointerTouch.moved = false;
+      state.pointerTouch.startX = e.clientX;
+      state.pointerTouch.startY = e.clientY;
+    });
+
+    els.faceContainer.addEventListener('pointermove', (e) => {
+      if (!state.pointerTouch.down) return;
+      const dx = e.clientX - state.pointerTouch.startX;
+      const dy = e.clientY - state.pointerTouch.startY;
+      if (Math.hypot(dx, dy) > 10) {
+        state.pointerTouch.moved = true;
+      }
+      if (!state.pointerTouch.moved) return;
+
+      const { nx, ny } = computeNormalizedTouch(e.clientX, e.clientY);
+      const api = faceApi();
+      if (api && typeof api.reactToTouch === 'function') {
+        api.reactToTouch('pet', nx, ny);
+      } else {
+        lookAtSafe(nx, ny);
+      }
+
+      const now = Date.now();
+      if (now - state.lastPetSentAt > 900) {
+        state.lastPetSentAt = now;
+        sendWs({ type: 'pet', kind: 'pet' });
+      }
+    });
+
+    const endTouch = (e) => {
+      if (!state.pointerTouch.down) return;
+      const wasMoved = state.pointerTouch.moved;
+      state.pointerTouch.down = false;
+      state.pointerTouch.moved = false;
+
+      const aud = audioApi();
+      if (aud && typeof aud.purr === 'function') {
+        aud.purr(false);
+      }
+
+      if (!wasMoved) {
+        const { nx, ny } = computeNormalizedTouch(e.clientX, e.clientY);
+        const api = faceApi();
+        if (api && typeof api.reactToTouch === 'function') {
+          api.reactToTouch('poke', nx, ny);
+        }
+        sendWs({ type: 'pet', kind: 'poke' });
+      }
+      syncFaceBadges();
+    };
+
+    els.faceContainer.addEventListener('pointerup', endTouch);
+    els.faceContainer.addEventListener('pointercancel', endTouch);
+  }
+
+  // Dock Viva & Stream Deck de Atalhos
+  async function fetchMacApps() {
+    try {
+      const res = await fetch('/api/mac/apps');
+      if (!res.ok) return;
+      const data = await res.json();
+      const apps = Array.isArray(data) ? data : data.apps || [];
+      state.macApps = apps;
+      renderMacApps();
+    } catch {
+      // Ignora erro transitório
+    }
+  }
+
+  function renderMacApps() {
+    els.dockAppsGrid.textContent = '';
+    const front = state.macApps.find((a) => a.frontmost || a.is_frontmost);
+    els.dockActiveApp.textContent = `Ativo: ${front ? front.name : '—'}`;
+
+    if (state.macApps.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'panel-pill';
+      empty.textContent = 'Nenhum app listado';
+      els.dockAppsGrid.appendChild(empty);
+      return;
+    }
+
+    state.macApps.forEach((app) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'dock-app-tile';
+      if (app.running || app.is_running) btn.classList.add('is-running');
+      if (app.frontmost || app.is_frontmost) btn.classList.add('is-frontmost');
+      btn.dataset.navTile = 'app';
+
+      const dot = document.createElement('span');
+      dot.className = 'dock-app-dot';
+      dot.setAttribute('aria-hidden', 'true');
+
+      const label = document.createElement('span');
+      label.textContent = `${app.icon ? `${app.icon} ` : ''}${app.name}`;
+
+      btn.appendChild(dot);
+      btn.appendChild(label);
+      btn.addEventListener('click', () => activateMacApp(app.name));
+      els.dockAppsGrid.appendChild(btn);
+    });
+  }
+
+  async function activateMacApp(appName) {
+    if (!appName) return;
+    unlockAudio();
+    const aud = audioApi();
+    if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) aud.click();
+
+    try {
+      const res = await fetch('/api/mac/apps/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app: appName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok !== false) {
+        showToast(`🖥️ ${appName} em foco`);
+        applyFaceEmotion('happy');
+        fetchMacApps();
+      } else {
+        showToast(data.error || data.message || data.detail || `Erro ao ativar ${appName}`, {
+          isError: true,
+        });
+      }
+    } catch {
+      showToast(`Erro de rede ao ativar ${appName}`, { isError: true });
+    }
+  }
+
+  async function fetchShortcuts() {
+    try {
+      const res = await fetch('/api/shortcuts');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.shortcuts = Array.isArray(data) ? data : data.shortcuts || [];
+      renderShortcutsGrid();
+      if (state.shortcutModalOpen) {
+        renderShortcutManageList();
+      }
+    } catch {
+      // Ignora erro transitório
+    }
+  }
+
+  function formatShortcutBadge(sc) {
+    const p = sc.payload || {};
+    if (sc.action_type === 'keystroke') return p.keys || '';
+    if (sc.action_type === 'app_activate') return p.app || 'App';
+    if (sc.action_type === 'mac_command') return p.command || 'Comando';
+    if (sc.action_type === 'agent_prompt') return 'Assistente';
+    return '';
+  }
+
+  function renderShortcutsGrid() {
+    els.shortcutsGrid.textContent = '';
+    const filtered = state.shortcuts.filter((sc) => {
+      if (sc.pinned_on_deck === false || sc.pinned_on_deck === 0) return false;
+      if (state.shortcutCategory === 'all') return true;
+      return sc.category === state.shortcutCategory;
+    });
+
+    if (filtered.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'memory-hint';
+      empty.textContent = 'Nenhum atalho nesta categoria. Clique em "➕ Novo Atalho" para criar.';
+      els.shortcutsGrid.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach((sc) => {
+      const tile = document.createElement('div');
+      tile.className = `shortcut-tile color-${sc.color || 'cyan'}`;
+      tile.tabIndex = 0;
+      tile.setAttribute('role', 'button');
+      tile.dataset.navTile = 'shortcut';
+
+      const top = document.createElement('div');
+      top.className = 'shortcut-tile-top';
+
+      const icon = document.createElement('span');
+      icon.className = 'shortcut-icon';
+      icon.textContent = sc.icon || '⚡';
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'shortcut-edit-btn';
+      editBtn.title = 'Editar / Trocar atalho';
+      editBtn.textContent = '✏️';
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openShortcutModal(sc);
+      });
+
+      top.appendChild(icon);
+      top.appendChild(editBtn);
+
+      const title = document.createElement('div');
+      title.className = 'shortcut-title';
+      title.textContent = sc.title || sc.slug || 'Atalho';
+
+      const meta = document.createElement('div');
+      meta.className = 'shortcut-meta';
+      meta.textContent = formatShortcutBadge(sc);
+
+      tile.appendChild(top);
+      tile.appendChild(title);
+      tile.appendChild(meta);
+
+      tile.addEventListener('click', () => runShortcut(sc));
+      tile.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          runShortcut(sc);
+        }
+      });
+
+      els.shortcutsGrid.appendChild(tile);
+    });
+  }
+
+  async function runShortcut(sc) {
+    if (!sc) return;
+    unlockAudio();
+    const aud = audioApi();
+    if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) aud.click();
+
+    if (sc.action_type === 'agent_prompt' && sc.payload && sc.payload.prompt) {
+      submitChatText(sc.payload.prompt);
+      showToast(`🤖 ${sc.title}`);
+      return;
+    }
+
+    const idOrSlug = sc.id !== undefined && sc.id !== null ? sc.id : sc.slug;
+    try {
+      const res = await fetch(`/api/shortcuts/${encodeURIComponent(idOrSlug)}/run`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.ok !== false) {
+        showToast(`⚡ ${sc.title}`);
+        applyFaceEmotion('happy');
+        const cmd = sc.payload && sc.payload.command;
+        if (cmd === 'pomodoro_start') startPomodoro(25 * 60, 'focus');
+        if (cmd === 'pomodoro_stop') stopPomodoro();
+      } else {
+        showToast(
+          data.error || data.message || data.detail || `Falha ao executar ${sc.title}`,
+          {
+            isError: true,
+            durationMs: 4500,
+          }
+        );
+        applyFaceEmotion('sad');
+      }
+    } catch {
+      showToast(`Erro de rede ao executar ${sc.title}`, { isError: true });
+    }
+  }
+
+  // Modal CRUD de Atalhos
+  function updateShortcutPayloadVisibility() {
+    const type = els.scActionType.value;
+    els.scPayloadKeystroke.classList.toggle('hidden', type !== 'keystroke');
+    els.scPayloadApp.classList.toggle('hidden', type !== 'app_activate');
+    els.scPayloadCommand.classList.toggle('hidden', type !== 'mac_command');
+    els.scPayloadPrompt.classList.toggle('hidden', type !== 'agent_prompt');
+  }
+
+  function syncBuilderFromKeysInput() {
+    const raw = (els.scKeys.value || '').toLowerCase();
+    const parts = raw.split('+').map((p) => p.trim()).filter(Boolean);
+    els.modToggles.forEach((btn) => {
+      btn.classList.toggle('is-active', parts.includes(btn.dataset.mod));
+    });
+    const lastKey = parts.find((p) => !['cmd', 'opt', 'alt', 'ctrl', 'shift'].includes(p)) || '';
+    if (els.scKeySelect && Array.from(els.scKeySelect.options).some((o) => o.value === lastKey)) {
+      els.scKeySelect.value = lastKey;
+    }
+  }
+
+  function rebuildKeysFromBuilder() {
+    const mods = [];
+    els.modToggles.forEach((btn) => {
+      if (btn.classList.contains('is-active')) mods.push(btn.dataset.mod);
+    });
+    const key = els.scKeySelect.value || '';
+    const all = key ? [...mods, key] : mods;
+    els.scKeys.value = all.join('+');
+  }
+
+  function resetShortcutForm() {
+    els.scId.value = '';
+    els.scFormHeading.textContent = 'Novo Atalho';
+    els.scTitle.value = '';
+    els.scIcon.value = '⚡';
+    els.scCategory.value = 'custom';
+    els.scColor.value = 'cyan';
+    els.scActionType.value = 'keystroke';
+    els.scKeys.value = '';
+    els.scAppName.value = '';
+    els.scMacCommand.value = 'mission_control';
+    els.scAgentPrompt.value = '';
+    els.scVoiceTriggers.value = '';
+    els.scPinned.checked = true;
+    els.scConfirm.checked = false;
+    els.btnScDelete.classList.add('hidden');
+    stopRecordingKeys();
+    updateShortcutPayloadVisibility();
+    syncBuilderFromKeysInput();
+  }
+
+  function fillShortcutForm(sc) {
+    els.scId.value = sc.id !== undefined ? String(sc.id) : sc.slug || '';
+    els.scFormHeading.textContent = `Editar: ${sc.title}`;
+    els.scTitle.value = sc.title || '';
+    els.scIcon.value = sc.icon || '⚡';
+    els.scCategory.value = sc.category || 'custom';
+    els.scColor.value = sc.color || 'cyan';
+    els.scActionType.value = sc.action_type || 'keystroke';
+    const p = sc.payload || {};
+    els.scKeys.value = p.keys || '';
+    els.scAppName.value = p.app || '';
+    els.scMacCommand.value = p.command || 'mission_control';
+    els.scAgentPrompt.value = p.prompt || '';
+    els.scVoiceTriggers.value = sc.voice_triggers || '';
+    els.scPinned.checked = sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0;
+    els.scConfirm.checked = Boolean(sc.requires_confirmation);
+    els.btnScDelete.classList.remove('hidden');
+    stopRecordingKeys();
+    updateShortcutPayloadVisibility();
+    syncBuilderFromKeysInput();
+  }
+
+  function openShortcutModal(shortcutToEdit = null) {
+    state.shortcutModalOpen = true;
+    els.shortcutModalBackdrop.classList.remove('hidden');
+    els.shortcutModal.classList.remove('hidden');
+    if (shortcutToEdit) {
+      fillShortcutForm(shortcutToEdit);
+    } else {
+      resetShortcutForm();
+    }
+    renderShortcutManageList();
+    showHud();
+    syncHudOffset();
+  }
+
+  function closeShortcutModal() {
+    state.shortcutModalOpen = false;
+    stopRecordingKeys();
+    els.shortcutModalBackdrop.classList.add('hidden');
+    els.shortcutModal.classList.add('hidden');
+    scheduleHudAutoHide();
+  }
+
+  function startRecordingKeys() {
+    state.recordingShortcutKeys = !state.recordingShortcutKeys;
+    els.btnRecordKeys.classList.toggle('is-active', state.recordingShortcutKeys);
+    els.btnRecordKeys.textContent = state.recordingShortcutKeys
+      ? '🔴 Pressione a combinação...'
+      : '🎹 Gravar no Teclado';
+  }
+
+  function stopRecordingKeys() {
+    state.recordingShortcutKeys = false;
+    els.btnRecordKeys.classList.remove('is-active');
+    els.btnRecordKeys.textContent = '🎹 Gravar no Teclado';
+  }
+
+  function normalizeRecordedKey(event) {
+    const code = event.code || '';
+    const key = (event.key || '').toLowerCase();
+    if (['meta', 'control', 'alt', 'shift'].includes(key)) return null;
+    if (code === 'Backquote' || key === '`' || key === 'dead') return 'grave';
+    if (code === 'Space' || key === ' ') return 'space';
+    if (key === 'arrowleft') return 'left';
+    if (key === 'arrowright') return 'right';
+    if (key === 'arrowup') return 'up';
+    if (key === 'arrowdown') return 'down';
+    if (key === 'escape') return 'esc';
+    if (key === 'enter' || key === 'tab') return key;
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+    if (/^f([1-9]|1[0-2])$/.test(key)) return key;
+    if (/^[a-z0-9]$/.test(key)) return key;
+    return null;
+  }
+
+  async function saveShortcutFromForm(event) {
+    event.preventDefault();
+    const actionType = els.scActionType.value;
+    let payload = {};
+    if (actionType === 'keystroke') {
+      payload = { keys: els.scKeys.value.trim().toLowerCase() };
+    } else if (actionType === 'app_activate') {
+      payload = { app: els.scAppName.value.trim() };
+    } else if (actionType === 'mac_command') {
+      payload = { command: els.scMacCommand.value };
+    } else if (actionType === 'agent_prompt') {
+      payload = { prompt: els.scAgentPrompt.value.trim() };
+    }
+
+    const body = {
+      title: els.scTitle.value.trim(),
+      icon: els.scIcon.value.trim() || '⚡',
+      category: els.scCategory.value,
+      color: els.scColor.value,
+      action_type: actionType,
+      payload,
+      voice_triggers: els.scVoiceTriggers.value.trim(),
+      pinned_on_deck: els.scPinned.checked,
+      requires_confirmation: els.scConfirm.checked,
+    };
+
+    const existingId = els.scId.value.trim();
+    const url = existingId
+      ? `/api/shortcuts/${encodeURIComponent(existingId)}`
+      : '/api/shortcuts';
+    const method = existingId ? 'PUT' : 'POST';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Erro ao salvar atalho', { isError: true });
+        return;
+      }
+      showToast(existingId ? '✓ Atalho atualizado' : '✓ Novo atalho criado');
+      resetShortcutForm();
+      await fetchShortcuts();
+    } catch {
+      showToast('Erro de rede ao salvar atalho', { isError: true });
+    }
+  }
+
+  async function deleteShortcutById(idOrSlug) {
+    if (!idOrSlug) return;
+    try {
+      const res = await fetch(`/api/shortcuts/${encodeURIComponent(idOrSlug)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) return;
+      showToast('🗑️ Atalho removido');
+      if (els.scId.value === String(idOrSlug)) {
+        resetShortcutForm();
+      }
+      await fetchShortcuts();
+    } catch {
+      showToast('Erro ao remover atalho', { isError: true });
+    }
+  }
+
+  async function moveShortcutOrder(index, direction) {
+    const nextIdx = index + direction;
+    if (nextIdx < 0 || nextIdx >= state.shortcuts.length) return;
+    const copy = [...state.shortcuts];
+    const [item] = copy.splice(index, 1);
+    copy.splice(nextIdx, 0, item);
+    const orderedIds = copy.map((s) => s.id);
+    try {
+      const res = await fetch('/api/shortcuts/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ordered_ids: orderedIds }),
+      });
+      if (res.ok) {
+        await fetchShortcuts();
+      }
+    } catch {
+      // Ignora erro transitório
+    }
+  }
+
+  async function resetDefaultShortcuts() {
+    try {
+      const res = await fetch('/api/shortcuts/reset-defaults', { method: 'POST' });
+      if (!res.ok) return;
+      showToast('↺ Atalhos restaurados para o padrão');
+      resetShortcutForm();
+      await fetchShortcuts();
+    } catch {
+      showToast('Erro ao restaurar atalhos', { isError: true });
+    }
+  }
+
+  function renderShortcutManageList() {
+    els.scManageList.textContent = '';
+    state.shortcuts.forEach((sc, index) => {
+      const li = document.createElement('li');
+      li.className = 'sc-manage-item';
+
+      const info = document.createElement('div');
+      info.className = 'sc-manage-info';
+      const ico = document.createElement('span');
+      ico.textContent = sc.icon || '⚡';
+      const title = document.createElement('span');
+      title.className = 'sc-manage-title';
+      title.textContent = sc.title;
+      info.appendChild(ico);
+      info.appendChild(title);
+
+      const btns = document.createElement('div');
+      btns.className = 'sc-manage-btns';
+
+      const upBtn = document.createElement('button');
+      upBtn.type = 'button';
+      upBtn.className = 'mini-icon-btn';
+      upBtn.textContent = '↑';
+      upBtn.title = 'Subir';
+      upBtn.addEventListener('click', () => moveShortcutOrder(index, -1));
+
+      const downBtn = document.createElement('button');
+      downBtn.type = 'button';
+      downBtn.className = 'mini-icon-btn';
+      downBtn.textContent = '↓';
+      downBtn.title = 'Descer';
+      downBtn.addEventListener('click', () => moveShortcutOrder(index, 1));
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'mini-icon-btn';
+      editBtn.textContent = '✏️';
+      editBtn.title = 'Editar';
+      editBtn.addEventListener('click', () => fillShortcutForm(sc));
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'mini-icon-btn';
+      delBtn.textContent = '🗑️';
+      delBtn.title = 'Remover';
+      delBtn.addEventListener('click', () => deleteShortcutById(sc.id));
+
+      btns.appendChild(upBtn);
+      btns.appendChild(downBtn);
+      btns.appendChild(editBtn);
+      btns.appendChild(delBtn);
+
+      li.appendChild(info);
+      li.appendChild(btns);
+      els.scManageList.appendChild(li);
+    });
+  }
+
+  // Modo 3: Smart Display Ambiente, Relógio, Pomodoro, Clima & Telemetria
+  function formatClockParts(date) {
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    const dateStr = date.toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
+    return { hm: `${hh}:${mm}`, hms: `${hh}:${mm}:${ss}`, dateStr };
+  }
+
+  function tickClocks() {
+    const parts = formatClockParts(new Date());
+    if (els.petClockTime) els.petClockTime.textContent = parts.hm;
+    if (els.petClockDate) els.petClockDate.textContent = parts.dateStr;
+    if (els.displayClockTime) els.displayClockTime.textContent = parts.hms;
+    if (els.displayClockDate) els.displayClockDate.textContent = parts.dateStr;
+  }
+
+  function formatMmSs(totalSeconds) {
+    const safe = Math.max(0, Math.floor(totalSeconds));
+    const m = String(Math.floor(safe / 60)).padStart(2, '0');
+    const s = String(safe % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function syncPomodoroUI() {
+    const label = formatMmSs(state.pomodoro.remainingSec);
+    els.pomodoroTimer.textContent = label;
+    els.petPomodoroText.textContent = `${state.pomodoro.phase === 'break' ? '☕' : '🍅'} ${label}`;
+    els.petPomodoroChip.classList.toggle('hidden', !state.pomodoro.active);
+
+    if (!state.pomodoro.active) {
+      els.pomodoroPhaseLabel.textContent = 'Pronto';
+    } else if (state.pomodoro.phase === 'break') {
+      els.pomodoroPhaseLabel.textContent = 'Pausa';
+    } else {
+      els.pomodoroPhaseLabel.textContent = 'Foco ativo';
+    }
+    syncAccessoryForContext();
+  }
+
+  function startPomodoro(seconds, phase) {
+    stopPomodoro({ silent: true });
+    state.pomodoro.active = true;
+    state.pomodoro.phase = phase;
+    state.pomodoro.remainingSec = seconds;
+    syncPomodoroUI();
+
+    state.pomodoro.intervalId = window.setInterval(() => {
+      state.pomodoro.remainingSec -= 1;
+      if (state.pomodoro.remainingSec <= 0) {
+        const endedPhase = state.pomodoro.phase;
+        stopPomodoro();
+        const aud = audioApi();
+        if (aud && typeof aud.alert === 'function' && state.petSoundsEnabled) aud.alert();
+        applyFaceEmotion('excited');
+        const msg =
+          endedPhase === 'break'
+            ? 'Pausa do Pomodoro finalizada! Hora de voltar ao foco.'
+            : 'Ciclo Pomodoro de foco concluído! Faça uma pausa.';
+        showToast(`🍅 ${msg}`, { durationMs: 5000 });
+        speakText(msg);
+        return;
+      }
+      syncPomodoroUI();
+    }, 1000);
+  }
+
+  function stopPomodoro({ silent = false } = {}) {
+    if (state.pomodoro.intervalId) {
+      window.clearInterval(state.pomodoro.intervalId);
+      state.pomodoro.intervalId = null;
+    }
+    state.pomodoro.active = false;
+    state.pomodoro.phase = 'idle';
+    state.pomodoro.remainingSec = 25 * 60;
+    if (!silent) syncPomodoroUI();
+  }
+
+  async function fetchMacStatus() {
+    try {
+      const res = await fetch('/api/mac/status');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const activeApp = data.active_app || '—';
+      els.macTelemetryApp.textContent = activeApp;
+
+      if (data.battery_percent !== null && data.battery_percent !== undefined) {
+        els.macTelemetryBattery.textContent = `${data.battery_percent}%${
+          data.charging ? ' ⚡' : ''
+        }`;
+      } else {
+        els.macTelemetryBattery.textContent = data.power_source || 'AC / Desktop';
+      }
+
+      if (data.volume !== null && data.volume !== undefined) {
+        els.macTelemetryVolume.textContent = data.muted ? 'Mudo' : `${data.volume}%`;
+      } else {
+        els.macTelemetryVolume.textContent = '—';
+      }
+
+      const np = data.now_playing || {};
+      const playing = Boolean(np.playing || np.state === 'playing');
+      state.musicPlaying = playing;
+      els.nowPlayingState.textContent = playing ? 'Tocando' : 'Pausado';
+      els.nowPlayingTitle.textContent = np.track || np.title || 'Nenhuma mídia ativa';
+      els.nowPlayingArtist.textContent =
+        [np.artist, np.app].filter(Boolean).join(' · ') || 'Spotify / Apple Music';
+
+      syncAccessoryForContext();
+    } catch {
+      // Silencia erro transitório
+    }
+  }
+
+  function mapWeatherEffect(codeOrDesc) {
+    const text = String(codeOrDesc || '').toLowerCase();
+    if (/chuva|garoa|rain|drizzle|tempest/.test(text)) return { effect: 'rain', icon: '🌧️' };
+    if (/neve|snow|geada/.test(text)) return { effect: 'snow', icon: '❄️' };
+    if (/limpo|sol|ensolarado|clear|sun/.test(text)) return { effect: 'sun', icon: '☀️' };
+    if (/nublado|nuvens|cloud/.test(text)) return { effect: 'none', icon: '⛅' };
+    return { effect: 'none', icon: '🌤️' };
+  }
+
+  async function fetchWeather() {
+    try {
+      const res = await fetch('/api/weather');
+      if (!res.ok) return;
+      const data = await res.json();
+      const temp =
+        data.temperature_c !== undefined && data.temperature_c !== null
+          ? `${Math.round(data.temperature_c)}°C`
+          : '--°C';
+      const desc = data.condition || data.description || 'Tempo estável';
+      const city = data.city || 'Local';
+      const mapped = mapWeatherEffect(data.effect || desc);
+
+      els.weatherTemp.textContent = temp;
+      els.weatherDesc.textContent = desc;
+      els.weatherCity.textContent = city;
+      els.weatherIcon.textContent = data.icon || mapped.icon;
+
+      const api = faceApi();
+      if (api && typeof api.setWeather === 'function') {
+        api.setWeather(data.effect || mapped.effect);
+      }
+    } catch {
+      // Silencia erro offline
+    }
+  }
+
+  function renderCompanionState(comp) {
+    if (!comp) return;
+    const affinity = Math.max(0, Math.min(100, Math.round(comp.affinity ?? 50)));
+    const energy = Math.max(0, Math.min(100, Math.round(comp.energy ?? 85)));
+    els.petAffinityVal.textContent = String(affinity);
+    els.petAffinityBar.style.width = `${affinity}%`;
+    els.petEnergyVal.textContent = String(energy);
+    els.petEnergyBar.style.width = `${energy}%`;
+    const pleasure = Number(comp.pleasure ?? 0.2);
+    const moodText = pleasure > 0.35 ? 'radiante' : pleasure < -0.2 ? 'carente' : 'sereno';
+    els.petMoodLabel.textContent = `Humor: ${moodText}`;
+  }
+
+  async function fetchCompanionState() {
+    try {
+      const res = await fetch('/api/memory/state');
+      if (!res.ok) return;
+      const data = await res.json();
+      renderCompanionState(data.companion || data);
+    } catch {
+      // Silencia erro transitório
+    }
+  }
+
+  function refreshSmartDisplay() {
+    fetchMacStatus();
+    fetchWeather();
+    fetchCompanionState();
+  }
+
+  async function triggerQuickMediaCommand(commandSlug) {
+    try {
+      const res = await fetch(`/api/shortcuts/${encodeURIComponent(commandSlug)}/run`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        showToast(data.error || data.message || data.detail || 'Falha no comando de mídia', {
+          isError: true,
+          durationMs: 4000,
+        });
+      }
+      window.setTimeout(fetchMacStatus, 450);
+    } catch {
+      showToast('Erro de rede ao controlar mídia', { isError: true });
+    }
+  }
+
+  // Navegação por Gamepad D-Pad na Dock & Display
+  function getNavigableTiles() {
+    if (state.mode === 'dock') {
+      return Array.from(els.modeDock.querySelectorAll('[data-nav-tile]'));
+    }
+    if (state.mode === 'display') {
+      return Array.from(els.modeDisplay.querySelectorAll('button'));
+    }
+    return [];
+  }
+
+  function moveGamepadFocus(direction) {
+    const items = getNavigableTiles();
+    if (items.length === 0) return;
+
+    items.forEach((el) => el.classList.remove('gamepad-focused'));
+    const step = direction === 'left' || direction === 'up' ? -1 : 1;
+    if (state.gamepadFocusIndex < 0) {
+      state.gamepadFocusIndex = 0;
+    } else {
+      state.gamepadFocusIndex = (state.gamepadFocusIndex + step + items.length) % items.length;
+    }
+
+    const target = items[state.gamepadFocusIndex];
+    if (target) {
+      target.classList.add('gamepad-focused');
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }
+
+  function activateGamepadFocused() {
+    const items = getNavigableTiles();
+    if (items.length > 0 && state.gamepadFocusIndex >= 0 && items[state.gamepadFocusIndex]) {
+      items[state.gamepadFocusIndex].click();
+      return;
+    }
+    if (state.mode === 'pet') {
+      toggleExpressionsBar();
+    }
+  }
+
+  // Memória HTTP & Gaveta
   function renderMemoryState(facts, recentCount) {
     const safeFacts = Array.isArray(facts) ? facts : [];
     const safeCount = typeof recentCount === 'number' ? recentCount : 0;
@@ -678,8 +2161,7 @@
 
     els.memoryCount.textContent = String(safeFacts.length);
     els.factsCountBadge.textContent = String(safeFacts.length);
-    els.recentMessagesBadge.textContent =
-      safeCount === 1 ? '1 msg' : `${safeCount} msgs`;
+    els.recentMessagesBadge.textContent = safeCount === 1 ? '1 msg' : `${safeCount} msgs`;
 
     els.factsList.textContent = '';
     els.factsEmpty.classList.toggle('hidden', safeFacts.length > 0);
@@ -709,9 +2191,7 @@
       delBtn.title = 'Remover este fato';
       delBtn.setAttribute('aria-label', `Remover fato: ${item.fact || ''}`);
       delBtn.textContent = '×';
-      delBtn.addEventListener('click', () => {
-        deleteFact(item.id);
-      });
+      delBtn.addEventListener('click', () => deleteFact(item.id));
 
       li.appendChild(contentDiv);
       li.appendChild(delBtn);
@@ -726,7 +2206,7 @@
       const data = await res.json();
       renderMemoryState(data.facts, data.recent_messages_count);
     } catch {
-      // Falha silenciosa durante reconexão
+      // Falha silenciosa
     }
   }
 
@@ -774,11 +2254,7 @@
       const data = await res.json();
       renderMemoryState(data.facts, data.recent_messages_count);
       hideResetConfirmation();
-      if (!includeFacts) {
-        setCaption('Conversa atual limpa.');
-      } else {
-        setCaption('Toda a memória foi resetada.');
-      }
+      setCaption(includeFacts ? 'Toda a memória foi resetada.' : 'Conversa atual limpa.');
     } catch {
       // Ignora erro transitório
     }
@@ -794,6 +2270,7 @@
     hideResetConfirmation();
     fetchMemory();
     showHud();
+    syncHudOffset();
   }
 
   function closeMemoryDrawer() {
@@ -830,7 +2307,7 @@
     }
   }
 
-  // Tela cheia e Wake Lock opcional
+  // Tela cheia & WakeLock
   async function requestWakeLock() {
     if (!('wakeLock' in navigator) || state.wakeLock) return;
     try {
@@ -839,7 +2316,7 @@
         state.wakeLock = null;
       });
     } catch {
-      // Navegador pode negar Wake Lock sem foco ou permissão
+      // Ignora erro de permissão
     }
   }
 
@@ -848,7 +2325,7 @@
     try {
       await state.wakeLock.release();
     } catch {
-      // Ignora erro ao liberar
+      // Ignora erro
     } finally {
       state.wakeLock = null;
     }
@@ -864,7 +2341,7 @@
         await releaseWakeLock();
       }
     } catch {
-      // Ignora caso tela cheia não seja suportada no ambiente
+      // Ignora se fullscreen não for suportado
     }
   }
 
@@ -875,9 +2352,14 @@
     els.btnFullscreen.textContent = isFull ? '⛶ Sair' : '⛶ Tela Cheia';
   }
 
-  // Registra eventos e inicializa a aplicação
+  function isTypingInField(target) {
+    if (!target || !target.tagName) return false;
+    const tag = target.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+  }
+
+  // Registro de eventos
   function bindEvents() {
-    // Atividade do usuário mantém a HUD visível e destrava áudio no primeiro toque
     ['mousemove', 'pointerdown', 'touchstart'].forEach((evtName) => {
       document.addEventListener(
         evtName,
@@ -891,58 +2373,129 @@
       );
     });
 
+    // Teclado no Mac: Gravador de atalhos, Escape (barge-in / fechar) e Espaço (PTT)
     document.addEventListener('keydown', (event) => {
       showHud();
-      if (event.key === 'Escape' && state.memoryOpen) {
-        closeMemoryDrawer();
+
+      if (state.recordingShortcutKeys && state.shortcutModalOpen) {
+        const keyPart = normalizeRecordedKey(event);
+        if (keyPart) {
+          event.preventDefault();
+          const mods = [];
+          if (event.metaKey) mods.push('cmd');
+          if (event.altKey) mods.push('opt');
+          if (event.ctrlKey) mods.push('ctrl');
+          if (event.shiftKey) mods.push('shift');
+          els.scKeys.value = [...mods, keyPart].join('+');
+          syncBuilderFromKeysInput();
+          stopRecordingKeys();
+        }
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        if (state.shortcutModalOpen) {
+          closeShortcutModal();
+        } else if (state.memoryOpen) {
+          closeMemoryDrawer();
+        } else {
+          triggerBargeIn();
+        }
+        return;
+      }
+
+      if (
+        event.code === 'Space' &&
+        !event.repeat &&
+        !state.shortcutModalOpen &&
+        !state.memoryOpen &&
+        !isTypingInField(document.activeElement)
+      ) {
+        event.preventDefault();
+        state.ptt.spaceHeld = true;
+        startPtt();
       }
     });
 
+    document.addEventListener('keyup', (event) => {
+      if (event.code === 'Space' && state.ptt.spaceHeld) {
+        event.preventDefault();
+        state.ptt.spaceHeld = false;
+        stopPttAndSend();
+      }
+    });
+
+    // Alternador dos 4 modos
+    els.modeButtons.forEach((btn) => {
+      btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    });
+
+    els.petPomodoroChip.addEventListener('click', () => setMode('display'));
     els.audioUnlockBanner.addEventListener('click', unlockAudio);
     els.btnHudPin.addEventListener('click', toggleHudPin);
-
     els.btnExpressions.addEventListener('click', toggleExpressionsBar);
 
     els.btnMemory.addEventListener('click', () => {
-      if (state.memoryOpen) {
-        closeMemoryDrawer();
-      } else {
-        openMemoryDrawer();
-      }
+      if (state.memoryOpen) closeMemoryDrawer();
+      else openMemoryDrawer();
     });
     els.btnCloseMemory.addEventListener('click', closeMemoryDrawer);
     els.memoryBackdrop.addEventListener('click', closeMemoryDrawer);
 
+    els.btnPetSounds.addEventListener('click', () => {
+      unlockAudio();
+      state.petSoundsEnabled = !state.petSoundsEnabled;
+      savePref(PREFS.petSoundsEnabled, state.petSoundsEnabled);
+      syncTtsUI();
+      if (state.petSoundsEnabled) {
+        const aud = audioApi();
+        if (aud && typeof aud.click === 'function') aud.click();
+      }
+    });
+
     els.btnTts.addEventListener('click', () => {
       unlockAudio();
       state.ttsEnabled = !state.ttsEnabled;
-      saveBoolPref(TTS_STORAGE_KEY, state.ttsEnabled);
+      savePref(PREFS.ttsEnabled, state.ttsEnabled);
       syncTtsUI();
       if (!state.ttsEnabled) {
         stopSpeaking({ resetState: true });
       }
     });
 
+    els.btnTtsMode.addEventListener('click', toggleTtsMode);
+
     els.btnCaption.addEventListener('click', () => {
       state.captionVisible = !state.captionVisible;
-      saveBoolPref(CAPTION_STORAGE_KEY, state.captionVisible);
+      savePref(PREFS.captionVisible, state.captionVisible);
       syncCaptionVisibilityUI();
     });
 
     els.btnFullscreen.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', () => {
       syncFullscreenUI();
-      if (!document.fullscreenElement) {
-        releaseWakeLock();
-      }
+      if (!document.fullscreenElement) releaseWakeLock();
     });
-
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && document.fullscreenElement) {
         requestWakeLock();
       }
     });
 
+    // Push-to-Talk botão físico/toque
+    els.btnPtt.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      startPtt();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((evt) => {
+      els.btnPtt.addEventListener(evt, () => {
+        if (state.ptt.active && !state.ptt.spaceHeld) {
+          stopPttAndSend();
+        }
+      });
+    });
+
+    // Chat
     els.chatForm.addEventListener('submit', handleChatSubmit);
     els.chatInput.addEventListener('input', handleInputActivity);
     els.chatInput.addEventListener('focus', () => {
@@ -950,12 +2503,59 @@
       lookAtSafe(0, 0.35);
     });
     els.chatInput.addEventListener('blur', () => {
-      if (!state.typingActive) {
-        lookAtSafe(0, 0);
-      }
+      if (!state.typingActive) lookAtSafe(0, 0);
       scheduleHudAutoHide();
     });
 
+    // Aprovação rápida
+    els.btnApproveAction.addEventListener('click', () => resolveToolApproval(true));
+    els.btnDenyAction.addEventListener('click', () => resolveToolApproval(false));
+
+    // Dock & Atalhos
+    els.btnRefreshApps.addEventListener('click', fetchMacApps);
+    els.shortcutCategoryTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        state.shortcutCategory = tab.dataset.cat || 'all';
+        els.shortcutCategoryTabs.forEach((t) =>
+          t.classList.toggle('is-active', t.dataset.cat === state.shortcutCategory)
+        );
+        renderShortcutsGrid();
+      });
+    });
+    els.btnNewShortcut.addEventListener('click', () => openShortcutModal(null));
+    els.btnConfigShortcuts.addEventListener('click', () => openShortcutModal(null));
+    els.btnCloseShortcutModal.addEventListener('click', closeShortcutModal);
+    els.shortcutModalBackdrop.addEventListener('click', closeShortcutModal);
+    els.scActionType.addEventListener('change', updateShortcutPayloadVisibility);
+    els.btnRecordKeys.addEventListener('click', startRecordingKeys);
+    els.scKeys.addEventListener('input', syncBuilderFromKeysInput);
+    els.modToggles.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        btn.classList.toggle('is-active');
+        rebuildKeysFromBuilder();
+      });
+    });
+    els.scKeySelect.addEventListener('change', rebuildKeysFromBuilder);
+    document.querySelectorAll('.emoji-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        els.scIcon.value = chip.dataset.emoji || '⚡';
+      });
+    });
+    els.shortcutForm.addEventListener('submit', saveShortcutFromForm);
+    els.btnScResetForm.addEventListener('click', resetShortcutForm);
+    els.btnScDelete.addEventListener('click', () => deleteShortcutById(els.scId.value));
+    els.btnScResetDefaults.addEventListener('click', resetDefaultShortcuts);
+
+    // Smart Display
+    els.btnPomoFocus.addEventListener('click', () => startPomodoro(25 * 60, 'focus'));
+    els.btnPomoBreak.addEventListener('click', () => startPomodoro(5 * 60, 'break'));
+    els.btnPomoStop.addEventListener('click', () => stopPomodoro());
+    els.btnMediaPrev.addEventListener('click', () => triggerQuickMediaCommand('prev_track'));
+    els.btnMediaPlay.addEventListener('click', () => triggerQuickMediaCommand('play_pause'));
+    els.btnMediaNext.addEventListener('click', () => triggerQuickMediaCommand('next_track'));
+    els.btnRefreshWeather.addEventListener('click', fetchWeather);
+
+    // Memória
     els.addFactForm.addEventListener('submit', addManualFact);
     els.btnClearChat.addEventListener('click', () => clearMemory({ includeFacts: false }));
     els.btnResetMemory.addEventListener('click', showResetConfirmation);
@@ -965,9 +2565,70 @@
     if (supportsSpeechSynthesis() && 'onvoiceschanged' in window.speechSynthesis) {
       window.speechSynthesis.addEventListener('voiceschanged', refreshVoices);
     }
+
+    bindFaceTouchEvents();
+  }
+
+  function initGamepad() {
+    if (!window.DeskGamepad || typeof window.DeskGamepad.init !== 'function') return;
+    window.DeskGamepad.init({
+      onLook: (x, y) => lookAtSafe(x, y),
+      onPttStart: () => startPtt(),
+      onPttEnd: () => stopPttAndSend(),
+      onModeCycle: (dir) => cycleMode(dir),
+      onDpad: (dir) => moveGamepadFocus(dir),
+      onConfirm: () => activateGamepadFocused(),
+      onBackOrInterrupt: () => {
+        if (state.shortcutModalOpen) {
+          closeShortcutModal();
+        } else if (state.memoryOpen) {
+          closeMemoryDrawer();
+        } else if (state.expressionsOpen) {
+          toggleExpressionsBar();
+        } else {
+          triggerBargeIn();
+        }
+      },
+      onToggleCaption: () => {
+        state.captionVisible = !state.captionVisible;
+        savePref(PREFS.captionVisible, state.captionVisible);
+        syncCaptionVisibilityUI();
+      },
+      onToggleTtsMode: () => toggleTtsMode(),
+      onSelect: () => toggleFullscreen(),
+      onStart: () => {
+        if (state.mode === 'dock') {
+          if (state.shortcutModalOpen) closeShortcutModal();
+          else openShortcutModal(null);
+        } else {
+          if (state.memoryOpen) closeMemoryDrawer();
+          else openMemoryDrawer();
+        }
+      },
+    });
+  }
+
+  function initDiagnostics() {
+    if (!window.DeskDiagnostics || typeof window.DeskDiagnostics.init !== 'function') return;
+    window.DeskDiagnostics.init(els.diagnosticsRoot, {
+      getTtsMode: () => state.ttsMode,
+      onTestBrowserTts: (text) => {
+        unlockAudio();
+        enqueueTtsSentence(text, 'browser');
+      },
+      onTestServerTts: (text) => {
+        unlockAudio();
+        enqueueTtsSentence(text, 'server');
+      },
+    });
   }
 
   function init() {
+    const aud = audioApi();
+    if (aud && typeof aud.init === 'function') {
+      aud.init();
+    }
+
     const api = faceApi();
     if (api && typeof api.init === 'function' && els.faceContainer) {
       api.init(els.faceContainer);
@@ -977,13 +2638,20 @@
     syncTtsUI();
     syncCaptionVisibilityUI();
     syncFullscreenUI();
+    syncPomodoroUI();
     refreshVoices();
     bindEvents();
+    initGamepad();
+    initDiagnostics();
     connectWebSocket();
     fetchMemory();
+    fetchWeather();
+    tickClocks();
     showHud();
+    syncHudOffset();
+    window.addEventListener('resize', syncHudOffset);
 
-    // Mantém o badge de estado/emoção sincronizado caso o rosto entre em modo sonolento automático
+    window.setInterval(tickClocks, 1000);
     window.setInterval(syncFaceBadges, 1000);
   }
 
