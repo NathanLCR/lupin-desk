@@ -37,7 +37,7 @@ _EMOTION_TAG_RE = re.compile(r"^\[emotion\s*:\s*([a-zA-Z0-9_-]+)\s*\]$", re.IGNO
 _SHORT_EMOTION_TAG_RE = re.compile(r"^\[\s*([a-zA-Z0-9_-]+)\s*\]$")
 _FACT_TAG_RE = re.compile(r"^\[fact\s*:\s*(.*?)\s*\]$", re.IGNORECASE | re.DOTALL)
 _ACTION_TAG_RE = re.compile(
-    r"^\[action\s*:\s*(shortcut|app|pomodoro|cowork|vision|today)\s*:\s*(.*?)\s*\]$",
+    r"^\[action\s*:\s*(shortcut|app|pomodoro|today)\s*:\s*(.*?)\s*\]$",
     re.IGNORECASE | re.DOTALL,
 )
 _KNOWN_TAG_PREFIXES: tuple[str, ...] = (
@@ -79,17 +79,14 @@ def build_system_prompt(
         "[fact: <fato curto e objetivo sobre o usuário>]. Nunca invente fatos nem suposições.\n"
         "3. REGRA SHOW, DON'T TELL: use os fatos conhecidos sobre o usuário de forma natural e "
         "implícita como conhecimento de fundo, sem recitá-los roboticamente nem listar o que sabe.\n"
-        "4. AÇÕES NO MAC E JARVIS: sempre que o usuário pedir por voz ou texto para acionar um atalho, "
+        "4. AÇÕES NO MAC: sempre que o usuário pedir por voz ou texto para acionar um atalho, "
         "controlar janelas/espaços/mídia/prints, abrir ou focar um aplicativo no Mac, iniciar/parar "
-        "o Pomodoro, inspecionar a tela/clipboard sob demanda ou consultar/capturar no Cowork, "
+        "o Pomodoro ou consultar o resumo Today, "
         "emita a tag invisível correspondente:\n"
         "   - [action:shortcut:<slug>] para executar um atalho cadastrado\n"
         "   - [action:app:<nome_do_app>] para abrir ou focar um aplicativo\n"
         "   - [action:pomodoro:start] ou [action:pomodoro:stop] para o timer Pomodoro\n"
-        "   - [action:vision:screen] para olhar a tela atual sob demanda\n"
-        "   - [action:vision:clipboard] para ler/resumir o clipboard atual sob demanda\n"
         "   - [action:today:brief] para consultar o resumo Today do Cowork\n"
-        "   - [action:cowork:add_task:<título>] para propor nova tarefa no Cowork (pede confirmação)\n"
         "   Nunca leia ou mencione colchetes ou nomes de tags no texto falado."
     ]
 
@@ -342,7 +339,6 @@ class LLMClient:
         temporal_context: str = "",
         cowork_context: str = "",
         skills_context: str = "",
-        image_b64: str | None = None,
     ) -> dict[str, Any]:
         """Monta o payload JSON para `/chat/completions`."""
         system_prompt = build_system_prompt(
@@ -362,17 +358,8 @@ class LLMClient:
             if role in {"user", "assistant", "system"} and content:
                 messages.append({"role": role, "content": content})
 
-        # Garante que a mensagem atual do usuário esteja no final (com suporte multimodal opcional).
-        if image_b64:
-            multimodal_content: list[dict[str, Any]] = [
-                {"type": "text", "text": user_text or "Descreva o que há nesta tela."},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
-            ]
-            if messages and messages[-1].get("role") == "user" and messages[-1].get("content") == user_text:
-                messages[-1] = {"role": "user", "content": multimodal_content}
-            else:
-                messages.append({"role": "user", "content": multimodal_content})
-        elif not messages or messages[-1].get("role") != "user" or messages[-1].get("content") != user_text:
+        # Garante que a mensagem atual do usuário esteja no final.
+        if not messages or messages[-1].get("role") != "user" or messages[-1].get("content") != user_text:
             messages.append({"role": "user", "content": user_text})
 
         return {
@@ -404,7 +391,6 @@ class LLMClient:
         temporal_context: str = "",
         cowork_context: str = "",
         skills_context: str = "",
-        image_b64: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Executa o streaming do LLM e emite eventos `emotion`, `delta`, `sentence`, `action` e `result`."""
         if self._stream_fn is not None:
@@ -424,7 +410,6 @@ class LLMClient:
                 "temporal_context": temporal_context,
                 "cowork_context": cowork_context,
                 "skills_context": skills_context,
-                "image_b64": image_b64,
             }
             for key, value in extra_kwargs.items():
                 if has_var_kw or key in sig.parameters:
@@ -442,7 +427,6 @@ class LLMClient:
             temporal_context=temporal_context,
             cowork_context=cowork_context,
             skills_context=skills_context,
-            image_b64=image_b64,
         )
         parser = TagStreamParser()
 

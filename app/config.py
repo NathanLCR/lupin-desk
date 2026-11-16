@@ -31,7 +31,6 @@ _DEFAULT_MAX_SHORT_TERM_MESSAGES = 10
 _DEFAULT_MAX_USER_FACTS = 25
 _DEFAULT_DB_PATH = BASE_DIR / "data" / "memory.db"
 _DEFAULT_COWORK_WORKSPACE_PATH = Path("/Users/nathanlucio/Desktop/Cowork")
-_DEFAULT_JARVIS_VISION_MAX_DIM = 1280
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"freellmapi-[A-Za-z0-9_-]+"), "[REDACTED]"),
@@ -64,7 +63,6 @@ class Settings:
     weather_longitude: float = _DEFAULT_WEATHER_LONGITUDE
     weather_city: str = _DEFAULT_WEATHER_CITY
     cowork_workspace_path: Path = _DEFAULT_COWORK_WORKSPACE_PATH
-    jarvis_vision_max_dim: int = _DEFAULT_JARVIS_VISION_MAX_DIM
     desk_access_token: str = ""
 
 
@@ -146,10 +144,6 @@ def load_settings(env_path: Path | None = None) -> Settings:
     cowork_workspace_path = _resolve_path(
         os.getenv("COWORK_WORKSPACE_PATH"), _DEFAULT_COWORK_WORKSPACE_PATH
     )
-    jarvis_vision_max_dim = max(
-        320,
-        _parse_int(os.getenv("JARVIS_VISION_MAX_DIM"), _DEFAULT_JARVIS_VISION_MAX_DIM),
-    )
     desk_access_token = os.getenv("DESK_ACCESS_TOKEN", "").strip()
 
     return Settings(
@@ -171,7 +165,6 @@ def load_settings(env_path: Path | None = None) -> Settings:
         weather_longitude=weather_longitude,
         weather_city=weather_city,
         cowork_workspace_path=cowork_workspace_path,
-        jarvis_vision_max_dim=jarvis_vision_max_dim,
         desk_access_token=desk_access_token,
     )
 
