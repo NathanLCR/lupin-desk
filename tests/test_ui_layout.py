@@ -55,20 +55,33 @@ BY_ID = {
 def test_required_page_landmarks_and_locale_remain():
     assert '<html lang="pt-BR">' in HTML
     assert '<main id="stage"' in HTML
-    assert '<header id="hud" class="hud" aria-label="Controles superiores"' in HTML
+    assert 'id="hud"' not in HTML
     assert 'content="width=device-width, initial-scale=1.0, viewport-fit=cover"' in HTML
 
 
-def test_each_mode_has_a_descriptive_accessible_name():
-    modes = {
-        element["attrs"].get("data-mode"): element["attrs"]
+def test_pet_mode_has_no_top_bar_only_a_discreet_settings_button():
+    for removed in ("mode-switcher", "btn-expressions", "btn-hud-pin", "btn-fullscreen"):
+        assert f'id="{removed}"' not in HTML
+    for mode_id in ("btn-mode-pet", "btn-mode-dock"):
+        assert f'id="{mode_id}"' not in HTML
+    settings = BY_ID["btn-settings"]["attrs"]
+    assert settings.get("aria-label")
+    assert settings.get("aria-controls") == "settings-panel"
+    assert "settings-fab" in settings.get("class", "")
+
+
+def test_settings_has_the_six_sections_and_the_old_controls_live_inside_them():
+    tabs = [
+        element["attrs"].get("data-subtab")
         for element in MARKUP.elements
-        if element["tag"] == "button" and element["attrs"].get("data-mode")
-    }
-    for mode in ("pet", "dock", "nathan"):
-        assert modes[mode].get("aria-label")
-        assert modes[mode].get("title")
-        assert "aria-pressed" in modes[mode]
+        if "settings-subtab" in element["attrs"].get("class", "")
+    ]
+    assert tabs == ["voice", "brain", "memory", "skills", "dock", "diagnostics"]
+    for control in ("btn-tts", "btn-tts-mode", "btn-pet-sounds", "btn-caption", "btn-memory"):
+        assert control in BY_ID, control
+    for panel in ("voice", "brain", "memory", "skills", "dock", "diagnostics"):
+        assert f"settings-tab-{panel}" in BY_ID
+    assert "emotion-chips" in BY_ID and "state-chips" in BY_ID
 
 
 def test_status_and_caption_are_polite_atomic_live_regions():
@@ -95,14 +108,11 @@ def test_visible_form_controls_have_programmatic_names():
         assert named, f"Controle de formulário sem rótulo acessível: {control_id}"
 
 
-def test_fixed_workspace_reserves_space_below_the_hud_and_chat():
+def test_fixed_workspace_reserves_space_below_the_settings_button_and_chat():
     workspace = css_block(CSS, ".workspace-panel")
     assert "var(--hud-offset)" in workspace
     assert "var(--dock-clearance)" in workspace
-    tablet = css_block(CSS, "@media (max-width: 1024px)")
-    phone = css_block(CSS, "@media (max-width: 740px)")
-    assert "--hud-offset: 120px" in tablet
-    assert "--hud-offset: 192px" in phone
+    assert "--hud-offset: 56px" in CSS
     assert "overflow-y: auto" in workspace
     assert "overscroll-behavior: contain" in workspace
     for clearance in ("174px", "144px", "234px"):

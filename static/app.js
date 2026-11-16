@@ -207,7 +207,10 @@
   };
 
   const TYPING_IDLE_MS = 2500;
-  const HUD_AUTO_HIDE_MS = 5000;
+  const SETTINGS_TABS = ['voice', 'brain', 'memory', 'skills', 'dock', 'diagnostics'];
+  const SWIPE_MIN_PX = 180;
+  const SWIPE_MAX_MS = 320;
+  const SWIPE_MAX_OFF_AXIS_PX = 60;
   const WS_RECONNECT_BASE_MS = 2000;
   const WS_RECONNECT_MAX_MS = 8000;
 
@@ -228,13 +231,10 @@
     faceContainer: document.getElementById('face-container'),
     petClockTime: document.getElementById('pet-clock-time'),
     petClockDate: document.getElementById('pet-clock-date'),
-    hud: document.getElementById('hud'),
     wsDot: document.getElementById('ws-dot'),
     wsStatusText: document.getElementById('ws-status-text'),
     stateLabel: document.getElementById('state-label'),
     emotionLabel: document.getElementById('emotion-label'),
-    modeButtons: Array.from(document.querySelectorAll('#mode-switcher .mode-btn')),
-    btnExpressions: document.getElementById('btn-expressions'),
     btnMemory: document.getElementById('btn-memory'),
     memoryCount: document.getElementById('memory-count'),
     btnPetSounds: document.getElementById('btn-pet-sounds'),
@@ -242,9 +242,6 @@
     btnTts: document.getElementById('btn-tts'),
     btnTtsMode: document.getElementById('btn-tts-mode'),
     btnCaption: document.getElementById('btn-caption'),
-    btnFullscreen: document.getElementById('btn-fullscreen'),
-    btnHudPin: document.getElementById('btn-hud-pin'),
-    expressionsBar: document.getElementById('expressions-bar'),
     emotionChips: document.getElementById('emotion-chips'),
     stateChips: document.getElementById('state-chips'),
     audioUnlockBanner: document.getElementById('audio-unlock-banner'),
@@ -273,6 +270,11 @@
     btnMediaPlay: document.getElementById('btn-media-play'),
     btnMediaNext: document.getElementById('btn-media-next'),
     // Ajustes (Skills e Diagnóstico)
+    modeNathanButton: document.getElementById('btn-mode-nathan'),
+    brainAddress: document.getElementById('brain-address'),
+    brainProvider: document.getElementById('brain-provider'),
+    brainModel: document.getElementById('brain-model'),
+    settingsShortcutsList: document.getElementById('settings-shortcuts-list'),
     btnSettings: document.getElementById('btn-settings'),
     btnSettingsClose: document.getElementById('btn-settings-close'),
     settingsPanel: document.getElementById('settings-panel'),
@@ -348,9 +350,7 @@
     reconnectTimer: null,
     typingActive: false,
     typingTimer: null,
-    hudPinned: false,
-    hudTimer: null,
-    expressionsOpen: false,
+    fullscreenRequested: false,
     memoryOpen: false,
     shortcutModalOpen: false,
     captionVisible: loadBoolPref(PREFS.captionVisible, true),
@@ -394,7 +394,7 @@
     },
     musicPlaying: false,
     settingsOpen: false,
-    settingsTab: 'skills',
+    settingsTab: 'voice',
     // Push-to-Talk & Aprovação
     ptt: {
       active: false,
@@ -572,62 +572,6 @@
     syncFaceBadges();
   }
 
-  // HUD auto-ocultar (somente no modo Pet quando nada está aberto)
-  function showHud() {
-    els.hud.classList.remove('is-hidden');
-    els.hud.inert = false;
-    scheduleHudAutoHide();
-  }
-
-  function scheduleHudAutoHide() {
-    if (state.hudTimer) {
-      window.clearTimeout(state.hudTimer);
-      state.hudTimer = null;
-    }
-
-    const canAutoHide =
-      state.mode === 'pet' &&
-      !state.hudPinned &&
-      !state.expressionsOpen &&
-      !state.memoryOpen &&
-      !state.shortcutModalOpen &&
-      !(els.hud.contains && els.hud.contains(document.activeElement));
-
-    if (!canAutoHide) return;
-
-    state.hudTimer = window.setTimeout(() => {
-      const stillCanHide =
-        state.mode === 'pet' &&
-        !state.hudPinned &&
-        !state.expressionsOpen &&
-        !state.memoryOpen &&
-        !state.shortcutModalOpen &&
-        !(els.hud.contains && els.hud.contains(document.activeElement));
-      if (stillCanHide) {
-        els.hud.classList.add('is-hidden');
-        els.hud.inert = true;
-      }
-    }, HUD_AUTO_HIDE_MS);
-  }
-
-  function toggleHudPin() {
-    state.hudPinned = !state.hudPinned;
-    els.btnHudPin.classList.toggle('is-active', state.hudPinned);
-    els.btnHudPin.setAttribute('aria-pressed', String(state.hudPinned));
-    showHud();
-    syncHudOffset();
-  }
-
-  function syncHudOffset() {
-    if (!els.hud) return;
-    window.requestAnimationFrame(() => {
-      const rect = els.hud.getBoundingClientRect();
-      if (rect && rect.height > 0) {
-        document.documentElement.style.setProperty('--hud-offset', `${Math.ceil(rect.height + 16)}px`);
-      }
-    });
-  }
-
   // Alternador dos modos de tela
   function setMode(nextMode) {
     if (!MODES.includes(nextMode)) return;
@@ -640,12 +584,6 @@
       'mode-nathan'
     );
     document.body.classList.add(`mode-${nextMode}`);
-
-    els.modeButtons.forEach((btn) => {
-      const isCurrent = btn.dataset.mode === nextMode;
-      btn.classList.toggle('is-active', isCurrent);
-      btn.setAttribute('aria-pressed', String(isCurrent));
-    });
 
     els.modeDock.classList.toggle('hidden', nextMode !== 'dock');
     if (els.modeNathan) {
@@ -670,9 +608,6 @@
     if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) {
       aud.click();
     }
-
-    showHud();
-    syncHudOffset();
   }
 
   // Ajustes: Skills e Diagnóstico ficam num painel, não são modos de tela
@@ -682,6 +617,7 @@
     state.settingsOpen = Boolean(open);
     document.body.classList.toggle('settings-open', state.settingsOpen);
     els.settingsPanel.classList.toggle('hidden', !state.settingsOpen);
+    state.gamepadFocusIndex = -1;
     if (els.btnSettings) {
       els.btnSettings.setAttribute('aria-expanded', String(state.settingsOpen));
       els.btnSettings.classList.toggle('is-active', state.settingsOpen);
@@ -706,15 +642,59 @@
     ) {
       window.DeskSkills.activate();
     }
-    syncHudOffset();
+    if (state.settingsOpen && state.settingsTab === 'brain') fetchBrainInfo();
+    if (state.settingsOpen && state.settingsTab === 'dock') fetchShortcuts();
+  }
+
+  function cycleSettingsTab(delta) {
+    const idx = Math.max(0, SETTINGS_TABS.indexOf(state.settingsTab));
+    const next = (idx + delta + SETTINGS_TABS.length) % SETTINGS_TABS.length;
+    setSettingsOpen(true, SETTINGS_TABS[next]);
+  }
+
+  async function fetchBrainInfo() {
+    if (els.brainAddress) els.brainAddress.textContent = window.location.host || window.location.origin || '—';
+    try {
+      const res = await fetch('/api/llm/providers');
+      if (!res.ok) return;
+      const data = await res.json();
+      const active = data.active || {};
+      const preset = (data.presets || []).find((item) => item.id === active.provider_id);
+      if (els.brainProvider) els.brainProvider.textContent = (preset && preset.name) || active.provider_id || '—';
+      if (els.brainModel) els.brainModel.textContent = active.model || '—';
+    } catch {
+      // Ignora erro transitório; os campos ficam como estavam
+    }
+  }
+
+  function renderSettingsShortcuts() {
+    if (!els.settingsShortcutsList) return;
+    els.settingsShortcutsList.textContent = '';
+    if (!state.shortcuts.length) {
+      const empty = document.createElement('li');
+      empty.className = 'muted-note';
+      empty.textContent = 'Nenhum Atalho configurado no Mac.';
+      els.settingsShortcutsList.appendChild(empty);
+      return;
+    }
+    state.shortcuts.forEach((sc) => {
+      const item = document.createElement('li');
+      const text = document.createElement('div');
+      text.className = 'settings-item-text';
+      const title = document.createElement('strong');
+      title.textContent = sc.title || sc.slug || 'Atalho';
+      const hint = document.createElement('span');
+      hint.textContent = formatShortcutBadge(sc) || '';
+      text.append(title, hint);
+      item.appendChild(text);
+      els.settingsShortcutsList.appendChild(item);
+    });
   }
 
   function getVisibleModes() {
-    const visible = MODES.filter((mode) => {
-      const btn = els.modeButtons.find((b) => b.dataset.mode === mode);
-      return btn ? !btn.classList.contains('hidden') : mode !== 'nathan';
-    });
-    return visible.length ? visible : ['pet'];
+    const modes = ['pet', 'dock'];
+    if (els.modeNathanButton && !els.modeNathanButton.classList.contains('hidden')) modes.push('nathan');
+    return modes;
   }
 
   function cycleMode(delta) {
@@ -739,6 +719,7 @@
     els.captionBox.classList.toggle('is-hidden-by-user', !state.captionVisible);
     els.btnCaption.classList.toggle('is-active', state.captionVisible);
     els.btnCaption.setAttribute('aria-pressed', String(state.captionVisible));
+    els.btnCaption.textContent = state.captionVisible ? 'Ligada' : 'Desligada';
   }
 
   // Áudio Procedural + TTS Híbrido (Browser + Servidor Mac)
@@ -1086,19 +1067,19 @@
 
   function syncTtsUI() {
     if (els.btnTts) {
-      els.btnTts.textContent = state.ttsEnabled ? '🔊 Voz' : '🔇 Mudo';
+      els.btnTts.textContent = state.ttsEnabled ? 'Ligada' : 'Desligada';
       els.btnTts.classList.toggle('is-active', state.ttsEnabled);
       els.btnTts.setAttribute('aria-pressed', String(state.ttsEnabled));
     }
 
     if (els.btnTtsMode) {
-      els.btnTtsMode.textContent = state.ttsMode === 'server' ? '🖥️ Mac TTS' : '🗣️ Browser';
+      els.btnTtsMode.textContent = state.ttsMode === 'server' ? 'Mac' : 'Navegador';
       els.btnTtsMode.classList.toggle('is-active', state.ttsMode === 'server');
       els.btnTtsMode.setAttribute('aria-pressed', String(state.ttsMode === 'server'));
     }
 
     if (els.btnPetSounds) {
-      els.btnPetSounds.textContent = state.petSoundsEnabled ? '🔔 Sons Pet' : '🔕 Pet Mudo';
+      els.btnPetSounds.textContent = state.petSoundsEnabled ? 'Ligados' : 'Desligados';
       els.btnPetSounds.classList.toggle('is-active', state.petSoundsEnabled);
       els.btnPetSounds.setAttribute('aria-pressed', String(state.petSoundsEnabled));
     }
@@ -1752,7 +1733,6 @@
     submitChatText(text);
     els.chatInput.value = '';
     lookAtSafe(0, 0);
-    scheduleHudAutoHide();
   }
 
   // Interação direta de toque/carinho no rosto
@@ -1916,6 +1896,7 @@
       const data = await res.json();
       state.shortcuts = Array.isArray(data) ? data : data.shortcuts || [];
       renderShortcutsGrid();
+      renderSettingsShortcuts();
       if (state.shortcutModalOpen) {
         renderShortcutManageList();
       }
@@ -2172,8 +2153,6 @@
     }
     renderShortcutManageList();
     els.scTitle.focus();
-    showHud();
-    syncHudOffset();
   }
 
   function closeShortcutModal() {
@@ -2185,7 +2164,6 @@
     const returnFocus = state.overlayReturnFocus;
     state.overlayReturnFocus = null;
     if (returnFocus && returnFocus.isConnected !== false) returnFocus.focus();
-    scheduleHudAutoHide();
   }
 
   function startRecordingKeys() {
@@ -2506,15 +2484,14 @@
     if (state.pendingApprovalId) return getFocusableElements(els.approvalBanner);
     if (state.shortcutModalOpen) return getFocusableElements(els.shortcutModal);
     if (state.memoryOpen) return getFocusableElements(els.memoryDrawer);
-    if (state.expressionsOpen) return getFocusableElements(els.expressionsBar);
 
-    if (state.mode === 'dock') {
-      return Array.from(els.modeDock.querySelectorAll('[data-nav-tile]')).filter(isElementAvailable);
-    }
     if (state.settingsOpen && els.settingsPanel) {
       return Array.from(els.settingsPanel.querySelectorAll('button, input[type="checkbox"]')).filter(
         isElementAvailable
       );
+    }
+    if (state.mode === 'dock') {
+      return Array.from(els.modeDock.querySelectorAll('[data-nav-tile]')).filter(isElementAvailable);
     }
     const modeNathan = document.getElementById('mode-nathan');
     if (state.mode === 'nathan' && modeNathan) {
@@ -2553,10 +2530,6 @@
     }
     if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen) {
       if (items[0]) items[0].focus();
-      return;
-    }
-    if (state.mode === 'pet') {
-      toggleExpressionsBar();
     }
   }
 
@@ -2681,8 +2654,6 @@
     hideResetConfirmation();
     fetchMemory();
     focusFirstInContainer(els.memoryDrawer);
-    showHud();
-    syncHudOffset();
   }
 
   function closeMemoryDrawer() {
@@ -2697,7 +2668,6 @@
     const returnFocus = state.overlayReturnFocus;
     state.overlayReturnFocus = null;
     if (returnFocus && returnFocus.isConnected !== false) returnFocus.focus();
-    scheduleHudAutoHide();
   }
 
   function showResetConfirmation() {
@@ -2708,19 +2678,6 @@
   function hideResetConfirmation() {
     els.resetConfirmBox.classList.add('hidden');
     els.btnResetMemory.classList.remove('hidden');
-  }
-
-  function toggleExpressionsBar() {
-    state.expressionsOpen = !state.expressionsOpen;
-    els.expressionsBar.classList.toggle('hidden', !state.expressionsOpen);
-    els.btnExpressions.classList.toggle('is-active', state.expressionsOpen);
-    els.btnExpressions.setAttribute('aria-expanded', String(state.expressionsOpen));
-    if (state.expressionsOpen) {
-      syncFaceBadges();
-      showHud();
-    } else {
-      scheduleHudAutoHide();
-    }
   }
 
   // Tela cheia & WakeLock
@@ -2761,11 +2718,12 @@
     }
   }
 
-  function syncFullscreenUI() {
-    const isFull = Boolean(document.fullscreenElement);
-    els.btnFullscreen.classList.toggle('is-active', isFull);
-    els.btnFullscreen.setAttribute('aria-pressed', String(isFull));
-    els.btnFullscreen.textContent = isFull ? '⛶ Sair' : '⛶ Tela Cheia';
+  // Tela cheia automática: o navegador só aceita depois de um gesto do usuário, então
+  // pedimos uma vez no primeiro toque ou tecla. Se o usuário sair, não insistimos.
+  function requestFullscreenOnce() {
+    if (state.fullscreenRequested || document.fullscreenElement) return;
+    state.fullscreenRequested = true;
+    toggleFullscreen();
   }
 
   function isElementAvailable(element) {
@@ -2829,15 +2787,56 @@
     return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
   }
 
+  function cycleHorizontally(delta) {
+    if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen) return;
+    if (state.settingsOpen) cycleSettingsTab(delta);
+    else cycleMode(delta);
+  }
+
+  // Deslize horizontal alterna Pet e Dock (ou as seções dos Ajustes quando abertos).
+  function bindSwipe() {
+    let start = null;
+    document.addEventListener(
+      'touchstart',
+      (event) => {
+        const touch = event.touches && event.touches.length === 1 ? event.touches[0] : null;
+        const target = event.target;
+        const ignored =
+          !touch ||
+          isTypingInField(target) ||
+          Boolean(target && target.closest && target.closest('.bottom-dock, .memory-drawer, .shortcut-modal'));
+        start = ignored ? null : { x: touch.clientX, y: touch.clientY, at: Date.now() };
+      },
+      { passive: true }
+    );
+    document.addEventListener(
+      'touchend',
+      (event) => {
+        if (!start) return;
+        const touch = event.changedTouches && event.changedTouches[0];
+        const origin = start;
+        start = null;
+        if (!touch) return;
+        const dx = touch.clientX - origin.x;
+        const dy = touch.clientY - origin.y;
+        if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dy) > SWIPE_MAX_OFF_AXIS_PX) return;
+        if (Date.now() - origin.at > SWIPE_MAX_MS) return; // arrastar devagar é carinho no rosto
+        cycleHorizontally(dx < 0 ? 1 : -1);
+      },
+      { passive: true }
+    );
+  }
+
   // Registro de eventos
   function bindEvents() {
+    bindSwipe();
     ['mousemove', 'pointerdown', 'touchstart'].forEach((evtName) => {
       document.addEventListener(
         evtName,
         () => {
-          showHud();
           if (evtName !== 'mousemove') {
             unlockAudio();
+            requestFullscreenOnce();
           }
         },
         { passive: true }
@@ -2846,7 +2845,6 @@
 
     // Teclado no Mac: Gravador de atalhos, Escape (barge-in / fechar) e Espaço (PTT)
     document.addEventListener('keydown', (event) => {
-      showHud();
 
       if (event.key === 'Tab' && trapDialogFocus(event)) return;
 
@@ -2866,6 +2864,12 @@
         return;
       }
 
+      if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        event.preventDefault();
+        cycleHorizontally(event.key === 'ArrowLeft' ? -1 : 1);
+        return;
+      }
+
       if (event.key === 'Escape') {
         if (state.shortcutModalOpen) {
           closeShortcutModal();
@@ -2874,9 +2878,6 @@
         } else if (state.settingsOpen) {
           setSettingsOpen(false);
           els.btnSettings.focus();
-        } else if (state.expressionsOpen) {
-          toggleExpressionsBar();
-          els.btnExpressions.focus();
         } else {
           triggerBargeIn();
         }
@@ -2905,10 +2906,6 @@
     });
 
     // Alternador dos 4 modos
-    els.modeButtons.forEach((btn) => {
-      btn.addEventListener('click', () => setMode(btn.dataset.mode));
-    });
-
     if (els.btnSettings) {
       els.btnSettings.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
     }
@@ -2919,8 +2916,6 @@
       btn.addEventListener('click', () => setSettingsOpen(true, btn.dataset.subtab));
     });
     els.audioUnlockBanner.addEventListener('click', unlockAudio);
-    els.btnHudPin.addEventListener('click', toggleHudPin);
-    els.btnExpressions.addEventListener('click', toggleExpressionsBar);
 
     els.btnMemory.addEventListener('click', () => {
       if (state.memoryOpen) closeMemoryDrawer();
@@ -2958,9 +2953,7 @@
       syncCaptionVisibilityUI();
     });
 
-    els.btnFullscreen.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', () => {
-      syncFullscreenUI();
       if (!document.fullscreenElement) releaseWakeLock();
     });
     document.addEventListener('visibilitychange', () => {
@@ -2986,12 +2979,10 @@
     els.chatForm.addEventListener('submit', handleChatSubmit);
     els.chatInput.addEventListener('input', handleInputActivity);
     els.chatInput.addEventListener('focus', () => {
-      showHud();
       lookAtSafe(0, 0.35);
     });
     els.chatInput.addEventListener('blur', () => {
       if (!state.typingActive) lookAtSafe(0, 0);
-      scheduleHudAutoHide();
     });
 
     // Aprovação rápida
@@ -3079,7 +3070,10 @@
       },
       onPttEnd: () => stopPttAndSend(),
       onModeCycle: (dir) => {
-        if (!state.pendingApprovalId && !state.shortcutModalOpen && !state.memoryOpen) cycleMode(dir);
+        if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen) return;
+        // Com os Ajustes abertos, L1/R1 trocam de seção; fora deles, de Modo.
+        if (state.settingsOpen) cycleSettingsTab(dir);
+        else cycleMode(dir);
       },
       onDpad: (dir) => moveGamepadFocus(dir),
       onConfirm: () => {
@@ -3096,8 +3090,8 @@
           closeShortcutModal();
         } else if (state.memoryOpen) {
           closeMemoryDrawer();
-        } else if (state.expressionsOpen) {
-          toggleExpressionsBar();
+        } else if (state.settingsOpen) {
+          setSettingsOpen(false);
         } else {
           triggerBargeIn();
         }
@@ -3115,10 +3109,8 @@
           closeShortcutModal();
         } else if (state.memoryOpen) {
           closeMemoryDrawer();
-        } else if (state.mode === 'dock') {
-          openShortcutModal(null);
         } else {
-          openMemoryDrawer();
+          setSettingsOpen(!state.settingsOpen);
         }
       },
     });
@@ -3169,7 +3161,6 @@
     buildExpressionChips();
     syncTtsUI();
     syncCaptionVisibilityUI();
-    syncFullscreenUI();
     syncPomodoroUI();
     refreshVoices();
     window.addEventListener('storage', syncPreferencesFromStorage);
@@ -3181,9 +3172,6 @@
     fetchMemory();
     fetchMacStatus();
     tickClocks();
-    showHud();
-    syncHudOffset();
-    window.addEventListener('resize', syncHudOffset);
 
     window.setInterval(tickClocks, 1000);
     window.setInterval(fetchMacStatus, 10000);

@@ -71,7 +71,7 @@ body {
 }
 
 :is(
-  .mode-btn,
+  .settings-fab,
   .hud-btn,
   .ptt-btn,
   .send-btn,
@@ -201,69 +201,52 @@ body.settings-open .pet-ambient {
   display: none;
 }
 
-/* HUD superior */
-.hud {
+/* Botão discreto de Ajustes: único controle fixo fora do rodapé. O ponto mostra a conexão com o Brain. */
+.settings-fab {
   position: fixed;
   top: calc(10px + var(--safe-top));
-  left: calc(12px + var(--safe-left));
   right: calc(12px + var(--safe-right));
   z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  transition: opacity 0.25s ease, transform 0.25s ease;
-}
-
-.hud.is-hidden {
-  opacity: 0;
-  transform: translateY(-10px);
-  pointer-events: none;
-}
-
-.hud-left,
-.hud-actions,
-.mode-switcher {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.mode-switcher {
-  background: rgba(12, 16, 24, 0.86);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-pill);
-  padding: 3px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.mode-btn {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
   appearance: none;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-muted);
-  border-radius: var(--radius-pill);
-  padding: 6px 11px;
-  font-size: 12px;
-  font-weight: 600;
+  opacity: 0.55;
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition: opacity 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 
-.mode-btn:hover {
+.settings-fab:hover,
+.settings-fab:focus-visible,
+.settings-fab.is-active {
+  opacity: 1;
   color: var(--text-primary);
+  border-color: var(--glass-border);
 }
 
-.mode-btn.is-active {
-  background: var(--accent-cyan-soft);
-  color: #dffcff;
-  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.45);
+.settings-fab svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
-.status-pill,
+.settings-fab .status-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  box-shadow: none;
+}
+
 .face-badge {
   display: inline-flex;
   align-items: center;
@@ -272,11 +255,10 @@ body.settings-open .pet-ambient {
   border-radius: var(--radius-pill);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   font-size: 12px;
   line-height: 1;
-  color: var(--text-primary);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .status-dot {
@@ -285,22 +267,14 @@ body.settings-open .pet-ambient {
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--status-err);
-  box-shadow: 0 0 8px rgba(255, 91, 91, 0.7);
 }
 
 .status-dot.is-connected {
   background: var(--status-ok);
-  box-shadow: 0 0 8px rgba(47, 224, 122, 0.75);
 }
 
 .status-dot.is-reconnecting {
   background: var(--status-warn);
-  box-shadow: 0 0 8px rgba(255, 190, 59, 0.75);
-}
-
-.face-badge {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .face-badge #state-label {
@@ -317,24 +291,18 @@ body.settings-open .pet-ambient {
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
   color: var(--text-primary);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border-radius: var(--radius-pill);
-  padding: 6px 10px;
+  padding: 6px 12px;
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.12s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
 .hud-btn:hover {
   border-color: var(--glass-border-hover);
   background: rgba(22, 30, 42, 0.9);
-}
-
-.hud-btn:active {
-  transform: scale(0.97);
 }
 
 .hud-btn.is-active {
@@ -343,29 +311,61 @@ body.settings-open .pet-ambient {
   color: #dffcff;
 }
 
-.hud-btn-icon {
-  padding: 6px 8px;
+/* Lista de Ajustes: uma linha por item, texto à esquerda e controle à direita */
+.settings-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 25, 0.92);
+}
+
+.settings-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-item-text strong {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.settings-item-text span {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.settings-subpanel .expressions-bar {
+  margin-bottom: 12px;
 }
 
 /* Barra rápida de expressões e estados */
 .expressions-bar {
-  position: fixed;
-  top: calc(58px + var(--safe-top));
-  left: calc(14px + var(--safe-left));
-  right: calc(14px + var(--safe-right));
-  max-width: 840px;
-  margin: 0 auto;
-  z-index: 28;
   padding: 12px 14px;
   border-radius: var(--radius-md);
   background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6);
 }
 
 .expressions-group {
@@ -454,7 +454,7 @@ body.settings-open .pet-ambient {
   position: fixed;
   left: calc(12px + var(--safe-left));
   right: calc(12px + var(--safe-right));
-  top: calc(var(--hud-offset) + 116px + var(--safe-top));
+  top: calc(var(--hud-offset) + var(--safe-top));
   bottom: calc(var(--dock-clearance) + var(--safe-bottom));
   z-index: 20;
   overflow-y: auto;
@@ -2060,10 +2060,6 @@ body:has(#caption-box:not(.is-empty):not(.is-hidden-by-user)):has(#approval-bann
 
 /* Responsividade RG406H (960x720) e iPhone retrato */
 @media (max-width: 1024px) {
-  :root {
-    --hud-offset: 120px;
-  }
-
   input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
@@ -2075,40 +2071,6 @@ body:has(#caption-box:not(.is-empty):not(.is-hidden-by-user)):has(#approval-bann
     min-height: 44px;
   }
 
-  .hud {
-    gap: 5px;
-  }
-
-  .hud-left,
-  .hud-actions,
-  .mode-switcher {
-    gap: 4px;
-  }
-
-  #ws-status-text {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  .face-badge {
-    display: none;
-  }
-
-  .status-pill {
-    padding: 6px 8px;
-  }
-
-  .hud-btn-icon {
-    min-width: 44px;
-  }
-
   .hud-btn {
     padding: 6px 9px;
     min-height: 44px;
@@ -2118,38 +2080,9 @@ body:has(#caption-box:not(.is-empty):not(.is-hidden-by-user)):has(#approval-bann
     font-size: 11px;
   }
 
-  .mode-btn {
-    padding: 7px 10px;
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
 }
 
 @media (max-width: 740px) {
-  :root {
-    --hud-offset: 192px;
-  }
-
-  .mode-switcher {
-    max-width: 100%;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    scrollbar-width: none;
-  }
-
-  .mode-switcher::-webkit-scrollbar {
-    display: none;
-  }
-
-  .mode-btn {
-    padding: 7px 8px;
-  }
-
   .modal-body {
     grid-template-columns: 1fr;
   }
@@ -2290,7 +2223,7 @@ body.is-minipet {
   overflow: hidden;
 }
 
-body.is-minipet .hud,
+body.is-minipet .settings-fab,
 body.is-minipet .bottom-dock,
 body.is-minipet .workspace-panel,
 body.is-minipet .first-wake-card,
@@ -2431,7 +2364,7 @@ body.is-minipet .emo-face-svg {
 
 @media (prefers-reduced-motion: reduce) {
   .stage,
-  .hud,
+  .settings-fab,
   .caption-box,
   .ptt-btn,
   .trick-card-btn {

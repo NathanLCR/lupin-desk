@@ -71,135 +71,21 @@
   </nav>
   <p id="mini-pet-help" class="sr-only">Arraste o botão Mover ou use as setas. Segure Shift para mover mais rápido. Escape oculta o mini-pet. Command, Shift e L mostram o mini-pet novamente.</p>
 
-  <!-- HUD superior com status, alternador de modos e controles rápidos -->
-  <header id="hud" class="hud" aria-label="Controles superiores">
-    <div class="hud-left">
-      <div class="status-pill" id="ws-status" role="status" aria-live="polite" aria-atomic="true" title="Status da conexão WebSocket">
-        <span class="status-dot is-disconnected" id="ws-dot" aria-hidden="true"></span>
-        <span id="ws-status-text">Conectando...</span>
-      </div>
-      <div class="face-badge" id="face-badge" title="Estado e emoção atuais do rosto">
-        <span id="state-label">idle</span>
-        <span class="badge-sep" aria-hidden="true">·</span>
-        <span id="emotion-label">neutral</span>
-      </div>
-    </div>
-
-    <!-- Seletor dos modos de tela -->
-    <nav id="mode-switcher" class="mode-switcher" aria-label="Modos de tela">
-      <button type="button" class="mode-btn is-active" data-mode="pet" aria-pressed="true" aria-label="Modo Pet Vivo" title="Modo Pet Vivo">
-        🐾 Pet
-      </button>
-      <button type="button" class="mode-btn" data-mode="dock" aria-pressed="false" aria-label="Modo Dock e Atalhos do Mac" title="Modo Dock e Atalhos do Mac">
-        🎛️ Dock
-      </button>
-      <button id="btn-mode-nathan" type="button" class="mode-btn hidden" data-mode="nathan" aria-pressed="false" aria-label="Modo Nathan OS" title="Modo Nathan OS">
-        🧭 Nathan OS
-      </button>
-    </nav>
-
-    <nav class="hud-actions" aria-label="Ações da interface">
-      <button
-        id="btn-expressions"
-        type="button"
-        class="hud-btn"
-        aria-expanded="false"
-        aria-controls="expressions-bar"
-      >
-        🎭 Expressões
-      </button>
-      <button
-        id="btn-memory"
-        type="button"
-        class="hud-btn"
-        aria-expanded="false"
-        aria-controls="memory-drawer"
-      >
-        🧠 Memória (<span id="memory-count">0</span>)
-      </button>
-      <button
-        id="btn-settings"
-        type="button"
-        class="hud-btn"
-        aria-expanded="false"
-        aria-controls="settings-panel"
-        title="Abrir ajustes: Skills e Diagnóstico"
-      >
-        ⚙️ Ajustes
-      </button>
-      <button
-        id="btn-pet-sounds"
-        type="button"
-        class="hud-btn is-active"
-        aria-pressed="true"
-        title="Ativar ou silenciar os sons procedurais do pet"
-      >
-        🔔 Sons Pet
-      </button>
-      <button
-        id="btn-tts"
-        type="button"
-        class="hud-btn is-active"
-        aria-pressed="true"
-        title="Ativar ou silenciar a voz do assistente"
-      >
-        🔊 Voz
-      </button>
-      <button
-        id="btn-tts-mode"
-        type="button"
-        class="hud-btn"
-        aria-pressed="false"
-        title="Alternar origem da voz TTS: Browser vs Servidor Mac"
-      >
-        🗣️ Browser
-      </button>
-      <button
-        id="btn-caption"
-        type="button"
-        class="hud-btn is-active"
-        aria-pressed="true"
-        title="Mostrar ou ocultar legenda"
-      >
-        💬 Legenda
-      </button>
-      <button
-        id="btn-fullscreen"
-        type="button"
-        class="hud-btn"
-        aria-pressed="false"
-        title="Alternar tela cheia"
-      >
-        ⛶ Tela Cheia
-      </button>
-      <button
-        id="btn-hud-pin"
-        type="button"
-        class="hud-btn hud-btn-icon"
-        aria-pressed="false"
-        aria-label="Fixar barra superior"
-        title="Fixar barra superior (evita ocultar automaticamente)"
-      >
-        📌
-      </button>
-    </nav>
-  </header>
-
-  <!-- Barra rápida para testar as emoções e os estados com 1 clique -->
-  <section
-    id="expressions-bar"
-    class="expressions-bar hidden"
-    aria-label="Testar expressões faciais e estados"
+  <!-- Único controle fixo: abre Ajustes (também pelo Start do gamepad). O ponto indica a conexão com o Brain. -->
+  <button
+    id="btn-settings"
+    type="button"
+    class="settings-fab"
+    aria-expanded="false"
+    aria-controls="settings-panel"
+    aria-label="Abrir Ajustes"
+    title="Ajustes (Start)"
   >
-    <div class="expressions-group">
-      <span class="expressions-title">Emoções</span>
-      <div id="emotion-chips" class="chips-list"></div>
-    </div>
-    <div class="expressions-group">
-      <span class="expressions-title">Estados</span>
-      <div id="state-chips" class="chips-list"></div>
-    </div>
-  </section>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></svg>
+    <span class="status-dot is-disconnected" id="ws-dot" aria-hidden="true"></span>
+  </button>
+  <!-- Mantido só para o Electron: libera o Modo Nathan OS no ciclo L1/R1 (cowork.js). -->
+  <button id="btn-mode-nathan" type="button" class="hidden" data-mode="nathan" tabindex="-1" aria-hidden="true"></button>
 
   <!-- Banner discreto para destravar áudio no navegador se ainda não houve interação -->
   <button
@@ -296,19 +182,128 @@
     </div>
   </section>
 
-  <!-- Ajustes: Skills e Diagnóstico (não são modos de tela) -->
+  <!-- Ajustes: fora dos Modos. L1/R1 trocam de seção, B ou Start fecham. -->
   <section id="settings-panel" class="workspace-panel hidden" aria-label="Ajustes">
     <div class="settings-head">
-      <div class="category-tabs">
-        <button type="button" class="cat-tab settings-subtab is-active" data-subtab="skills">✨ Skills</button>
-        <button type="button" class="cat-tab settings-subtab" data-subtab="diagnostics">🩺 Diagnóstico</button>
+      <div class="category-tabs" role="tablist" aria-label="Seções dos Ajustes">
+        <button type="button" class="cat-tab settings-subtab is-active" data-subtab="voice" role="tab">Voz e som</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="brain" role="tab">Cérebro</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="memory" role="tab">Memória</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="skills" role="tab">Skills</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="dock" role="tab">Dock</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="diagnostics" role="tab">Diagnóstico</button>
       </div>
-      <button id="btn-settings-close" type="button" class="btn-secondary btn-sm" aria-label="Fechar ajustes">✕ Fechar</button>
+      <button id="btn-settings-close" type="button" class="btn-secondary btn-sm" aria-label="Fechar ajustes">Fechar</button>
     </div>
-    <div id="settings-tab-skills" class="settings-subpanel">
+
+    <div id="settings-tab-voice" class="settings-subpanel">
+      <ul class="settings-list">
+        <li>
+          <div class="settings-item-text">
+            <strong>Voz do Lupin</strong>
+            <span>Ele fala as respostas em voz alta.</span>
+          </div>
+          <button id="btn-tts" type="button" class="hud-btn is-active" aria-pressed="true">Ligada</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Origem da voz</strong>
+            <span>Voz do navegador deste aparelho ou voz do Mac.</span>
+          </div>
+          <button id="btn-tts-mode" type="button" class="hud-btn" aria-pressed="false">Navegador</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Sons do Lupin</strong>
+            <span>Ronronar, cliques e efeitos dos Truques.</span>
+          </div>
+          <button id="btn-pet-sounds" type="button" class="hud-btn is-active" aria-pressed="true">Ligados</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Legenda</strong>
+            <span>Mostra na tela o que Lupin está falando.</span>
+          </div>
+          <button id="btn-caption" type="button" class="hud-btn is-active" aria-pressed="true">Ligada</button>
+        </li>
+      </ul>
+    </div>
+
+    <div id="settings-tab-brain" class="settings-subpanel hidden">
+      <ul class="settings-list">
+        <li>
+          <div class="settings-item-text">
+            <strong>Conexão</strong>
+            <span id="ws-status" role="status" aria-live="polite" aria-atomic="true"><span id="ws-status-text">Conectando...</span></span>
+          </div>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Endereço do Mac</strong>
+            <span id="brain-address">—</span>
+          </div>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Provedor</strong>
+            <span id="brain-provider">—</span>
+          </div>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Modelo</strong>
+            <span id="brain-model">—</span>
+          </div>
+        </li>
+      </ul>
+      <p class="muted-note">Para trocar o endereço, o provedor ou o modelo, use o Mac.</p>
+    </div>
+
+    <div id="settings-tab-memory" class="settings-subpanel hidden">
+      <ul class="settings-list">
+        <li>
+          <div class="settings-item-text">
+            <strong>O que Lupin lembra</strong>
+            <span>Fatos guardados sobre você e a conversa atual.</span>
+          </div>
+          <button
+            id="btn-memory"
+            type="button"
+            class="hud-btn"
+            aria-expanded="false"
+            aria-controls="memory-drawer"
+          >
+            Abrir (<span id="memory-count">0</span>)
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <div id="settings-tab-skills" class="settings-subpanel hidden">
       <div id="skills-root" class="skills-root"></div>
     </div>
+
+    <div id="settings-tab-dock" class="settings-subpanel hidden">
+      <p class="muted-note">Os Atalhos do Dock são criados e editados no Mac. Aqui você só vê a lista.</p>
+      <ul id="settings-shortcuts-list" class="settings-list"></ul>
+    </div>
+
     <div id="settings-tab-diagnostics" class="settings-subpanel hidden">
+      <section class="expressions-bar" aria-label="Testar expressões faciais e estados">
+        <div class="expressions-group">
+          <span class="expressions-title">Expressões</span>
+          <div id="emotion-chips" class="chips-list"></div>
+        </div>
+        <div class="expressions-group">
+          <span class="expressions-title">Estados</span>
+          <div id="state-chips" class="chips-list"></div>
+        </div>
+        <div class="face-badge" id="face-badge" title="Estado e expressão atuais">
+          <span id="state-label">idle</span>
+          <span class="badge-sep" aria-hidden="true">·</span>
+          <span id="emotion-label">neutral</span>
+        </div>
+      </section>
       <div id="diagnostics-root" class="diagnostics-root"></div>
     </div>
   </section>
