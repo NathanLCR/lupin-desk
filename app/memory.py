@@ -479,6 +479,17 @@ class MemoryStore:
                     (now_iso,),
                 )
 
+                # Metadados leves da aplicação (ex.: data do último First Wake).
+                self._conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS app_meta (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+
                 # Índice FTS5 para busca textual rápida com fallback seguro caso indisponível.
                 try:
                     self._conn.execute(
@@ -1298,4 +1309,26 @@ class MemoryStore:
             self._conn.execute(
                 "UPDATE rolling_state SET summary = '', updated_at = ? WHERE id = 1",
                 (now_iso,),
+            )
+
+    def get_meta(self, key: str) -> str | None:
+        """Lê um valor persistido na tabela `app_meta`."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM app_meta WHERE key = ?",
+                (key,),
+            ).fetchone()
+        return str(row["value"]) if row is not None else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        """Grava ou atualiza um valor na tabela `app_meta`."""
+        now_iso = _now_iso()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO app_meta (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, value, now_iso),
             )

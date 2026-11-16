@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,10 +30,14 @@ _DEFAULT_WEATHER_CITY = "São Paulo"
 _DEFAULT_MAX_SHORT_TERM_MESSAGES = 10
 _DEFAULT_MAX_USER_FACTS = 25
 _DEFAULT_DB_PATH = BASE_DIR / "data" / "memory.db"
+_DEFAULT_COWORK_WORKSPACE_PATH = Path("/Users/nathanlucio/Desktop/Cowork")
+_DEFAULT_JARVIS_VISION_MAX_DIM = 1280
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"freellmapi-[A-Za-z0-9_-]+"), "[REDACTED]"),
     (re.compile(r"sk-[A-Za-z0-9_-]+"), "[REDACTED]"),
+    (re.compile(r"AIza[A-Za-z0-9_-]+"), "[REDACTED]"),
+    (re.compile(r"gsk_[A-Za-z0-9_-]+"), "[REDACTED]"),
     (re.compile(r"(Bearer\s+)[A-Za-z0-9._-]+", re.IGNORECASE), r"\1[REDACTED]"),
 )
 
@@ -58,6 +63,9 @@ class Settings:
     weather_latitude: float = _DEFAULT_WEATHER_LATITUDE
     weather_longitude: float = _DEFAULT_WEATHER_LONGITUDE
     weather_city: str = _DEFAULT_WEATHER_CITY
+    cowork_workspace_path: Path = _DEFAULT_COWORK_WORKSPACE_PATH
+    jarvis_vision_max_dim: int = _DEFAULT_JARVIS_VISION_MAX_DIM
+    desk_access_token: str = ""
 
 
 def _parse_int(raw: str | None, default: int) -> int:
@@ -135,6 +143,14 @@ def load_settings(env_path: Path | None = None) -> Settings:
         _parse_int(os.getenv("MAX_USER_FACTS"), _DEFAULT_MAX_USER_FACTS),
     )
     db_path = _resolve_db_path(os.getenv("DB_PATH"))
+    cowork_workspace_path = _resolve_path(
+        os.getenv("COWORK_WORKSPACE_PATH"), _DEFAULT_COWORK_WORKSPACE_PATH
+    )
+    jarvis_vision_max_dim = max(
+        320,
+        _parse_int(os.getenv("JARVIS_VISION_MAX_DIM"), _DEFAULT_JARVIS_VISION_MAX_DIM),
+    )
+    desk_access_token = os.getenv("DESK_ACCESS_TOKEN", "").strip()
 
     return Settings(
         llm_base_url=base_url,
@@ -154,7 +170,20 @@ def load_settings(env_path: Path | None = None) -> Settings:
         weather_latitude=weather_latitude,
         weather_longitude=weather_longitude,
         weather_city=weather_city,
+        cowork_workspace_path=cowork_workspace_path,
+        jarvis_vision_max_dim=jarvis_vision_max_dim,
+        desk_access_token=desk_access_token,
     )
+
+
+def resolve_runtime_access_token(settings: Settings) -> tuple[str, bool]:
+    """Retorna `(token, gerado_automaticamente)` para autenticar clientes não-loopback."""
+    configured = (settings.desk_access_token or "").strip()
+    if configured:
+        return configured, False
+    if settings.host.strip().lower() in {"127.0.0.1", "::1", "localhost"}:
+        return "", False
+    return secrets.token_urlsafe(12), True
 
 
 class SecretRedactingFilter(logging.Filter):

@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   />
   <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="EMO Desk" />
-  <title>Desk Assistant</title>
+  <meta name="apple-mobile-web-app-title" content="Lupin Desk" />
+  <title>Lupin — Desk Assistant</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
   <link rel="apple-touch-icon" href="/static/icon.svg" />
@@ -21,7 +21,8 @@
 <body class="mode-pet">
   <!-- Palco do rosto animado (tela cheia no modo Pet, compacto nos modos Dock e Display) -->
   <main id="stage" class="stage">
-    <div id="face-container" aria-label="Rosto do assistente"></div>
+    <h1 class="sr-only">Lupin — Desk Assistant</h1>
+    <div id="face-container" role="img" aria-label="Rosto animado de Lupin"></div>
 
     <!-- Relógio OLED discreto no modo Pet -->
     <div id="pet-clock" class="pet-clock" aria-label="Relógio atual">
@@ -40,10 +41,31 @@
     </button>
   </main>
 
+  <!-- Controles do mini-pet: visíveis ao passar o ponteiro ou navegar pelo teclado. -->
+  <nav id="mini-pet-controls" class="mini-pet-controls" aria-label="Controles do mini-pet">
+    <button id="mini-pet-drag" type="button" aria-label="Mover Lupin" aria-describedby="mini-pet-help" title="Arraste para mover; setas movem pelo teclado">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" /></svg>
+      <span>Mover</span>
+    </button>
+    <button id="mini-pet-open" type="button" aria-label="Abrir painel do Lupin" title="Abrir painel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></svg>
+      <span>Painel</span>
+    </button>
+    <button id="mini-pet-mute" type="button" aria-pressed="false" title="Silenciar voz e sons do pet">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14" /></svg>
+      <span id="mini-pet-mute-label">Silenciar</span>
+    </button>
+    <button id="mini-pet-hide" type="button" aria-label="Ocultar mini-pet" title="Ocultar mini-pet (Esc)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+      <span>Ocultar</span>
+    </button>
+  </nav>
+  <p id="mini-pet-help" class="sr-only">Arraste o botão Mover ou use as setas. Segure Shift para mover mais rápido. Escape oculta o mini-pet. Command, Shift e L mostram o mini-pet novamente.</p>
+
   <!-- HUD superior com status, alternador de modos e controles rápidos -->
   <header id="hud" class="hud" aria-label="Controles superiores">
     <div class="hud-left">
-      <div class="status-pill" id="ws-status" title="Status da conexão WebSocket">
+      <div class="status-pill" id="ws-status" role="status" aria-live="polite" aria-atomic="true" title="Status da conexão WebSocket">
         <span class="status-dot is-disconnected" id="ws-dot" aria-hidden="true"></span>
         <span id="ws-status-text">Conectando...</span>
       </div>
@@ -56,17 +78,23 @@
 
     <!-- Seletor dos 4 modos de tela -->
     <nav id="mode-switcher" class="mode-switcher" aria-label="Modos de tela">
-      <button type="button" class="mode-btn is-active" data-mode="pet" aria-pressed="true">
+      <button type="button" class="mode-btn is-active" data-mode="pet" aria-pressed="true" aria-label="Modo Pet Vivo" title="Modo Pet Vivo">
         🐾 Pet
       </button>
-      <button type="button" class="mode-btn" data-mode="dock" aria-pressed="false">
+      <button type="button" class="mode-btn" data-mode="dock" aria-pressed="false" aria-label="Modo Dock e Atalhos do Mac" title="Modo Dock e Atalhos do Mac">
         🎛️ Dock
       </button>
-      <button type="button" class="mode-btn" data-mode="display" aria-pressed="false">
+      <button type="button" class="mode-btn" data-mode="display" aria-pressed="false" aria-label="Modo Smart Display Ambiente" title="Modo Smart Display Ambiente">
         🖥️ Display
       </button>
-      <button type="button" class="mode-btn" data-mode="diagnostics" aria-pressed="false">
+      <button type="button" class="mode-btn" data-mode="skills" aria-pressed="false" aria-label="Modo Skills e Truques do Pet" title="Modo Skills e Truques do Pet">
+        ✨ Skills
+      </button>
+      <button type="button" class="mode-btn" data-mode="diagnostics" aria-pressed="false" aria-label="Modo Estúdio de Diagnóstico" title="Modo Estúdio de Diagnóstico">
         🩺 Diagnóstico
+      </button>
+      <button id="btn-mode-nathan" type="button" class="mode-btn hidden" data-mode="nathan" aria-pressed="false" aria-label="Modo Nathan OS" title="Modo Nathan OS">
+        🧭 Nathan OS
       </button>
     </nav>
 
@@ -111,6 +139,7 @@
         id="btn-tts-mode"
         type="button"
         class="hud-btn"
+        aria-pressed="false"
         title="Alternar origem da voz TTS: Browser vs Servidor Mac"
       >
         🗣️ Browser
@@ -138,6 +167,7 @@
         type="button"
         class="hud-btn hud-btn-icon"
         aria-pressed="false"
+        aria-label="Fixar barra superior"
         title="Fixar barra superior (evita ocultar automaticamente)"
       >
         📌
@@ -174,48 +204,107 @@
   <!-- Toast discreto para ações executadas ([action:...], atalhos e avisos) -->
   <div id="action-toast" class="action-toast hidden" role="status" aria-live="polite"></div>
 
-  <!-- Painel de Modo 2: Dock Viva & Stream Deck de Atalhos do Mac -->
-  <section id="mode-dock" class="workspace-panel hidden" aria-label="Dock Viva e Stream Deck do Mac">
-    <div class="dock-layout">
-      <!-- Dock Viva do macOS -->
-      <div class="panel-card">
-        <div class="panel-head">
-          <div class="panel-title-row">
-            <h2>🖥️ Dock Viva do Mac</h2>
+  <!-- Card silencioso de First Wake Briefing (primeira interação do dia) -->
+  <aside id="first-wake-card" class="first-wake-card hidden" role="region" aria-label="Resumo do dia">
+    <div class="first-wake-head">
+      <strong>☀️ Briefing do Dia (Cowork)</strong>
+      <button id="btn-first-wake-close" type="button" class="btn-secondary btn-sm" aria-label="Fechar resumo do dia">✕</button>
+    </div>
+    <p id="first-wake-headline" class="first-wake-headline"></p>
+    <ul id="first-wake-list" class="first-wake-list"></ul>
+    <button id="btn-first-wake-speak" type="button" class="btn-primary btn-sm">🔊 Ouvir resumo</button>
+  </aside>
+
+  <!-- Painel de Modo 2: Dock Viva & Virtual Stream Deck do Mac -->
+  <section id="mode-dock" class="workspace-panel hidden" aria-label="Dock Viva e Virtual Stream Deck do Mac">
+    <div class="dock-layout vsd-layout">
+      <!-- Faixa Compacta: Dock Viva do macOS -->
+      <div class="panel-card dock-live-strip">
+        <div class="dock-live-row">
+          <div class="dock-live-meta">
+            <h2 class="dock-live-title">🖥️ Dock Viva</h2>
             <span id="dock-active-app" class="panel-pill">Ativo: —</span>
           </div>
-          <button id="btn-refresh-apps" type="button" class="btn-secondary btn-sm">
-            ↻ Atualizar Apps
-          </button>
+          <div id="dock-apps-grid" class="dock-apps-grid" role="list" aria-label="Aplicativos do Mac"></div>
+          <div class="dock-live-actions">
+            <button
+              id="btn-refresh-apps"
+              type="button"
+              class="btn-secondary btn-sm"
+              title="Atualizar lista de aplicativos abertos"
+              aria-label="Atualizar aplicativos abertos"
+            >
+              ↻ Apps
+            </button>
+            <button
+              id="btn-toggle-dock-cowork"
+              type="button"
+              class="btn-secondary btn-sm"
+              aria-expanded="false"
+              aria-controls="cowork-quick-strip"
+              title="Abrir ou recolher captura rápida Cowork"
+            >
+              📝 Cowork
+            </button>
+          </div>
         </div>
-        <div id="dock-apps-grid" class="dock-apps-grid" role="list"></div>
       </div>
 
-      <!-- Stream Deck de Atalhos -->
-      <div class="panel-card">
+      <!-- Ações Rápidas Cowork (recolhível por padrão para priorizar o Stream Deck) -->
+      <div id="cowork-quick-strip" class="panel-card cowork-quick-drawer hidden">
         <div class="panel-head">
-          <div class="panel-title-row">
-            <h2>⚡ Stream Deck de Atalhos</h2>
-            <div id="shortcut-category-tabs" class="category-tabs" role="tablist">
-              <button type="button" class="cat-tab is-active" data-cat="all">Todos</button>
-              <button type="button" class="cat-tab" data-cat="spaces">Espaços</button>
-              <button type="button" class="cat-tab" data-cat="capture">Captura</button>
-              <button type="button" class="cat-tab" data-cat="editing">Edição</button>
-              <button type="button" class="cat-tab" data-cat="media">Mídia</button>
-              <button type="button" class="cat-tab" data-cat="apps">Apps</button>
-              <button type="button" class="cat-tab" data-cat="custom">Custom</button>
+          <h2>📝 Captura Rápida Cowork</h2>
+          <span class="panel-pill">Requer confirmação</span>
+        </div>
+        <div class="cowork-quick-row">
+          <input id="dock-cowork-input" class="chat-input" type="text" placeholder="Nova tarefa em tasks.yaml..." aria-label="Nova tarefa em tasks.yaml" />
+          <button id="btn-dock-cowork-add" type="button" class="btn-primary btn-sm">➕ Propor</button>
+        </div>
+        <pre id="dock-cowork-status" class="code-preview"></pre>
+      </div>
+
+      <!-- Grade Principal: Virtual Stream Deck -->
+      <div class="panel-card vsd-deck-shell">
+        <div class="vsd-toolbar">
+          <div class="vsd-toolbar-left">
+            <div id="shortcut-category-tabs" class="category-tabs vsd-profile-tabs" role="tablist" aria-label="Categorias do Stream Deck">
+              <button type="button" class="cat-tab is-active" data-cat="all" role="tab" aria-selected="true">Todos</button>
+              <button type="button" class="cat-tab" data-cat="spaces" role="tab" aria-selected="false">Espaços</button>
+              <button type="button" class="cat-tab" data-cat="capture" role="tab" aria-selected="false">Captura</button>
+              <button type="button" class="cat-tab" data-cat="editing" role="tab" aria-selected="false">Edição</button>
+              <button type="button" class="cat-tab" data-cat="media" role="tab" aria-selected="false">Mídia</button>
+              <button type="button" class="cat-tab" data-cat="apps" role="tab" aria-selected="false">Apps</button>
+              <button type="button" class="cat-tab" data-cat="custom" role="tab" aria-selected="false">Custom</button>
             </div>
           </div>
-          <div class="panel-head-actions">
-            <button id="btn-new-shortcut" type="button" class="btn-primary btn-sm">
-              ➕ Novo Atalho
+          <div class="panel-head-actions vsd-toolbar-actions">
+            <button
+              id="btn-vsd-size"
+              type="button"
+              class="btn-secondary btn-sm"
+              aria-pressed="false"
+              title="Alternar tamanho das teclas entre Padrão e Grande"
+            >
+              🔍 Teclas: Padrão
             </button>
-            <button id="btn-config-shortcuts" type="button" class="btn-secondary btn-sm">
-              ⚙️ Configurar Atalhos
+            <button
+              id="btn-vsd-edit-mode"
+              type="button"
+              class="btn-secondary btn-sm"
+              aria-pressed="false"
+              title="Mostrar botões de edição e atalhos técnicos nas teclas"
+            >
+              ✏️ Editar
+            </button>
+            <button id="btn-new-shortcut" type="button" class="btn-primary btn-sm">
+              ➕ Novo
+            </button>
+            <button id="btn-config-shortcuts" type="button" class="btn-secondary btn-sm" aria-label="Gerenciar todos os atalhos" title="Gerenciar todos os atalhos">
+              ⚙️
             </button>
           </div>
         </div>
-        <div id="shortcuts-grid" class="shortcuts-grid" role="list"></div>
+        <div id="shortcuts-grid" class="shortcuts-grid vsd-grid" role="list" aria-label="Teclas do Virtual Stream Deck"></div>
       </div>
     </div>
   </section>
@@ -253,9 +342,9 @@
         <div id="now-playing-title" class="media-title">Nenhuma mídia ativa</div>
         <div id="now-playing-artist" class="media-artist">Spotify / Apple Music</div>
         <div class="media-controls">
-          <button id="btn-media-prev" type="button" class="btn-secondary" title="Faixa anterior">⏮</button>
+          <button id="btn-media-prev" type="button" class="btn-secondary" aria-label="Faixa anterior" title="Faixa anterior">⏮</button>
           <button id="btn-media-play" type="button" class="btn-primary" title="Play / Pause">⏯ Play/Pause</button>
-          <button id="btn-media-next" type="button" class="btn-secondary" title="Próxima faixa">⏭</button>
+          <button id="btn-media-next" type="button" class="btn-secondary" aria-label="Próxima faixa" title="Próxima faixa">⏭</button>
         </div>
       </article>
 
@@ -263,7 +352,7 @@
       <article class="panel-card display-weather-card">
         <div class="panel-head">
           <h2>🌤️ Clima</h2>
-          <button id="btn-refresh-weather" type="button" class="btn-secondary btn-sm">↻</button>
+          <button id="btn-refresh-weather" type="button" class="btn-secondary btn-sm" aria-label="Atualizar clima" title="Atualizar clima">↻</button>
         </div>
         <div class="weather-main">
           <span id="weather-icon" class="weather-icon">☀️</span>
@@ -306,38 +395,112 @@
           </div>
         </div>
       </article>
+
+      <!-- Card Today + Sync LED no Smart Display -->
+      <article id="display-today-card" class="panel-card">
+        <div class="panel-head">
+          <h2>🧭 Today &amp; Sync</h2>
+          <span id="display-sync-led" class="panel-pill">🟡 —</span>
+        </div>
+        <p id="display-today-headline" class="display-today-headline">Carregando Cowork...</p>
+        <ul id="display-today-top" class="first-wake-list"></ul>
+      </article>
     </div>
   </section>
 
-  <!-- Painel de Modo 4: Estúdio de Diagnóstico -->
+  <!-- Painel de Modo 4: Skills do Pet -->
+  <section id="mode-skills" class="workspace-panel hidden" aria-label="Skills do Pet">
+    <div id="skills-root" class="skills-root"></div>
+  </section>
+
+  <!-- Painel de Modo 5: Estúdio de Diagnóstico -->
   <section id="mode-diagnostics" class="workspace-panel hidden" aria-label="Estúdio de Diagnóstico">
     <div id="diagnostics-root" class="diagnostics-root"></div>
+  </section>
+
+  <!-- Painel Exclusivo Mac Electron: Nathan OS (Today, Capture, Actions, Sync, Jarvis) -->
+  <section id="mode-nathan" class="workspace-panel hidden" aria-label="Espaço de Trabalho Nathan OS">
+    <div class="panel-card nathan-shell-card">
+      <div class="panel-head">
+        <div class="category-tabs">
+          <button type="button" class="cat-tab nathan-subtab is-active" data-subtab="today">Today</button>
+          <button type="button" class="cat-tab nathan-subtab" data-subtab="capture">Capture</button>
+          <button type="button" class="cat-tab nathan-subtab" data-subtab="actions">Actions</button>
+          <button type="button" class="cat-tab nathan-subtab" data-subtab="sync">Sync &amp; Jarvis</button>
+        </div>
+        <span id="nathan-sync-badge" class="panel-pill">🟡 —</span>
+      </div>
+
+      <div id="nathan-tab-today" class="nathan-subpanel">
+        <h3 id="nathan-today-headline">Carregando resumo...</h3>
+        <ul id="nathan-today-top" class="first-wake-list"></ul>
+        <ul id="nathan-today-warnings" class="first-wake-list"></ul>
+      </div>
+
+      <div id="nathan-tab-capture" class="nathan-subpanel hidden">
+        <div class="cowork-capture-form">
+          <input id="capture-task-title" class="chat-input" type="text" placeholder="Título da tarefa..." aria-label="Título da tarefa" />
+          <input id="capture-task-domain" class="chat-input" type="text" placeholder="Domínio (ex: dissertation, personal)" aria-label="Domínio da tarefa" />
+          <input id="capture-task-due" class="chat-input" type="text" placeholder="Prazo YYYY-MM-DD (opcional)" aria-label="Prazo da tarefa" />
+          <button id="btn-capture-preview" type="button" class="btn-secondary btn-sm">🔍 Gerar Diff</button>
+          <button id="btn-capture-apply" type="button" class="btn-primary btn-sm hidden">✓ Confirmar Gravação</button>
+        </div>
+        <pre id="capture-diff-preview" class="code-preview"></pre>
+      </div>
+
+      <div id="nathan-tab-actions" class="nathan-subpanel hidden">
+        <div id="nathan-actions-list" class="nathan-actions-list"></div>
+        <pre id="nathan-actions-log" class="code-preview"></pre>
+      </div>
+
+      <div id="nathan-tab-sync" class="nathan-subpanel hidden">
+        <p id="nathan-sync-detail" class="muted-note">—</p>
+        <div class="pomo-actions">
+          <button id="btn-jarvis-vision" type="button" class="btn-secondary btn-sm">👁️ Olhar Tela (Sob Demanda)</button>
+          <button id="btn-jarvis-clipboard" type="button" class="btn-secondary btn-sm">📋 Ler Clipboard</button>
+        </div>
+        <pre id="nathan-jarvis-output" class="code-preview"></pre>
+      </div>
+    </div>
   </section>
 
   <!-- Área inferior fixa: aprovação rápida + legenda + Push-to-Talk + entrada de texto -->
   <footer class="bottom-dock">
     <!-- Confirmação rápida de tool_approval_request -->
-    <div id="approval-banner" class="approval-banner hidden" role="alertdialog" aria-live="assertive">
-      <span id="approval-text" class="approval-text">Confirmar execução?</span>
+    <div id="approval-banner" class="approval-banner hidden" role="alertdialog" aria-modal="true" aria-labelledby="approval-text" aria-live="assertive">
+      <div class="approval-info">
+        <span id="approval-text" class="approval-text">Confirmar execução?</span>
+        <pre id="approval-diff" class="approval-diff hidden"></pre>
+      </div>
       <div class="approval-actions">
         <button id="btn-approve-action" type="button" class="btn-primary btn-sm">✓ Autorizar</button>
         <button id="btn-deny-action" type="button" class="btn-secondary btn-sm">✕ Recusar</button>
       </div>
     </div>
 
-    <div id="caption-box" class="caption-box is-empty" aria-live="polite">
+    <div id="caption-box" class="caption-box is-empty" role="status" aria-live="polite" aria-atomic="true">
       <p id="caption-text" class="caption-text"></p>
     </div>
 
-    <form id="chat-form" class="chat-form" autocomplete="off">
+    <form id="chat-form" class="chat-form" autocomplete="off" aria-label="Mensagem para Lupin">
       <button
         id="btn-ptt"
         type="button"
         class="ptt-btn"
         title="Segure para falar (ou use Espaço / L2 / R2)"
+        aria-label="Segure para falar"
         aria-pressed="false"
       >
-        🎤 Segure para falar
+        🎤 <span class="ptt-label">Segure para falar</span>
+      </button>
+      <button
+        id="btn-vad-toggle"
+        type="button"
+        class="hud-btn"
+        title="Alternar escuta contínua por detecção de voz (VAD)"
+        aria-pressed="false"
+      >
+        🎙️ VAD
       </button>
       <input
         id="chat-input"
@@ -385,16 +548,16 @@
         </div>
 
         <div class="emoji-quick-row" aria-label="Ícones rápidos">
-          <button type="button" class="emoji-chip" data-emoji="⚡">⚡</button>
-          <button type="button" class="emoji-chip" data-emoji="🔄">🔄</button>
-          <button type="button" class="emoji-chip" data-emoji="🔍">🔍</button>
-          <button type="button" class="emoji-chip" data-emoji="📸">📸</button>
-          <button type="button" class="emoji-chip" data-emoji="🖥️">🖥️</button>
-          <button type="button" class="emoji-chip" data-emoji="🎵">🎵</button>
-          <button type="button" class="emoji-chip" data-emoji="🍅">🍅</button>
-          <button type="button" class="emoji-chip" data-emoji="🚀">🚀</button>
-          <button type="button" class="emoji-chip" data-emoji="📋">📋</button>
-          <button type="button" class="emoji-chip" data-emoji="🔒">🔒</button>
+          <button type="button" class="emoji-chip" data-emoji="⚡" aria-label="Ícone ⚡">⚡</button>
+          <button type="button" class="emoji-chip" data-emoji="🔄" aria-label="Ícone 🔄">🔄</button>
+          <button type="button" class="emoji-chip" data-emoji="🔍" aria-label="Ícone 🔍">🔍</button>
+          <button type="button" class="emoji-chip" data-emoji="📸" aria-label="Ícone 📸">📸</button>
+          <button type="button" class="emoji-chip" data-emoji="🖥️" aria-label="Ícone 🖥️">🖥️</button>
+          <button type="button" class="emoji-chip" data-emoji="🎵" aria-label="Ícone 🎵">🎵</button>
+          <button type="button" class="emoji-chip" data-emoji="🍅" aria-label="Ícone 🍅">🍅</button>
+          <button type="button" class="emoji-chip" data-emoji="🚀" aria-label="Ícone 🚀">🚀</button>
+          <button type="button" class="emoji-chip" data-emoji="📋" aria-label="Ícone 📋">📋</button>
+          <button type="button" class="emoji-chip" data-emoji="🔒" aria-label="Ícone 🔒">🔒</button>
         </div>
 
         <div class="form-row-3">
@@ -563,6 +726,8 @@
   <aside
     id="memory-drawer"
     class="memory-drawer hidden"
+    role="dialog"
+    aria-modal="true"
     aria-hidden="true"
     aria-labelledby="memory-drawer-title"
   >
@@ -655,6 +820,8 @@
   <script src="/static/face.js"></script>
   <script src="/static/gamepad.js"></script>
   <script src="/static/diagnostics.js"></script>
+  <script src="/static/skills.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/cowork_jarvis.js"></script>
 </body>
 </html>

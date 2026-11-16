@@ -344,14 +344,14 @@
     const xPos = -EYE_HALF_W;
     const yPos = -EYE_HALF_H;
 
-    // Gera 7 barras para o indicador sutil de voz
-    const barCount = 7;
-    const barSpacing = 18;
+    // Gera 9 barras para o equalizador da coleira Cyber-Husky
+    const barCount = 9;
+    const barSpacing = 13;
     const startX = 400 - ((barCount - 1) * barSpacing) / 2;
     let voiceBarsMarkup = '';
     for (let i = 0; i < barCount; i += 1) {
-      const bx = startX + i * barSpacing - 3;
-      voiceBarsMarkup += `<rect class="emo-voice-bar" data-bar-index="${i}" x="${bx}" y="392" width="6" height="8" rx="3" ry="3"></rect>`;
+      const bx = startX + i * barSpacing - 2.5;
+      voiceBarsMarkup += `<rect class="emo-voice-bar" data-bar-index="${i}" x="${bx}" y="427" width="5" height="10" rx="2.5" ry="2.5"></rect>`;
     }
 
     const eyeInnerMarkup = (side) => `
@@ -414,7 +414,7 @@
         data-compact="false"
       >
         <canvas class="emo-particles-canvas" aria-hidden="true"></canvas>
-        <svg id="emo-face-svg" class="emo-face-svg" viewBox="0 0 800 480" role="img" aria-label="Rosto animado do assistente">
+        <svg id="emo-face-svg" class="emo-face-svg" viewBox="0 0 800 660" role="img" aria-label="Lupin Cyber-Husky animado">
           <defs>
             <clipPath id="emo-clip-left">
               <rect data-clip-rect="left" x="${xPos}" y="${yPos}" width="${EYE_WIDTH}" height="${EYE_HEIGHT}" rx="${EYE_BASE_RX}" ry="${EYE_BASE_RX}"></rect>
@@ -425,10 +425,107 @@
           </defs>
 
           <!-- Halo sutil para estado listening -->
-          <ellipse id="emo-listening-halo" class="emo-listening-halo" cx="400" cy="226" rx="305" ry="152"></ellipse>
+          <ellipse id="emo-listening-halo" class="emo-listening-halo" cx="400" cy="246" rx="315" ry="170"></ellipse>
+
+          <!-- Rig completo de corpo inteiro do Lupin (Cyber-Husky OLED) -->
+          <g id="lupin-full-rig" class="lupin-full-rig">
+            <!-- Pose enrolada para soneca (nap) -->
+            <g id="lupin-nap-group" class="lupin-nap-group" aria-hidden="true">
+              <ellipse class="lupin-fur-dark" cx="400" cy="548" rx="176" ry="74"></ellipse>
+              <path class="lupin-tail-plume" d="M 244 558 C 216 510, 266 472, 342 486 C 412 498, 466 544, 434 596 C 384 624, 272 612, 244 558 Z"></path>
+              <path class="lupin-fur-mane" d="M 358 470 C 424 446, 514 476, 534 534 C 546 570, 502 604, 444 596 C 398 590, 344 532, 358 470 Z"></path>
+              <path class="emo-husky-ear-outer" d="M 392 482 L 378 430 Q 386 422 396 428 L 424 468 Z"></path>
+              <path class="emo-husky-ear-outer" d="M 476 474 L 494 424 Q 504 422 508 434 L 502 486 Z"></path>
+              <ellipse class="emo-husky-brow-mark" cx="418" cy="502" rx="14" ry="5" transform="rotate(-8 418 502)"></ellipse>
+              <ellipse class="emo-husky-brow-mark" cx="470" cy="502" rx="14" ry="5" transform="rotate(8 470 502)"></ellipse>
+              <path class="emo-husky-mouth" d="M 404 524 Q 418 534 432 524"></path>
+              <path class="emo-husky-mouth" d="M 456 524 Q 470 534 484 524"></path>
+              <path class="emo-husky-nose" d="M 432 548 Q 446 540 460 548 Q 460 562 446 566 Q 432 562 432 548 Z"></path>
+              <ellipse class="emo-husky-nose-pink" cx="446" cy="555" rx="6" ry="3.5"></ellipse>
+            </g>
+
+            <!-- Corpo acordado (sentado / andando / balançando com música) -->
+            <g id="lupin-awake-body" class="lupin-awake-body">
+              <!-- Cauda fofa enrolada (pluma branca + base escura) -->
+              <g id="lupin-tail-group" class="lupin-tail-group" transform="translate(514, 520)">
+                <path class="lupin-tail-plume" d="M 0 36 C 58 26, 126 -14, 134 -88 C 140 -144, 96 -178, 54 -158 C 22 -142, 34 -96, 62 -92 C 78 -90, 82 -62, 54 -44 C 30 -28, 12 -14, 0 6 Z"></path>
+                <path class="lupin-tail-dark" d="M 2 22 C 36 14, 72 -6, 86 -36 C 64 -26, 32 -16, 4 -4 Z"></path>
+              </g>
+
+              <!-- Patas traseiras -->
+              <g id="lupin-leg-bl" class="lupin-leg">
+                <path class="lupin-fur-dark" d="M 314 510 C 276 522, 268 566, 286 594 L 330 594 C 334 568, 336 534, 332 510 Z"></path>
+                <ellipse class="lupin-fur-white" cx="304" cy="596" rx="28" ry="14"></ellipse>
+              </g>
+              <g id="lupin-leg-br" class="lupin-leg">
+                <path class="lupin-fur-dark" d="M 486 510 C 524 522, 532 566, 514 594 L 470 594 C 466 568, 464 534, 468 510 Z"></path>
+                <ellipse class="lupin-fur-white" cx="496" cy="596" rx="28" ry="14"></ellipse>
+              </g>
+
+              <!-- Tronco e juba wooly preta + peito branco -->
+              <g id="lupin-body-group" class="lupin-body-group">
+                <path class="lupin-fur-dark" d="M 294 404 C 266 446, 272 544, 314 576 C 354 598, 446 598, 486 576 C 528 544, 534 446, 506 404 Z"></path>
+                <!-- Peito branco fofo -->
+                <path class="lupin-fur-white" d="M 326 424 C 316 476, 328 548, 366 574 C 388 588, 412 588, 434 574 C 472 548, 484 476, 474 424 C 446 446, 422 456, 400 456 C 378 456, 354 446, 326 424 Z"></path>
+                <!-- Juba fofa nos ombros -->
+                <path class="lupin-fur-mane" d="M 272 390 C 260 426, 286 458, 324 468 C 344 444, 366 436, 400 436 C 434 436, 456 444, 476 468 C 514 458, 540 426, 528 390 C 498 408, 448 416, 400 416 C 352 416, 302 408, 272 390 Z"></path>
+
+                <!-- Patas dianteiras -->
+                <g id="lupin-leg-fl" class="lupin-leg">
+                  <path class="lupin-fur-white" d="M 336 488 C 328 534, 328 574, 336 604 L 376 604 C 380 572, 382 532, 376 488 Z"></path>
+                  <ellipse class="lupin-fur-white" cx="354" cy="608" rx="26" ry="13"></ellipse>
+                </g>
+                <g id="lupin-leg-fr" class="lupin-leg">
+                  <path class="lupin-fur-white" d="M 464 488 C 472 534, 472 574, 464 604 L 424 604 C 420 572, 418 532, 424 488 Z"></path>
+                  <ellipse class="lupin-fur-white" cx="446" cy="608" rx="26" ry="13"></ellipse>
+                </g>
+
+                <!-- Coleira Cyber-Husky com equalizador de áudio -->
+                <g id="lupin-collar-group" class="lupin-collar-group">
+                  <path class="lupin-collar-band" d="M 308 408 Q 400 444 492 408 L 488 436 Q 400 472 312 436 Z"></path>
+                  <rect class="lupin-collar-core" x="334" y="416" width="132" height="32" rx="14"></rect>
+                  <g id="emo-voice-wave" class="emo-voice-wave">
+                    ${voiceBarsMarkup}
+                  </g>
+                </g>
+              </g>
+            </g>
 
           <!-- Grupo principal da cabeça (respiração, bounce e inclinação) -->
           <g id="emo-face-head" class="emo-face-head">
+            <!-- Camada Lupin/Lupe (Husky Siberiano preto e branco) -->
+            <g id="emo-husky-layer" class="emo-husky-layer" aria-hidden="true">
+              <!-- Orelhas pontudas pretas com pelo interno claro -->
+              <g class="emo-husky-ear emo-husky-ear-left">
+                <path class="emo-husky-ear-outer" d="M 148 156 L 122 34 Q 124 18 140 24 L 248 92 Z"></path>
+                <path class="emo-husky-ear-inner" d="M 156 138 L 140 50 L 220 98 Z"></path>
+              </g>
+              <g class="emo-husky-ear emo-husky-ear-right">
+                <path class="emo-husky-ear-outer" d="M 652 156 L 678 34 Q 676 18 660 24 L 552 92 Z"></path>
+                <path class="emo-husky-ear-inner" d="M 644 138 L 660 50 L 580 98 Z"></path>
+              </g>
+
+              <!-- Capuz/máscara preta do topo da cabeça e listra central -->
+              <path class="emo-husky-fur-black" d="M 134 196 C 140 94, 244 76, 400 76 C 556 76, 660 94, 666 196 C 654 148, 608 118, 536 122 C 470 126, 434 166, 400 184 C 366 166, 330 126, 264 122 C 192 118, 146 148, 134 196 Z"></path>
+
+              <!-- Bochechas e focinho brancos estilizados -->
+              <path class="emo-husky-fur-white" d="M 152 292 C 148 372, 224 416, 400 416 C 576 416, 652 372, 648 292 C 622 316, 560 326, 492 318 C 446 312, 424 288, 400 288 C 376 288, 354 312, 308 318 C 240 326, 178 316, 152 292 Z"></path>
+
+              <!-- Sobrancelhas/manchinhas claras acima dos olhos -->
+              <ellipse class="emo-husky-brow-mark" cx="256" cy="116" rx="34" ry="12" transform="rotate(-10 256 116)"></ellipse>
+              <ellipse class="emo-husky-brow-mark" cx="544" cy="116" rx="34" ry="12" transform="rotate(10 544 116)"></ellipse>
+
+              <!-- Focinho/Nariz preto com detalhe rosado no centro (como o Lupin) -->
+              <path class="emo-husky-nose" d="M 366 340 Q 400 326 434 340 Q 436 364 400 374 Q 364 364 366 340 Z"></path>
+              <ellipse class="emo-husky-nose-pink" cx="400" cy="356" rx="14" ry="7"></ellipse>
+              <ellipse class="emo-husky-nose-shine" cx="386" cy="340" rx="9" ry="4"></ellipse>
+
+              <!-- Boca estilo husky + linguinha rosa -->
+              <path class="emo-husky-mouth" d="M 360 384 Q 380 400 400 382 Q 420 400 440 384"></path>
+              <path class="emo-husky-tongue" d="M 384 388 L 416 388 L 414 418 Q 400 434 386 418 Z"></path>
+              <line class="emo-husky-tongue-line" x1="400" y1="392" x2="400" y2="416"></line>
+            </g>
+
             <g id="emo-eye-left" class="emo-eye-group emo-eye-left" transform="translate(${LEFT_EYE_X}, ${EYE_CENTER_Y})">
               ${eyeInnerMarkup('left')}
             </g>
@@ -511,11 +608,7 @@
               <circle class="emo-thinking-dot emo-thinking-dot-3" cx="422" cy="108" r="5"></circle>
             </g>
           </g>
-
-          <!-- Onda de áudio sutil abaixo dos olhos -->
-          <g id="emo-voice-wave" class="emo-voice-wave">
-            ${voiceBarsMarkup}
-          </g>
+          </g><!-- /#lupin-full-rig -->
         </svg>
       </div>
     `;
@@ -528,6 +621,9 @@
     els: null,
     rafId: null,
     lastFrameTime: 0,
+    prefersReducedMotion: false,
+    motionQuery: null,
+    motionChangeHandler: null,
 
     state: 'idle',
     emotion: 'neutral',
@@ -539,6 +635,13 @@
     weather: 'none',
     sweat: false,
     compactMode: false,
+    musicPlaying: false,
+
+    // Comportamento corporal autônomo (sit | walk | nap)
+    behavior: 'sit',
+    walkX: 0,
+    walkDir: 1,
+    nextBehaviorAt: 0,
 
     // Olhar (gaze) e micro-sacadas
     manualLookX: 0,
@@ -602,6 +705,94 @@
     bugTrail: [],
   };
 
+  function isMiniPet() {
+    return typeof document !== 'undefined' && document.body && document.body.classList.contains('is-minipet');
+  }
+
+  function shouldReduceMotion() {
+    return internal.prefersReducedMotion && isMiniPet();
+  }
+
+  function clearMotionPreferenceListener() {
+    const query = internal.motionQuery;
+    const handler = internal.motionChangeHandler;
+    if (query && handler) {
+      if (typeof query.removeEventListener === 'function') {
+        query.removeEventListener('change', handler);
+      } else if (typeof query.removeListener === 'function') {
+        query.removeListener(handler);
+      }
+    }
+    internal.motionQuery = null;
+    internal.motionChangeHandler = null;
+  }
+
+  function settleReducedMotion() {
+    const sleepy = internal.autoSleepy || internal.emotion === 'sleepy';
+    internal.behavior = sleepy ? 'nap' : 'sit';
+    internal.walkX = 0;
+    internal.walkDir = 1;
+    internal.nextBehaviorAt = 0;
+    internal.microEvent = null;
+    internal.activeAnim = null;
+    internal.bugTrail.length = 0;
+    internal.fxParticles.length = 0;
+    internal.weatherParticles.length = 0;
+    internal.lastFxSpawnAt = nowMs();
+    internal.popBoost = 0;
+    internal.leftStretch = 0;
+    internal.leftStretchVel = 0;
+    internal.rightStretch = 0;
+    internal.rightStretchVel = 0;
+
+    if (!internal.els) return;
+    const els = internal.els;
+    const targets = resolveEyeTargets(internal.emotion, internal.state, internal.autoSleepy);
+    internal.currentTiltDeg = targets.headTiltDeg;
+    if (els.rig) els.rig.setAttribute('transform', 'translate(0 0)');
+    if (els.tail) els.tail.setAttribute('transform', 'translate(514, 520) rotate(0 0 24)');
+    if (els.head) {
+      els.head.setAttribute(
+        'transform',
+        `translate(0 0) rotate(${internal.currentTiltDeg.toFixed(2)} 400 ${EYE_CENTER_Y})`
+      );
+    }
+    if (els.legFL && els.legFR) {
+      els.legFL.setAttribute('transform', 'rotate(0 356 490)');
+      els.legFR.setAttribute('transform', 'rotate(0 444 490)');
+    }
+    if (els.legBL && els.legBR) {
+      els.legBL.setAttribute('transform', 'rotate(0 312 515)');
+      els.legBR.setAttribute('transform', 'rotate(0 488 515)');
+    }
+    if (internal.canvasCtx) {
+      internal.canvasCtx.clearRect(0, 0, internal.canvasWidth, internal.canvasHeight);
+    }
+    syncDomAttributes();
+  }
+
+  function bindMotionPreference() {
+    if (typeof global.matchMedia !== 'function') {
+      internal.prefersReducedMotion = false;
+      return;
+    }
+
+    const query = global.matchMedia('(prefers-reduced-motion: reduce)');
+    internal.motionQuery = query;
+    internal.prefersReducedMotion = Boolean(query.matches);
+    internal.motionChangeHandler = (event) => {
+      const wasReduced = shouldReduceMotion();
+      internal.prefersReducedMotion = Boolean(event.matches);
+      if (!wasReduced && shouldReduceMotion()) settleReducedMotion();
+    };
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', internal.motionChangeHandler);
+    } else if (typeof query.addListener === 'function') {
+      query.addListener(internal.motionChangeHandler);
+    }
+    if (shouldReduceMotion()) settleReducedMotion();
+  }
+
   function registerInteraction(ts) {
     const t = ts || nowMs();
     internal.lastInteractionAt = t;
@@ -626,6 +817,8 @@
     root.dataset.weather = internal.weather;
     root.dataset.sweat = internal.sweat ? 'true' : 'false';
     root.dataset.compact = internal.compactMode ? 'true' : 'false';
+    root.dataset.behavior = internal.behavior;
+    root.dataset.music = internal.musicPlaying ? 'true' : 'false';
 
     // Atualiza classes de estado, emoção e acessórios para seletores CSS
     SUPPORTED_STATES.forEach((s) => {
@@ -659,6 +852,7 @@
   }
 
   function triggerStretchImpulse(leftAmount, rightAmount) {
+    if (shouldReduceMotion()) return;
     internal.leftStretchVel += leftAmount;
     internal.rightStretchVel += rightAmount != null ? rightAmount : leftAmount;
   }
@@ -669,6 +863,14 @@
     const canvas = q('.emo-particles-canvas');
     return {
       canvas,
+      svg: q('#emo-face-svg'),
+      rig: q('#lupin-full-rig'),
+      tail: q('#lupin-tail-group'),
+      body: q('#lupin-body-group'),
+      legFL: q('#lupin-leg-fl'),
+      legFR: q('#lupin-leg-fr'),
+      legBL: q('#lupin-leg-bl'),
+      legBR: q('#lupin-leg-br'),
       head: q('#emo-face-head'),
       voiceWave: q('#emo-voice-wave'),
       voiceBars,
@@ -729,6 +931,7 @@
   }
 
   function spawnHeartParticle(nx, ny, count) {
+    if (shouldReduceMotion()) return;
     const w = internal.canvasWidth || 800;
     const h = internal.canvasHeight || 480;
     const baseX = (0.5 + clamp(nx || 0, -1, 1) * 0.34) * w;
@@ -754,6 +957,7 @@
   }
 
   function spawnAngerSteam(count) {
+    if (shouldReduceMotion()) return;
     const w = internal.canvasWidth || 800;
     const h = internal.canvasHeight || 480;
     const total = count || 2;
@@ -777,6 +981,7 @@
   }
 
   function spawnZzzParticle() {
+    if (shouldReduceMotion()) return;
     const w = internal.canvasWidth || 800;
     const h = internal.canvasHeight || 480;
     if (internal.fxParticles.length > 48) {
@@ -796,6 +1001,7 @@
   }
 
   function spawnSweatParticle() {
+    if (shouldReduceMotion()) return;
     const w = internal.canvasWidth || 800;
     const h = internal.canvasHeight || 480;
     if (internal.fxParticles.length > 48) {
@@ -855,6 +1061,13 @@
       return;
     }
     const ctx = internal.canvasCtx;
+    if (shouldReduceMotion()) {
+      internal.fxParticles.length = 0;
+      internal.weatherParticles.length = 0;
+      internal.bugTrail.length = 0;
+      ctx.clearRect(0, 0, internal.canvasWidth, internal.canvasHeight);
+      return;
+    }
     const w = internal.canvasWidth;
     const h = internal.canvasHeight;
     const dpr = internal.canvasDpr;
@@ -1081,6 +1294,7 @@
       internal.emotion === 'neutral' &&
       !internal.activeAnim &&
       !internal.microEvent &&
+      !shouldReduceMotion() &&
       ts >= internal.nextIdleMicroEventAt &&
       ts - internal.lastInteractionAt < IDLE_SLEEP_TIMEOUT_MS - 3500
     ) {
@@ -1265,7 +1479,7 @@
       desiredX = internal.microEvent.x;
       desiredY = internal.microEvent.y;
     } else if (internal.state === 'thinking') {
-      if (ts >= internal.nextThinkingFlipAt) {
+      if (!shouldReduceMotion() && ts >= internal.nextThinkingFlipAt) {
         internal.thinkingSide *= -1;
         internal.nextThinkingFlipAt = ts + 1350;
       }
@@ -1275,23 +1489,28 @@
       desiredX = 0;
       desiredY = 0;
     } else if (internal.state === 'idle' && !internal.autoSleepy) {
-      if (ts >= internal.nextIdleGlanceAt) {
-        if (Math.random() < 0.45) {
-          internal.autoLookX = 0;
-          internal.autoLookY = 0;
-        } else {
-          internal.autoLookX = (Math.random() * 2 - 1) * 0.58;
-          internal.autoLookY = (Math.random() * 2 - 1) * 0.36;
+      if (shouldReduceMotion()) {
+        desiredX = targets.gazeBiasX;
+        desiredY = targets.gazeBiasY;
+      } else {
+        if (ts >= internal.nextIdleGlanceAt) {
+          if (Math.random() < 0.45) {
+            internal.autoLookX = 0;
+            internal.autoLookY = 0;
+          } else {
+            internal.autoLookX = (Math.random() * 2 - 1) * 0.58;
+            internal.autoLookY = (Math.random() * 2 - 1) * 0.36;
+          }
+          internal.nextIdleGlanceAt = ts + 2000 + Math.random() * 2000;
         }
-        internal.nextIdleGlanceAt = ts + 2000 + Math.random() * 2000;
+        if (ts >= internal.nextSaccadeAt) {
+          internal.saccadeX = (Math.random() * 2 - 1) * 0.045;
+          internal.saccadeY = (Math.random() * 2 - 1) * 0.035;
+          internal.nextSaccadeAt = ts + 750 + Math.random() * 1100;
+        }
+        desiredX = clamp(internal.autoLookX + internal.saccadeX + targets.gazeBiasX, -1, 1);
+        desiredY = clamp(internal.autoLookY + internal.saccadeY + targets.gazeBiasY, -1, 1);
       }
-      if (ts >= internal.nextSaccadeAt) {
-        internal.saccadeX = (Math.random() * 2 - 1) * 0.045;
-        internal.saccadeY = (Math.random() * 2 - 1) * 0.035;
-        internal.nextSaccadeAt = ts + 750 + Math.random() * 1100;
-      }
-      desiredX = clamp(internal.autoLookX + internal.saccadeX + targets.gazeBiasX, -1, 1);
-      desiredY = clamp(internal.autoLookY + internal.saccadeY + targets.gazeBiasY, -1, 1);
     } else if (internal.autoSleepy || internal.emotion === 'sleepy') {
       desiredX = 0;
       desiredY = 0.16;
@@ -1333,28 +1552,29 @@
       global.EmoAudio && typeof global.EmoAudio.getPulseLevel === 'function'
         ? clamp(global.EmoAudio.getPulseLevel(), 0, 1)
         : 0;
+    const eyeSynthPulse = shouldReduceMotion() ? 0 : synthPulse;
 
     const isSpeaking = internal.state === 'speaking' || internal.smoothAudioLevel > 0.02;
     const breathAmp = internal.autoSleepy || internal.emotion === 'sleepy' ? 2.8 : 4.5;
     const breathFreq = internal.autoSleepy || internal.emotion === 'sleepy' ? 1.1 : 1.65;
-    let headOffsetY = Math.sin(tSec * breathFreq) * breathAmp + animBounceY;
+    let headOffsetY = shouldReduceMotion() ? 0 : Math.sin(tSec * breathFreq) * breathAmp + animBounceY;
     let headOffsetX = 0;
 
-    if (internal.emotion === 'excited') {
+    if (!shouldReduceMotion() && internal.emotion === 'excited') {
       headOffsetY += Math.abs(Math.sin(tSec * 5.5)) * -7;
     }
-    if (internal.emotion === 'dizzy') {
+    if (!shouldReduceMotion() && internal.emotion === 'dizzy') {
       headOffsetX += Math.sin(tSec * 4.2) * 5.5;
       headOffsetY += Math.cos(tSec * 3.1) * 3.5;
     }
-    if (isSpeaking) {
+    if (isSpeaking && !shouldReduceMotion()) {
       const energy =
         internal.state === 'speaking'
           ? Math.max(0.18, internal.smoothAudioLevel)
           : internal.smoothAudioLevel;
       headOffsetY += Math.sin(tSec * 15.5) * (2.5 + energy * 8.5) - energy * 3.5;
     }
-    if (internal.state === 'error') {
+    if (internal.state === 'error' && !shouldReduceMotion()) {
       headOffsetX = Math.sin(tSec * 11) * 1.8;
     }
 
@@ -1370,7 +1590,7 @@
     if (internal.popBoost < 0.001) {
       internal.popBoost = 0;
     }
-    const speakingPulse = isSpeaking ? internal.smoothAudioLevel * 0.068 : 0;
+    const speakingPulse = isSpeaking && !shouldReduceMotion() ? internal.smoothAudioLevel * 0.068 : 0;
 
     const leftPokeSquint =
       ts < internal.leftPokeUntil ? Math.sin(((internal.leftPokeUntil - ts) / 420) * Math.PI) * 0.85 : 0;
@@ -1384,7 +1604,7 @@
       blinkAmount,
       internal.popBoost,
       speakingPulse,
-      synthPulse,
+      eyeSynthPulse,
       internal.leftStretch,
       leftCuriosityY,
       clamp(leftPokeSquint, 0, 1)
@@ -1396,30 +1616,112 @@
       blinkAmount,
       internal.popBoost,
       speakingPulse,
-      synthPulse,
+      eyeSynthPulse,
       internal.rightStretch,
       rightCuriosityY,
       clamp(rightPokeSquint, 0, 1)
     );
 
-    // 7. Atualiza barras da onda de voz abaixo dos olhos
+    // 7. Atualiza barras da onda de voz na coleira Cyber-Husky (sempre presente, pulsa com áudio)
     const showWave = internal.state === 'speaking' || internal.smoothAudioLevel > 0.02 || synthPulse > 0.06;
     internal.els.voiceWave.classList.toggle('is-active', showWave);
-    if (showWave) {
-      const baseLevel =
-        internal.state === 'speaking'
-          ? Math.max(0.14, internal.smoothAudioLevel, synthPulse * 0.7)
-          : Math.max(internal.smoothAudioLevel, synthPulse * 0.75);
-      const bars = internal.els.voiceBars;
-      const centerIdx = (bars.length - 1) / 2;
-      for (let i = 0; i < bars.length; i += 1) {
-        const distWeight = 1 - Math.abs(i - centerIdx) / (centerIdx + 1.1);
-        const wave = 0.45 + 0.55 * Math.abs(Math.sin(tSec * 13 + i * 0.9));
-        const h = 6 + baseLevel * 28 * distWeight * wave;
-        const y = 396 - h / 2;
-        bars[i].setAttribute('height', h.toFixed(2));
-        bars[i].setAttribute('y', y.toFixed(2));
+    const bars = internal.els.voiceBars;
+    const centerIdx = (bars.length - 1) / 2;
+    const baseLevel = showWave
+      ? (internal.state === 'speaking'
+          ? Math.max(0.22, internal.smoothAudioLevel, synthPulse * 0.7)
+          : Math.max(internal.smoothAudioLevel, synthPulse * 0.75))
+      : (internal.musicPlaying ? 0.18 : 0.06);
+    for (let i = 0; i < bars.length; i += 1) {
+      const distWeight = 1 - Math.abs(i - centerIdx) / (centerIdx + 1.15);
+      const wave = shouldReduceMotion()
+        ? 1
+        : 0.45 + 0.55 * Math.abs(Math.sin(tSec * (showWave ? 13 : 4.2) + i * 0.85));
+      const h = 4 + baseLevel * 20 * distWeight * wave;
+      const y = 432 - h / 2;
+      bars[i].setAttribute('height', h.toFixed(2));
+      bars[i].setAttribute('y', y.toFixed(2));
+    }
+
+    // 7b. Comportamento corporal do Lupin (soneca, balanço musical, cauda e caminhada no overlay)
+    const isSleepy = internal.autoSleepy || internal.emotion === 'sleepy';
+    const miniPet = isMiniPet();
+    const reducedMotion = shouldReduceMotion();
+    if (isSleepy) {
+      if (internal.behavior !== 'nap') {
+        internal.behavior = 'nap';
+        syncDomAttributes();
       }
+    } else if (reducedMotion) {
+      if (internal.behavior !== 'sit') {
+        internal.behavior = 'sit';
+        syncDomAttributes();
+      }
+    } else if (miniPet && !internal.compactMode && internal.state === 'idle') {
+      if (!internal.nextBehaviorAt) {
+        internal.nextBehaviorAt = ts + 7000;
+      }
+      if (ts >= internal.nextBehaviorAt) {
+        internal.behavior = internal.behavior === 'walk' ? 'sit' : 'walk';
+        internal.nextBehaviorAt = ts + (internal.behavior === 'walk' ? 6500 : 9000);
+        syncDomAttributes();
+      }
+    } else if (internal.behavior !== 'sit') {
+      internal.behavior = 'sit';
+      syncDomAttributes();
+    }
+
+    // Balanço da cauda (acelera em happy/excited/love/speaking/music)
+    if (internal.els.tail) {
+      const happyBoost =
+        internal.emotion === 'excited' || internal.emotion === 'love' || internal.emotion === 'happy'
+          ? 1.8
+          : 1;
+      const wagFreq = isSleepy ? 0.9 : (internal.musicPlaying ? 5.2 : 2.6) * happyBoost;
+      const wagAmp = isSleepy ? 3 : (internal.state === 'speaking' || internal.musicPlaying ? 12 : 6.5) * happyBoost;
+      const tailRot = reducedMotion ? 0 : Math.sin(tSec * wagFreq) * wagAmp;
+      internal.els.tail.setAttribute('transform', `translate(514, 520) rotate(${tailRot.toFixed(2)} 0 24)`);
+    }
+
+    // Ciclo de passos + caminhada horizontal no overlay desktop
+    let rigOffsetX = 0;
+    let rigOffsetY = 0;
+    let legSwing = 0;
+    if (internal.behavior === 'walk' && !reducedMotion) {
+      internal.walkX += internal.walkDir * dt * 42;
+      if (internal.walkX > 190) {
+        internal.walkX = 190;
+        internal.walkDir = -1;
+      } else if (internal.walkX < -190) {
+        internal.walkX = -190;
+        internal.walkDir = 1;
+      }
+      rigOffsetX = internal.walkX;
+      rigOffsetY = -Math.abs(Math.sin(tSec * 9.5)) * 6;
+      legSwing = Math.sin(tSec * 9.5) * 11;
+    } else {
+      internal.walkX = lerp(internal.walkX, isMiniPet ? internal.walkX : 0, 1 - Math.exp(-dt * 6));
+      rigOffsetX = isMiniPet ? internal.walkX : 0;
+      if (internal.musicPlaying && !isSleepy && !reducedMotion) {
+        rigOffsetY = Math.sin(tSec * 6.2) * 3.5;
+      }
+    }
+
+    if (internal.els.legFL && internal.els.legFR) {
+      internal.els.legFL.setAttribute('transform', `rotate(${legSwing.toFixed(2)} 356 490)`);
+      internal.els.legFR.setAttribute('transform', `rotate(${(-legSwing).toFixed(2)} 444 490)`);
+    }
+    if (internal.els.legBL && internal.els.legBR) {
+      internal.els.legBL.setAttribute('transform', `rotate(${(-legSwing * 0.75).toFixed(2)} 312 515)`);
+      internal.els.legBR.setAttribute('transform', `rotate(${(legSwing * 0.75).toFixed(2)} 488 515)`);
+    }
+    if (internal.els.rig) {
+      const facing = internal.behavior === 'walk' && internal.walkDir < 0 && !reducedMotion ? -1 : 1;
+      const scaleTransform = facing < 0 ? 'translate(800, 0) scale(-1, 1)' : '';
+      internal.els.rig.setAttribute(
+        'transform',
+        `translate(${rigOffsetX.toFixed(2)} ${rigOffsetY.toFixed(2)}) ${scaleTransform}`.trim()
+      );
     }
 
     // 8. Atualiza partículas leves em canvas (clima, corações, Zzz, vapor, inseto)
@@ -1440,6 +1742,7 @@
       }
 
       // Limpa loop anterior se init for chamado novamente
+      clearMotionPreferenceListener();
       if (internal.rafId !== null && typeof global.cancelAnimationFrame === 'function') {
         global.cancelAnimationFrame(internal.rafId);
         internal.rafId = null;
@@ -1466,6 +1769,7 @@
       scheduleNextBlink(t);
       scheduleNextMicroEvent(t);
       syncDomAttributes();
+      bindMotionPreference();
 
       if (typeof global.requestAnimationFrame === 'function') {
         internal.rafId = global.requestAnimationFrame(step);
@@ -1524,10 +1828,10 @@
       registerInteraction();
 
       if (emotion === 'surprised') {
-        internal.popBoost = 0.14;
+        internal.popBoost = shouldReduceMotion() ? 0 : 0.14;
         triggerStretchImpulse(1.6, 1.6);
       } else if (emotion === 'angry') {
-        internal.popBoost = 0.06;
+        internal.popBoost = shouldReduceMotion() ? 0 : 0.06;
         triggerStretchImpulse(-0.9, -0.9);
       } else if (emotion !== prevEmotion) {
         triggerStretchImpulse(0.85, 0.85);
@@ -1720,8 +2024,122 @@
      */
     setCompactMode(active) {
       internal.compactMode = Boolean(active);
+      if (internal.els && internal.els.svg) {
+        internal.els.svg.setAttribute('viewBox', internal.compactMode ? '0 0 800 470' : '0 0 800 660');
+      }
       syncDomAttributes();
       return internal.compactMode;
+    },
+
+    /**
+     * Informa ao Lupin que há música tocando (ativa balanço rítmico e onda na coleira).
+     */
+    setMusicPlaying(active) {
+      internal.musicPlaying = Boolean(active);
+      syncDomAttributes();
+      return internal.musicPlaying;
+    },
+
+    /**
+     * Retorna o retângulo de tela atual do rig do Lupin (usado para click-through no Electron).
+     */
+    getHitboxRect() {
+      if (!internal.els || !internal.els.rig) return null;
+      return internal.els.rig.getBoundingClientRect();
+    },
+
+    /**
+     * Executa uma coreografia visual de truque do pet ('dance', 'sing', 'meditate', 'nap', 'celebrate', 'stretch').
+     */
+    playTrick(trickId) {
+      const id = typeof trickId === 'string' ? trickId.toLowerCase() : '';
+      const t = nowMs();
+      registerInteraction(t);
+
+      if (shouldReduceMotion()) {
+        const emotions = {
+          dance: 'excited',
+          sing: 'happy',
+          meditate: 'love',
+          nap: 'sleepy',
+          celebrate: 'excited',
+          stretch: 'happy',
+        };
+        if (!emotions[id]) return false;
+        EmoFace.setEmotion(emotions[id]);
+        return true;
+      }
+
+      if (id === 'dance') {
+        EmoFace.setEmotion('excited', { durationMs: 2800 });
+        [-0.7, 0.7, -0.6, 0.6, 0].forEach((lx, idx) => {
+          setTimeout(() => {
+            EmoFace.lookAt(lx, idx % 2 === 0 ? -0.35 : 0.25);
+            triggerStretchImpulse(idx % 2 === 0 ? 1.8 : -1.5, idx % 2 === 0 ? -1.5 : 1.8);
+            spawnHeartParticle(lx, -0.2, 2);
+          }, idx * 420);
+        });
+        return true;
+      }
+
+      if (id === 'sing') {
+        EmoFace.setEmotion('happy', { durationMs: 3000 });
+        [0, 1, 2, 3, 4].forEach((step) => {
+          setTimeout(() => {
+            EmoFace.lookAt(step % 2 === 0 ? -0.35 : 0.35, -0.3);
+            triggerStretchImpulse(1.2, 1.2);
+            spawnHeartParticle(step % 2 === 0 ? -0.4 : 0.4, -0.3, 1);
+          }, step * 480);
+        });
+        return true;
+      }
+
+      if (id === 'meditate') {
+        EmoFace.setEmotion('love', { durationMs: 3400 });
+        EmoFace.lookAt(0, 0.15);
+        [0, 1, 2].forEach((step) => {
+          setTimeout(() => {
+            triggerStretchImpulse(-0.6, -0.6);
+            spawnHeartParticle(0, -0.2, 1);
+          }, step * 950);
+        });
+        return true;
+      }
+
+      if (id === 'nap') {
+        EmoFace.setEmotion('sleepy', { durationMs: 3600 });
+        EmoFace.lookAt(0, 0.4);
+        [0, 1, 2, 3].forEach((step) => {
+          setTimeout(() => {
+            spawnZzzParticle();
+          }, step * 700);
+        });
+        return true;
+      }
+
+      if (id === 'celebrate') {
+        EmoFace.setEmotion('excited', { durationMs: 2600 });
+        triggerStretchImpulse(2.4, 2.4);
+        spawnHeartParticle(0, 0, 5);
+        setTimeout(() => {
+          triggerStretchImpulse(2.0, 2.0);
+          spawnHeartParticle(-0.5, -0.3, 3);
+          spawnHeartParticle(0.5, -0.3, 3);
+        }, 500);
+        return true;
+      }
+
+      if (id === 'stretch') {
+        EmoFace.setEmotion('happy', { durationMs: 2400 });
+        triggerStretchImpulse(2.6, 2.6);
+        setTimeout(() => {
+          triggerStretchImpulse(-1.6, -1.6);
+          EmoFace.lookAt(0, -0.2);
+        }, 650);
+        return true;
+      }
+
+      return false;
     },
 
     /**
@@ -1739,11 +2157,13 @@
       registerInteraction(t);
 
       const durations = { laugh: 1600, confused: 1600, yawn: 2200 };
-      internal.activeAnim = {
-        name: normalized,
-        startAt: t,
-        duration: durations[normalized],
-      };
+      internal.activeAnim = shouldReduceMotion()
+        ? null
+        : {
+            name: normalized,
+            startAt: t,
+            duration: durations[normalized],
+          };
 
       if (normalized === 'laugh') {
         triggerStretchImpulse(1.2, 1.2);

@@ -708,6 +708,45 @@
     },
 
     /**
+     * Sequências sonoras procedurais para truques interativos do pet.
+     */
+    playTrick(trickId) {
+      const id = typeof trickId === 'string' ? trickId.toLowerCase() : '';
+      switch (id) {
+        case 'dance':
+          [523, 659, 784, 659, 880, 1046].forEach((freq, idx) => {
+            playTone({ type: 'triangle', startFreq: freq, endFreq: freq * 1.04, duration: 0.11, delay: idx * 0.14, gain: 0.15 });
+          });
+          break;
+        case 'sing':
+          [523, 587, 659, 784, 880, 784, 1046].forEach((freq, idx) => {
+            playTone({ type: 'sine', startFreq: freq, endFreq: freq, duration: 0.18, delay: idx * 0.2, gain: 0.16, fmFreq: 6, fmDepth: 14 });
+          });
+          break;
+        case 'meditate':
+          playTone({ type: 'sine', startFreq: 261, endFreq: 261, duration: 0.7, delay: 0, gain: 0.11, attack: 0.15, release: 0.4 });
+          playTone({ type: 'sine', startFreq: 392, endFreq: 392, duration: 0.7, delay: 0.75, gain: 0.1, attack: 0.15, release: 0.4 });
+          break;
+        case 'nap':
+          playTone({ type: 'sine', startFreq: 330, endFreq: 247, duration: 0.35, delay: 0, gain: 0.09, attack: 0.08, release: 0.2 });
+          playTone({ type: 'sine', startFreq: 262, endFreq: 196, duration: 0.45, delay: 0.45, gain: 0.08, attack: 0.1, release: 0.25 });
+          break;
+        case 'celebrate':
+          [523, 659, 784, 1046, 1318].forEach((freq, idx) => {
+            playTone({ type: 'sine', startFreq: freq, endFreq: freq * 1.08, duration: 0.13, delay: idx * 0.085, gain: 0.18, fmFreq: 28, fmDepth: 18 });
+          });
+          break;
+        case 'stretch':
+          playTone({ type: 'triangle', startFreq: 320, endFreq: 620, duration: 0.32, delay: 0, gain: 0.13, attack: 0.06, release: 0.16 });
+          playTone({ type: 'sine', startFreq: 640, endFreq: 520, duration: 0.22, delay: 0.36, gain: 0.11 });
+          break;
+        default:
+          EmoAudio.wake();
+          break;
+      }
+    },
+
+    /**
      * Retorna o nível atual (0..1) do envelope sonoro sincronizado com AudioContext.currentTime.
      */
     getPulseLevel() {

@@ -10,3 +10,5 @@ certs/
 .DS_Store
 dist/
 android/build/
+electron/node_modules/
+electron/dist/
