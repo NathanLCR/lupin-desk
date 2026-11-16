@@ -321,7 +321,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       triggerBargeIn, handleWsMessage, showToolApproval, resolveToolApproval,
       initGamepad, moveGamepadFocus, activateGamepadFocused, getNavigableTiles,
       renderShortcutsGrid, runShortcut, openShortcutModal, closeShortcutModal,
-      openMemoryDrawer, closeMemoryDrawer, trapDialogFocus, scheduleHudAutoHide,
+      openMemoryDrawer, closeMemoryDrawer, trapDialogFocus,
       promptForPairingToken, fetchMacStatus, enqueueServerAudio, connectWebSocket, sendHello, toggleTtsMode,
     };\n})();`
   );

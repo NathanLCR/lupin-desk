@@ -308,7 +308,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       triggerBargeIn, handleWsMessage, showToolApproval, resolveToolApproval,
       initGamepad, moveGamepadFocus, activateGamepadFocused, getNavigableTiles,
       renderShortcutsGrid, runShortcut, openShortcutModal, closeShortcutModal,
-      openMemoryDrawer, closeMemoryDrawer, trapDialogFocus, scheduleHudAutoHide,
+      openMemoryDrawer, closeMemoryDrawer, trapDialogFocus, setSettingsOpen, cycleSettingsTab, setMode, cycleMode,
       promptForPairingToken, fetchMacStatus, enqueueServerAudio,
     };\n})();`
   );
@@ -562,19 +562,26 @@ test('gaveta mantém o foco preso e o devolve ao elemento que a abriu', () => {
   assert.equal(document.activeElement, opener);
 });
 
-test('HUD não some enquanto um controle dele mantém foco', () => {
+test('Pet não tem barra: Ajustes abre e L1/R1 trocam de seção, fora deles de Modo', () => {
   const harness = makeHarness();
-  const { app, elements, document, timers } = harness;
-  const hud = elements.get('hud');
-  const focusedControl = new FakeElement('button', 'focused-control');
-  focusedControl.parentElement = hud;
-  hud.contains = (element) => element === focusedControl;
-  document.activeElement = focusedControl;
-  app.state.mode = 'pet';
-  app.state.hudPinned = false;
-  app.scheduleHudAutoHide();
-  assert.equal(timers.size, 0);
-  assert.equal(hud.classList.contains('is-hidden'), false);
+  const { app, document } = harness;
+  document.getElementById('btn-mode-nathan').classList.add('hidden');
+  assert.equal(typeof app.showHud, 'undefined');
+  assert.equal(app.state.settingsOpen, false);
+  app.setSettingsOpen(true);
+  assert.equal(app.state.settingsOpen, true);
+  assert.equal(app.state.settingsTab, 'voice');
+  app.cycleSettingsTab(1);
+  assert.equal(app.state.settingsTab, 'brain');
+  app.cycleSettingsTab(-1);
+  app.cycleSettingsTab(-1);
+  assert.equal(app.state.settingsTab, 'diagnostics');
+  app.setSettingsOpen(false);
+  assert.equal(app.state.mode, 'pet');
+  app.cycleMode(1);
+  assert.equal(app.state.mode, 'dock');
+  app.cycleMode(1);
+  assert.equal(app.state.mode, 'pet');
 });
 
 test('fetchMacStatus usa faceApi sem depender de getFace', async () => {
