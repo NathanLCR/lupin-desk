@@ -24,14 +24,23 @@ Combina um **pet de mesa vivo** (rosto SVG + partículas em Canvas + áudio proc
   - Dock Viva (`list_running_apps`), telemetria leve com cache de 3s (`get_mac_status`: app ativo, bateria, volume, Spotify/Music *Now Playing*) e clima via Open-Meteo com cache de 15 min (`get_weather`).
 - **`app/stt.py`**: `LocalSTT` com carregamento sob demanda (*lazy-load*) para `mlx-whisper` ou `faster-whisper`, conversão de áudio via `PyAV` (`av`) ou `/usr/bin/afconvert` (`shell=False`) e fallback limpo quando nenhum motor Whisper estiver instalado.
 - **`app/tts.py`**: `ServerTTS` 100% offline no macOS via `/usr/bin/say` + `/usr/bin/afconvert` (`shell=False`), gerando `.m4a` (`audio/mp4`) ou `.wav` (`audio/wav`) com listagem de vozes priorizando `pt_BR` (`Luciana`).
+- **`app/providers.py`**: catálogo de provedores LLM compatíveis com OpenAI (`local_proxy`, `ollama`, `openai`, `openrouter`, `gemini`, `custom`), persistência da seleção em `app_meta` sem gravar segredos no SQLite e descoberta dinâmica de modelos.
+- **`app/skills.py`**: pacotes de habilidades modulares injetáveis no *system prompt* (`focus_coach`, `daily_briefing`, `coding_buddy`, `wellness_breaks`, `playful_companion`) e truques físicos/audiovisuais do pet (`[action:pet:<id>]`).
+- **`app/cowork.py`**: ponte confinada ao workspace `COWORK_WORKSPACE_PATH` (`state/*.yaml` com preview de diff + `.backup/` e `ActionsRunner` com `shell=False` e aprovação para ações `write`/`external`).
+- **`app/today.py`**: motor do resumo diário **Today** com validação anti-alucinação, fallback determinístico e rastreamento de *First Wake*.
 - **`app/config.py`**: carregamento de `.env` (`Settings`) e `SecretRedactingFilter` nos logs para impedir qualquer vazamento de `LLM_API_KEY` ou tokens `freellmapi-*` / `sk-*`.
 
 ### Frontend (`static/`)
 - **`static/audio_synth.js` (`window.EmoAudio`)**: sintetizador procedural via Web Audio API (0 KB de MP3/WAV) para `chirp(emotion)`, `purr(active)` (~60Hz com LFO), `click()`, `alert()`, `wake()` e `getPulseLevel()`.
 - **`static/face.js` & `static/face.css` (`window.EmoFace`)**: rosto SVG em 60fps + camada `<canvas class="emo-particles-canvas">` com física *squash-and-stretch*, curiosidade direcional (`|lookX| > 0.6`), micro-eventos autônomos em `idle` (inseto virtual, bocejo, espiar canto) antes de `sleepy` aos 90s, toque direto `reactToTouch('poke' | 'pet', nx, ny)`, acessórios (`none`, `sunglasses`, `headphones`, `pomodoro`, `blush`), clima (`rain`, `snow`, `sun`), gotinha de suor (`setSweat`) e modo compacto (`.emo-compact`).
 - **`static/gamepad.js` (`window.DeskGamepad`)**: suporte nativo ao controle do **Anbernic RG406H** via Gamepad API com *haptics* (`navigator.vibrate`) e snapshot ao vivo.
+- **`static/skills.js` & `static/cowork_jarvis.js`**: gerenciamento visual de Skills/Truques do pet, integração com Cowork/Today/Actions, VAD contínuo e Jarvis Vision/Clipboard sob demanda (com aviso de privacidade quando o provedor ativo é externo).
 - **`static/diagnostics.js` (`window.DeskDiagnostics`)**: Estúdio de Diagnóstico de `isSecureContext`, microfones, loopback de 3s, vozes TTS, Gamepad e sensores.
 - **`static/app.js`, `static/index.html`, `static/style.css`, `static/manifest.json`, `static/icon.svg`**: interface responsiva multiplataforma (`960×720`, desktop Mac e iPhone `100dvh` + `safe-area-inset-*`).
+
+### Shell Desktop macOS (`electron/`)
+- **`electron/main.js` & `electron/preload.js`**: shell Electron com ícone na barra de menus (*Tray*), atalho global `Cmd+Shift+Space`, janela flutuante de mini-pet (`/?widget=minipet`), diálogos nativos de confirmação de escrita e reutilização automática do servidor local em `127.0.0.1:8000` (ou inicialização como *sidecar* quando necessário).
+- **Mini-pet flutuante**: passe o ponteiro sobre Lupin ou use `Cmd+Shift+L` para mostrar e focar seus controles. Arraste pelo botão **Mover**, ou use as setas (`Shift` acelera). A posição é lembrada entre sessões e ajustada se um monitor for desconectado. **Painel** abre o dashboard; **Silenciar** alterna voz e sons nas duas janelas; **Ocultar** ou `Esc` esconde o pet. A barra aparece também ao navegar com `Tab`. A janela ignora cliques fora do pet e da barra, respeita movimento reduzido e não inicia consultas Cowork, clima ou uma conversa WebSocket própria.
 
 ### App Android Nativo (`android/` e `scripts/build_android_apk.py`)
 - **`android/src/com/nathanlucio/deskassistant/MainActivity.java`**: invólucro nativo WebView em tela cheia imersiva (`sensorLandscape`, `FLAG_KEEP_SCREEN_ON`) para o **Anbernic RG406H**, com ponte `AndroidBridge`, detecção automática de túnel USB ADB (`127.0.0.1:8000`) com fallback para Wi-Fi HTTPS (`https://192.168.0.125:8443`), aceitação restrita de SSL local apenas em hosts privados (`isPrivateOrLocalHost`), liberação de `RESOURCE_AUDIO_CAPTURE` e preservação total dos eventos de Gamepad em `dispatchKeyEvent`.
@@ -39,7 +48,7 @@ Combina um **pet de mesa vivo** (rosto SVG + partículas em Canvas + áudio proc
 
 ---
 
-## Os 4 Modos de Tela
+## Os Modos de Tela
 
 Alterne pela barra superior ou pelos botões **`L1` / `R1`** no RG406H:
 
@@ -47,9 +56,11 @@ Alterne pela barra superior ou pelos botões **`L1` / `R1`** no RG406H:
    - **Tap (`poke`)**: o olho atingido semicerra e olha para o ponto; toques rápidos repetidos ativam `skeptical` e `angry` brincalhão.
    - **Arrastar (`pet`)**: carinho contínuo com olhos seguindo o dedo, partículas de coração, ronronar (`EmoAudio.purr`) e aumento de afinidade no SQLite.
    - **Tocar durante a fala**: dispara **barge-in** imediato.
-2. **🎛️ Dock & Atalhos do Mac**: rosto compacto na faixa superior reagindo às ações + **Dock Viva do Mac** (apps abertos com destaque para o frontal + favoritos) + **Stream Deck de Atalhos** filtrável por categoria (`Todos`, `Espaços`, `Captura`, `Edição`, `Mídia`, `Apps`, `Custom`) + modal **⚙️ Configurar Atalhos**.
-3. **🖥️ Smart Display Ambiente**: relógio e data grandes, timer **Pomodoro** (`25m` foco / `5m` pausa), *Now Playing* (Spotify / Apple Music com Play/Pause, Anterior, Próxima), clima via Open-Meteo e telemetria do Mac + barras de afinidade e energia do pet.
-4. **🩺 Estúdio de Diagnóstico**: validação de contexto seguro (`isSecureContext`), seletor de microfone + medidor em tempo real + gravação **Loopback 3s**, inspetor de vozes TTS (Browser vs Servidor Mac), inspetor ao vivo do Gamepad RG406H e leitura de giroscópio/acelerômetro (com botão de permissão para iOS 13+).
+2. **🎛️ Dock & Atalhos do Mac**: rosto compacto na faixa superior reagindo às ações + **Dock Viva do Mac** (apps abertos com destaque para o frontal + favoritos) + **Stream Deck de Atalhos** filtrável por categoria (`Todos`, `Espaços`, `Captura`, `Edição`, `Mídia`, `Apps`, `Custom`) + modal **⚙️ Configurar Atalhos** e captura rápida no Cowork.
+3. **🖥️ Smart Display Ambiente**: relógio e data grandes, resumo **Today** do Cowork, timer **Pomodoro** (`25m` foco / `5m` pausa), *Now Playing* (Spotify / Apple Music com Play/Pause, Anterior, Próxima), clima via Open-Meteo e telemetria do Mac + barras de afinidade e energia do pet.
+4. **✨ Skills & Truques**: ativação/desativação de pacotes de comportamento do copiloto e disparo de truques interativos do pet (navegável por toque, mouse ou `D-Pad` + `A`).
+5. **🩺 Estúdio de Diagnóstico**: validação de contexto seguro (`isSecureContext`), seletor de provedor/modelo LLM, seletor de microfone + medidor em tempo real + gravação **Loopback 3s**, inspetor de vozes TTS (Browser vs Servidor Mac), inspetor ao vivo do Gamepad RG406H e leitura de giroscópio/acelerômetro (com botão de permissão para iOS 13+).
+6. **🧠 Nathan OS (Shell Electron)**: aba dedicada para Cowork Today, proposta/aplicação de tarefas com diff, ações de `actions.yaml` e Jarvis Vision/Clipboard sob demanda.
 
 ---
 

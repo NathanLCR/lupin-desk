@@ -700,10 +700,15 @@ def test_websocket_action_tags_sentences_e_confirmacao(tmp_path: Path) -> None:
                 a["kind"] == "shortcut" and a["target"] == "find_replace" and a["ok"] is True
                 for a in actions
             )
-            assert any(
-                a["kind"] == "app" and a["target"] == "Safari" and a["ok"] is True
-                for a in actions
+            app_approval = next(
+                ev for ev in events
+                if ev.get("type") == "tool_approval_request"
+                and ev.get("kind") == "mac_app"
+                and ev.get("target") == "Safari"
             )
+            ws.send_json({"type": "confirm_action", "approval_id": app_approval["approval_id"], "approved": True})
+            app_done = ws.receive_json()
+            assert app_done["kind"] == "app" and app_done["target"] == "Safari" and app_done["ok"] is True
             assert any(
                 a["kind"] == "pomodoro" and a["command"] == "pomodoro_start" and a["ok"] is True
                 for a in actions

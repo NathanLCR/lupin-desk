@@ -5,12 +5,12 @@
  */
 
 .emo-face-root {
-  /* Variáveis padrão (ciano neon EMO) */
-  --emo-color: #00f0ff;
-  --emo-glow: rgba(0, 240, 255, 0.58);
-  --emo-glow-soft: rgba(0, 240, 255, 0.22);
-  --emo-accent: #8af7ff;
-  --emo-highlight: rgba(255, 255, 255, 0.84);
+  /* Variáveis padrão (azul gelo Husky Lupin/Lupe) */
+  --emo-color: #56dcff;
+  --emo-glow: rgba(86, 220, 255, 0.62);
+  --emo-glow-soft: rgba(86, 220, 255, 0.24);
+  --emo-accent: #c9f5ff;
+  --emo-highlight: rgba(255, 255, 255, 0.9);
 
   position: relative;
   width: 100%;
@@ -42,6 +42,183 @@
   pointer-events: none;
   transition: background 320ms ease, opacity 320ms ease;
   opacity: 0.55;
+}
+
+/* Camada Lupin — Cyber-Husky OLED (Husky Siberiano preto e branco de corpo inteiro) */
+body.is-minipet .emo-face-root {
+  background-color: transparent;
+}
+
+body.is-minipet .emo-face-root::before {
+  opacity: 0.22;
+}
+
+.lupin-full-rig {
+  filter: drop-shadow(0 0 14px var(--emo-glow-soft));
+  transition: filter 260ms ease;
+}
+
+.lupin-rim-stroke {
+  stroke: var(--emo-color);
+  stroke-width: 2.2;
+  stroke-opacity: 0.65;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.lupin-fur-dark {
+  fill: #141923;
+  stroke: rgba(86, 220, 255, 0.55);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.lupin-fur-mane {
+  fill: #1b2230;
+  stroke: rgba(86, 220, 255, 0.42);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.lupin-fur-white {
+  fill: #edf4fc;
+  stroke: rgba(86, 220, 255, 0.45);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.lupin-fur-shade {
+  fill: #cbd8e8;
+}
+
+.lupin-tail-plume {
+  fill: #edf4fc;
+  stroke: rgba(86, 220, 255, 0.58);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.lupin-tail-dark {
+  fill: #1b2230;
+}
+
+.lupin-collar-band {
+  fill: #0b111c;
+  stroke: var(--emo-color);
+  stroke-width: 2.4;
+}
+
+.lupin-collar-core {
+  fill: #07131d;
+  stroke: rgba(86, 220, 255, 0.6);
+  stroke-width: 1.5;
+}
+
+.lupin-nap-group {
+  opacity: 0;
+  transition: opacity 280ms ease;
+}
+
+.emo-face-root[data-behavior="nap"] .lupin-awake-body {
+  opacity: 0;
+}
+
+.emo-face-root[data-behavior="nap"] .lupin-nap-group {
+  opacity: 1;
+}
+
+.lupin-awake-body {
+  transition: opacity 260ms ease;
+}
+
+.emo-husky-ear-outer {
+  fill: #141923;
+  stroke: var(--emo-color);
+  stroke-opacity: 0.62;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.emo-husky-ear-inner {
+  fill: #dce7f3;
+  opacity: 0.9;
+}
+
+.emo-husky-fur-black {
+  fill: #161c28;
+  stroke: rgba(86, 220, 255, 0.45);
+  stroke-width: 1.8;
+}
+
+.emo-husky-fur-white {
+  fill: #edf4fc;
+  stroke: rgba(86, 220, 255, 0.38);
+  stroke-width: 1.8;
+}
+
+.emo-husky-brow-mark {
+  fill: var(--emo-color);
+  opacity: 0.88;
+  filter: drop-shadow(0 0 6px var(--emo-glow));
+  transition: fill 260ms ease, opacity 260ms ease;
+}
+
+.emo-husky-nose {
+  fill: #0f172a;
+  stroke: rgba(148, 163, 184, 0.5);
+  stroke-width: 1.5;
+}
+
+.emo-husky-nose-pink {
+  fill: #f472b6;
+  opacity: 0.78;
+}
+
+.emo-husky-nose-shine {
+  fill: rgba(255, 255, 255, 0.35);
+}
+
+.emo-husky-mouth {
+  fill: none;
+  stroke: #1e293b;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.emo-husky-tongue,
+.emo-husky-tongue-line {
+  opacity: 0;
+  transition: opacity 220ms ease, transform 220ms ease;
+  transform-origin: 400px 388px;
+}
+
+.emo-husky-tongue {
+  fill: #f472b6;
+  stroke: #db2777;
+  stroke-width: 1.5;
+}
+
+.emo-husky-tongue-line {
+  stroke: rgba(190, 24, 93, 0.45);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.emo-face-root[data-emotion="happy"] .emo-husky-tongue,
+.emo-face-root[data-emotion="happy"] .emo-husky-tongue-line,
+.emo-face-root[data-emotion="excited"] .emo-husky-tongue,
+.emo-face-root[data-emotion="excited"] .emo-husky-tongue-line,
+.emo-face-root[data-emotion="love"] .emo-husky-tongue,
+.emo-face-root[data-emotion="love"] .emo-husky-tongue-line,
+.emo-face-root[data-state="speaking"] .emo-husky-tongue,
+.emo-face-root[data-state="speaking"] .emo-husky-tongue-line {
+  opacity: 0.95;
+}
+
+.emo-face-root[data-emotion="curious"] .emo-husky-ear-left,
+.emo-face-root[data-state="listening"] .emo-husky-ear {
+  transform: translateY(-4px);
 }
 
 /* Camada leve de partículas (clima, corações, Zzz, vapor de raiva, inseto) */
@@ -446,15 +623,15 @@
   animation: emo-zzz-float 2.8s ease-in-out 1.8s infinite;
 }
 
-/* Indicador sutil de onda de voz abaixo dos olhos */
+/* Onda de áudio Cyber-Collar (sempre presente na coleira, pulsa ao falar/ouvir) */
 .emo-voice-wave {
-  opacity: 0;
+  opacity: 0.42;
   transition: opacity 200ms ease;
   pointer-events: none;
 }
 
 .emo-voice-wave.is-active {
-  opacity: 0.92;
+  opacity: 1;
 }
 
 .emo-voice-bar {
@@ -594,5 +771,10 @@
   .emo-face-root[data-sweat="true"] .emo-sweat-drop,
   .emo-face-root.emo-state-error .emo-face-head {
     animation: none !important;
+  }
+
+  body.is-minipet .emo-face-root .lupin-awake-body,
+  body.is-minipet .emo-face-root .lupin-nap-group {
+    transition: none;
   }
 }

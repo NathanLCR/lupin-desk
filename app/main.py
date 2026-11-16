@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import hmac
 import json
 import logging
 import uuid
@@ -18,17 +19,54 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.config import BASE_DIR, Settings, configure_logging, load_settings
+from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
+from app.cowork import ActionsRunner, CoworkError, CoworkStore, get_git_sync_status
 from app.llm import LLMClient, LLMError
 from app.mac_control import MacController
 from app.memory import MemoryStore
+from app.providers import (
+    build_active_provider_state,
+    fetch_provider_models,
+    get_preset,
+    list_provider_presets,
+    load_saved_provider_config,
+    resolve_provider_api_key,
+    save_provider_config,
+)
 from app.shortcuts import ShortcutStore
+from app.skills import (
+    build_skills_prompt,
+    get_trick,
+    list_skills_payload,
+    load_enabled_skills,
+    set_skill_enabled,
+)
 from app.stt import LocalSTT
+from app.today import FirstWakeTracker, TodayEngine
 from app.tts import ServerTTS
 
 logger = logging.getLogger(__name__)
 
 _FRIENDLY_LLM_ERROR = "Não consegui falar com o modelo agora. Verifique se a API local está rodando."
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
+_BASE_URL_OVERRIDE_PROVIDERS = frozenset({"local_proxy", "ollama", "custom"})
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """Retorna True quando o cliente conecta a partir de loopback local."""
+    normalized = (host or "").strip().lower()
+    return normalized in _LOOPBACK_HOSTS
+
+
+def _extract_access_token(headers: Any, query_token: str | None = None) -> str:
+    """Extrai token Bearer/X-Desk-Token ou query param `token`."""
+    auth_header = (headers.get("authorization") or "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    desk_header = (headers.get("x-desk-token") or "").strip()
+    if desk_header:
+        return desk_header
+    return (query_token or "").strip()
 
 
 class FactCreateRequest(BaseModel):
@@ -38,6 +76,20 @@ class FactCreateRequest(BaseModel):
     category: str = "general"
     pinned: bool | None = None
     importance: int | None = None
+
+
+class LLMProviderUpdateRequest(BaseModel):
+    """Payload para atualização do provedor e modelo LLM ativos."""
+
+    provider_id: str
+    base_url: str | None = None
+    model: str
+
+
+class SkillToggleRequest(BaseModel):
+    """Payload para ativar ou desativar uma skill do pet."""
+
+    enabled: bool
 
 
 class FactPatchRequest(BaseModel):
@@ -90,6 +142,32 @@ class TTSRequest(BaseModel):
     voice: str | None = None
     format: str | None = None
     output_format: str | None = None
+
+
+class CoworkCapturePreviewRequest(BaseModel):
+    """Payload para pré-visualizar mutação em `Cowork/state/*.yaml`."""
+
+    kind: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CoworkApprovalApplyRequest(BaseModel):
+    """Payload para aplicar uma captura ou ação previamente confirmada."""
+
+    approval_id: str
+
+
+class CoworkActionRunRequest(BaseModel):
+    """Payload para executar uma ação do `Cowork/app/actions.yaml`."""
+
+    action_id: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class JarvisVisionRequest(BaseModel):
+    """Payload para inspeção sob demanda da tela ou clipboard."""
+
+    prompt: str = ""
 
 
 def _decode_base64_audio(raw_data: str) -> bytes:
@@ -184,10 +262,20 @@ def create_app(
     mac_controller: MacController | None = None,
     stt_engine: LocalSTT | None = None,
     tts_engine: ServerTTS | None = None,
+    cowork_store: CoworkStore | None = None,
+    actions_runner: ActionsRunner | None = None,
+    today_engine: TodayEngine | None = None,
 ) -> FastAPI:
     """Cria e configura a instância FastAPI com memória, atalhos, Mac, voz e WebSocket."""
     resolved_settings = settings or load_settings()
-    configure_logging(secret=resolved_settings.llm_api_key)
+    env_llm_api_key = resolved_settings.llm_api_key
+    configure_logging(secret=env_llm_api_key)
+    runtime_access_token, token_generated = resolve_runtime_access_token(resolved_settings)
+    if token_generated:
+        logger.warning(
+            "DESK_ACCESS_TOKEN não definido no .env; token efêmero gerado para clientes não-loopback: %s",
+            runtime_access_token,
+        )
 
     own_memory = memory_store is None
     resolved_memory = memory_store or MemoryStore(
@@ -195,6 +283,12 @@ def create_app(
         max_short_term_messages=resolved_settings.max_short_term_messages,
         max_user_facts=resolved_settings.max_user_facts,
     )
+    active_provider_state = load_saved_provider_config(
+        resolved_memory,
+        resolved_settings,
+        env_fallback_key=env_llm_api_key,
+    )
+    enabled_skill_ids = load_enabled_skills(resolved_memory)
 
     own_shortcuts = shortcut_store is None
     resolved_shortcuts = shortcut_store or ShortcutStore(db_path=resolved_settings.db_path)
@@ -206,6 +300,10 @@ def create_app(
         language=resolved_settings.stt_language,
     )
     resolved_tts = tts_engine or ServerTTS(default_voice=resolved_settings.tts_voice)
+    resolved_cowork = cowork_store or CoworkStore(resolved_settings.cowork_workspace_path)
+    resolved_actions = actions_runner or ActionsRunner(resolved_settings.cowork_workspace_path)
+    resolved_today = today_engine or TodayEngine(resolved_settings, resolved_cowork)
+    resolved_first_wake = FirstWakeTracker(resolved_memory)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -230,6 +328,28 @@ def create_app(
     fastapi_app.state.llm = resolved_llm
     fastapi_app.state.stt = resolved_stt
     fastapi_app.state.tts = resolved_tts
+    fastapi_app.state.cowork = resolved_cowork
+    fastapi_app.state.actions = resolved_actions
+    fastapi_app.state.today = resolved_today
+    fastapi_app.state.first_wake = resolved_first_wake
+    fastapi_app.state.access_token = runtime_access_token
+
+    @fastapi_app.middleware("http")
+    async def lan_access_auth_middleware(request: Request, call_next: Any) -> Response:
+        """Exige DESK_ACCESS_TOKEN em rotas /api/* para clientes não-loopback."""
+        if runtime_access_token and request.url.path.startswith("/api/"):
+            client_host = request.client.host if request.client else None
+            if not _is_loopback_host(client_host):
+                provided = _extract_access_token(
+                    request.headers,
+                    query_token=request.query_params.get("token"),
+                )
+                if not provided or not hmac.compare_digest(provided, runtime_access_token):
+                    return JSONResponse(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        content={"detail": "Token de acesso inválido ou ausente."},
+                    )
+        return await call_next(request)
 
     static_dir = BASE_DIR / "static"
     if static_dir.exists():
@@ -411,6 +531,14 @@ def create_app(
         shortcut = resolved_shortcuts.get_shortcut(shortcut_id)
         if shortcut is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Atalho não encontrado.")
+        if shortcut.get("requires_confirmation"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "approval_required",
+                    "message": "Este atalho exige confirmação. Execute-o pelo WebSocket para aprová-lo.",
+                },
+            )
         result = await asyncio.to_thread(resolved_mac.run_shortcut, shortcut)
         return {"shortcut": shortcut, "result": result, **result}
 
@@ -520,11 +648,18 @@ def create_app(
         """Retorna estado operacional do servidor, STT, TTS e HTTPS sem expor segredos."""
         stt_status = resolved_stt.status()
         tts_available = resolved_tts.is_available()
+        provider_state = build_active_provider_state(
+            resolved_settings,
+            provider_id=active_provider_state.get("provider_id"),
+            env_fallback_key=env_llm_api_key,
+        )
         return {
             "status": "ok",
             "model": resolved_settings.llm_model,
             "llm_model": resolved_settings.llm_model,
             "llm_base_url": resolved_settings.llm_base_url,
+            "llm_provider_id": provider_state["provider_id"],
+            "llm_has_api_key": provider_state["has_api_key"],
             "https_port": resolved_settings.https_port,
             "certs_ready": (
                 resolved_settings.cert_file.exists() and resolved_settings.key_file.exists()
@@ -539,6 +674,272 @@ def create_app(
             "tts_available": tts_available,
         }
 
+    @fastapi_app.get("/api/llm/providers")
+    async def get_llm_providers() -> dict[str, Any]:
+        """Lista os provedores compatíveis com OpenAI e retorna o provedor/modelo ativo (sem segredos)."""
+        active = build_active_provider_state(
+            resolved_settings,
+            provider_id=active_provider_state.get("provider_id"),
+            env_fallback_key=env_llm_api_key,
+        )
+        return {
+            "active": active,
+            "presets": list_provider_presets(env_fallback_key=env_llm_api_key),
+        }
+
+    @fastapi_app.get("/api/llm/models")
+    async def get_llm_models(
+        provider_id: str | None = Query(default=None),
+        base_url: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """Consulta os modelos disponíveis no endpoint `/models` do provedor selecionado."""
+        target_id = (provider_id or active_provider_state.get("provider_id") or "custom").strip().lower()
+        preset = get_preset(target_id)
+        requested_url = (base_url or "").strip().rstrip("/")
+        default_url = (
+            preset.default_base_url if preset and preset.default_base_url else resolved_settings.llm_base_url
+        ).rstrip("/")
+
+        if requested_url and requested_url != default_url and target_id not in _BASE_URL_OVERRIDE_PROVIDERS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Override de base_url não permitido para este provedor.",
+            )
+
+        target_url = requested_url or default_url
+        api_key, _ = resolve_provider_api_key(target_id, fallback_key=env_llm_api_key)
+        # Nunca envia chave de ambiente para um base_url arbitrário diferente do configurado.
+        if requested_url and requested_url != resolved_settings.llm_base_url.rstrip("/") and target_id == "custom":
+            api_key = ""
+        suggested = preset.suggested_models if preset is not None else ()
+        try:
+            return await fetch_provider_models(
+                base_url=target_url,
+                api_key=api_key,
+                suggested_models=suggested,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+    @fastapi_app.put("/api/llm/provider")
+    async def update_llm_provider(body: LLMProviderUpdateRequest) -> dict[str, Any]:
+        """Atualiza em tempo real e persiste em SQLite o provedor e modelo LLM ativos."""
+        try:
+            updated = save_provider_config(
+                memory=resolved_memory,
+                settings=resolved_settings,
+                provider_id=body.provider_id,
+                base_url=body.base_url,
+                model=body.model,
+                env_fallback_key=env_llm_api_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        active_provider_state.clear()
+        active_provider_state.update(updated)
+        return {"ok": True, "active": updated}
+
+    @fastapi_app.get("/api/skills")
+    async def get_pet_skills() -> dict[str, Any]:
+        """Lista os pacotes de skills configuráveis e truques interativos do pet."""
+        return list_skills_payload(enabled_skill_ids)
+
+    @fastapi_app.put("/api/skills/{skill_id}")
+    async def toggle_pet_skill(skill_id: str, body: SkillToggleRequest) -> dict[str, Any]:
+        """Ativa ou desativa uma skill e persiste no SQLite (`app_meta`)."""
+        try:
+            updated_ids = set_skill_enabled(resolved_memory, skill_id, body.enabled)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+        enabled_skill_ids.clear()
+        enabled_skill_ids.extend(updated_ids)
+        return {"ok": True, **list_skills_payload(enabled_skill_ids)}
+
+    @fastapi_app.post("/api/skills/tricks/{trick_id}")
+    async def trigger_pet_trick(trick_id: str) -> dict[str, Any]:
+        """Valida e registra a execução de um truque interativo do pet."""
+        trick = get_trick(trick_id)
+        if trick is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Truque '{trick_id}' não encontrado.",
+            )
+        companion = resolved_memory.record_interaction(sentiment_delta=0.05)
+        return {
+            "ok": True,
+            "trick": {
+                "id": trick.id,
+                "icon": trick.icon,
+                "name": trick.name,
+                "emotion": trick.emotion,
+                "duration_ms": trick.duration_ms,
+            },
+            "companion": companion,
+        }
+
+    # ------------------------------------------------------------------
+    # Cowork (State, Today, Capture com Diff, Actions, Sync) & Jarvis
+    # ------------------------------------------------------------------
+
+    @fastapi_app.get("/api/cowork/state")
+    async def get_cowork_state() -> dict[str, Any]:
+        """Retorna o estado atual de `Cowork/state/*.yaml` e o status de sincronização."""
+        state = await asyncio.to_thread(resolved_cowork.load_state)
+        state["cowork_available"] = bool(state.get("workspace_exists", False))
+        return state
+
+    @fastapi_app.get("/api/cowork/today")
+    async def get_cowork_today() -> dict[str, Any]:
+        """Gera o resumo Today validado contra alucinações via roteador unificado."""
+        return await resolved_today.generate_today()
+
+    @fastapi_app.post("/api/cowork/capture/preview")
+    async def preview_cowork_capture(body: CoworkCapturePreviewRequest) -> dict[str, Any]:
+        """Pré-visualiza uma mutação em `Cowork/state/*.yaml` retornando o unified diff."""
+        try:
+            return await asyncio.to_thread(resolved_cowork.preview_capture, body.kind, body.payload)
+        except CoworkError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @fastapi_app.post("/api/cowork/capture/apply")
+    async def apply_cowork_capture(body: CoworkApprovalApplyRequest) -> dict[str, Any]:
+        """Aplica uma captura previamente revisada após criação de snapshot em `.backup/`."""
+        try:
+            return await asyncio.to_thread(resolved_cowork.apply_capture, body.approval_id)
+        except CoworkError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    @fastapi_app.get("/api/cowork/actions")
+    async def list_cowork_actions() -> dict[str, Any]:
+        """Lista as ações declaradas em `Cowork/app/actions.yaml`."""
+        actions = await asyncio.to_thread(resolved_actions.list_actions)
+        return {"actions": actions}
+
+    @fastapi_app.post("/api/cowork/actions/run")
+    async def run_cowork_action(body: CoworkActionRunRequest) -> dict[str, Any]:
+        """Executa ações `read` imediatamente e exige aprovação para ações `write`/`external`."""
+        try:
+            return await asyncio.to_thread(
+                resolved_actions.prepare_run, body.action_id, body.params
+            )
+        except CoworkError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @fastapi_app.post("/api/cowork/actions/apply")
+    async def apply_cowork_action(body: CoworkApprovalApplyRequest) -> dict[str, Any]:
+        """Executa uma ação `write`/`external` previamente aprovada pelo usuário."""
+        try:
+            return await asyncio.to_thread(resolved_actions.apply_action, body.approval_id)
+        except CoworkError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    @fastapi_app.get("/api/cowork/sync")
+    async def get_cowork_sync() -> dict[str, Any]:
+        """Retorna status Git + saúde do estado Cowork para o LED da barra de menus."""
+        state = await asyncio.to_thread(resolved_cowork.load_state)
+        git_info = await asyncio.to_thread(get_git_sync_status, resolved_settings.cowork_workspace_path)
+        combined = "red"
+        if state.get("sync_status") == "green" and git_info.get("sync_status") == "green":
+            combined = "green"
+        elif state.get("sync_status") != "red" and git_info.get("sync_status") != "red":
+            combined = "yellow"
+        return {
+            "cowork_available": bool(state.get("workspace_exists", False)),
+            "sync_status": combined,
+            "state_status": state.get("sync_status"),
+            "state_message": state.get("sync_message"),
+            "git": git_info,
+        }
+
+    @fastapi_app.get("/api/jarvis/first-wake")
+    async def check_jarvis_first_wake(mark: bool = Query(default=True)) -> dict[str, Any]:
+        """Verifica se é a primeira interação do dia e retorna o card silencioso do Today."""
+        should_brief = resolved_first_wake.should_trigger_today()
+        if not should_brief:
+            return {"should_brief": False}
+        today_res = await resolved_today.generate_today()
+        if mark:
+            resolved_first_wake.mark_triggered()
+        return {
+            "should_brief": True,
+            "today": today_res,
+        }
+
+    async def _collect_jarvis_reply(
+        prompt: str,
+        memory_query: str,
+        image_b64: str | None = None,
+    ) -> tuple[str, str]:
+        """Executa uma chamada única ao LLM para Jarvis Vision/Clipboard e retorna `(emotion, text)`."""
+        chunks: list[str] = []
+        emotion = "curious"
+        async for event in resolved_llm.stream_chat(
+            user_text=prompt,
+            history=[],
+            memory_context=resolved_memory.build_memory_context(query=memory_query),
+            temporal_context=resolved_memory.get_temporal_context(),
+            image_b64=image_b64,
+        ):
+            if event.get("type") == "emotion":
+                emotion = str(event.get("emotion") or emotion)
+            elif event.get("type") == "result":
+                chunks.append(str(event.get("text") or ""))
+        return emotion, "".join(chunks).strip()
+
+    @fastapi_app.post("/api/jarvis/vision")
+    async def jarvis_vision_inspect(body: JarvisVisionRequest) -> dict[str, Any]:
+        """Captura a tela sob demanda e envia para o modelo multimodal via roteador local."""
+        capture = await asyncio.to_thread(
+            resolved_mac.capture_screen_b64,
+            resolved_settings.jarvis_vision_max_dim,
+        )
+        if not capture.get("ok"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=capture.get("error") or "Falha ao capturar tela.",
+            )
+        prompt = body.prompt.strip() or "Olhe minha tela atual e resuma em 2 frases curtas o que é mais relevante."
+        emotion, text = await _collect_jarvis_reply(
+            prompt=prompt,
+            memory_query=prompt,
+            image_b64=capture["image_b64"],
+        )
+        return {"ok": True, "emotion": emotion, "text": text}
+
+    @fastapi_app.post("/api/jarvis/clipboard")
+    async def jarvis_clipboard_inspect(body: JarvisVisionRequest) -> dict[str, Any]:
+        """Lê o clipboard do macOS sob demanda e resume/analisa via roteador local."""
+        clip = await asyncio.to_thread(resolved_mac.read_clipboard_text)
+        if not clip.get("ok"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=clip.get("error") or "Falha ao ler clipboard.",
+            )
+        clip_text = str(clip.get("text") or "").strip()
+        if not clip_text:
+            return {"ok": True, "emotion": "neutral", "text": "Sua área de transferência está vazia."}
+        user_prompt = body.prompt.strip() or "Resuma de forma curta e útil o conteúdo do meu clipboard:"
+        full_prompt = f"{user_prompt}\n\n{clip_text}"
+        emotion, text = await _collect_jarvis_reply(
+            prompt=full_prompt,
+            memory_query=user_prompt,
+        )
+        return {
+            "ok": True,
+            "emotion": emotion,
+            "text": text,
+            "clipboard_length": clip.get("length", 0),
+        }
+
     # ------------------------------------------------------------------
     # WebSocket Bidirecional (Streaming LLM, Barge-in, Ações, Voz e Pet)
     # ------------------------------------------------------------------
@@ -546,6 +947,16 @@ def create_app(
     @fastapi_app.websocket("/ws")
     async def websocket_chat(websocket: WebSocket) -> None:
         """Canal WebSocket concorrente com streaming frase-a-frase, barge-in e ações."""
+        if runtime_access_token:
+            client_host = websocket.client.host if websocket.client else None
+            if not _is_loopback_host(client_host):
+                provided = _extract_access_token(
+                    websocket.headers,
+                    query_token=websocket.query_params.get("token"),
+                )
+                if not provided or not hmac.compare_digest(provided, runtime_access_token):
+                    await websocket.close(code=4401)
+                    return
         await websocket.accept()
         send_lock = asyncio.Lock()
         active_turn_task: asyncio.Task[None] | None = None
@@ -554,6 +965,23 @@ def create_app(
         async def safe_send(payload: dict[str, Any]) -> None:
             async with send_lock:
                 await websocket.send_json(payload)
+
+        async def request_shortcut_approval(shortcut: dict[str, Any]) -> None:
+            approval_id = uuid.uuid4().hex[:10]
+            pending_approvals[approval_id] = {
+                "kind": "shortcut",
+                "shortcut": shortcut,
+            }
+            await safe_send(
+                {
+                    "type": "tool_approval_request",
+                    "approval_id": approval_id,
+                    "kind": "shortcut",
+                    "target": shortcut["slug"],
+                    "title": shortcut["title"],
+                    "message": f"Autorizar execução de '{shortcut['title']}'?",
+                }
+            )
 
         async def execute_action_item(kind: str, target: str) -> None:
             if kind == "shortcut":
@@ -573,21 +1001,7 @@ def create_app(
                     return
 
                 if shortcut.get("requires_confirmation"):
-                    approval_id = uuid.uuid4().hex[:10]
-                    pending_approvals[approval_id] = {
-                        "kind": "shortcut",
-                        "shortcut": shortcut,
-                    }
-                    await safe_send(
-                        {
-                            "type": "tool_approval_request",
-                            "approval_id": approval_id,
-                            "kind": "shortcut",
-                            "target": shortcut["slug"],
-                            "title": shortcut["title"],
-                            "message": f"Autorizar execução de '{shortcut['title']}'?",
-                        }
-                    )
+                    await request_shortcut_approval(shortcut)
                     return
 
                 res = await asyncio.to_thread(resolved_mac.run_shortcut, shortcut)
@@ -605,16 +1019,20 @@ def create_app(
                 return
 
             if kind == "app":
-                res = await asyncio.to_thread(resolved_mac.activate_app, target)
+                approval_id = uuid.uuid4().hex[:10]
+                pending_approvals[approval_id] = {
+                    "kind": "mac_app",
+                    "app": target,
+                }
                 await safe_send(
                     {
-                        "type": "action_executed",
-                        "kind": "app",
+                        "type": "tool_approval_request",
+                        "approval_id": approval_id,
+                        "kind": "mac_app",
+                        "risk": "write",
                         "target": target,
-                        "title": target,
-                        "ok": bool(res.get("ok")),
-                        "result": res,
-                        "error": res.get("error"),
+                        "title": f"Abrir aplicativo {target}",
+                        "message": f"Permitir que o assistente abra '{target}' no Mac?",
                     }
                 )
                 return
@@ -637,6 +1055,126 @@ def create_app(
                         "error": res.get("error"),
                     }
                 )
+                return
+
+            if kind == "cowork":
+                # Ex.: [action:cowork:add_task:Revisar capítulo 3]
+                if target.startswith("add_task:"):
+                    title = target.split(":", 1)[1].strip()
+                    try:
+                        preview = await asyncio.to_thread(
+                            resolved_cowork.preview_capture,
+                            "add_task",
+                            {"title": title},
+                        )
+                    except CoworkError as exc:
+                        await safe_send(
+                            {
+                                "type": "action_executed",
+                                "kind": "cowork",
+                                "target": target,
+                                "ok": False,
+                                "error": str(exc),
+                            }
+                        )
+                        return
+                    approval_id = preview["approval_id"]
+                    pending_approvals[approval_id] = {
+                        "kind": "cowork_capture",
+                        "preview": preview,
+                    }
+                    await safe_send(
+                        {
+                            "type": "tool_approval_request",
+                            "approval_id": approval_id,
+                            "kind": "cowork_capture",
+                            "risk": "write",
+                            "target": preview["target_file"],
+                            "title": preview["summary"],
+                            "diff": preview["diff"],
+                            "message": f"Confirmar escrita em {preview['target_file']}?",
+                        }
+                    )
+                return
+
+            if kind == "today":
+                today_res = await resolved_today.generate_today()
+                await safe_send(
+                    {
+                        "type": "action_executed",
+                        "kind": "today",
+                        "target": "brief",
+                        "title": "Resumo Today",
+                        "ok": bool(today_res.get("ok")),
+                        "result": today_res,
+                    }
+                )
+                return
+
+            if kind == "vision":
+                approval_id = uuid.uuid4().hex[:10]
+                if target.strip().lower() == "clipboard":
+                    pending_approvals[approval_id] = {
+                        "kind": "vision_clipboard",
+                    }
+                    await safe_send(
+                        {
+                            "type": "tool_approval_request",
+                            "approval_id": approval_id,
+                            "kind": "vision_clipboard",
+                            "risk": "read_sensitive",
+                            "target": "clipboard",
+                            "title": "Ler área de transferência",
+                            "message": "Permitir que o Jarvis leia sua área de transferência?",
+                        }
+                    )
+                else:
+                    pending_approvals[approval_id] = {
+                        "kind": "vision_screen",
+                    }
+                    await safe_send(
+                        {
+                            "type": "tool_approval_request",
+                            "approval_id": approval_id,
+                            "kind": "vision_screen",
+                            "risk": "read_sensitive",
+                            "target": "screen",
+                            "title": "Capturar e analisar a tela",
+                            "message": "Permitir que o Jarvis capture e analise sua tela atual?",
+                        }
+                    )
+                return
+
+            if kind == "pet":
+                trick = get_trick(target)
+                if trick is None:
+                    await safe_send(
+                        {
+                            "type": "action_executed",
+                            "kind": "pet",
+                            "target": target,
+                            "ok": False,
+                            "error": f"Truque '{target}' não encontrado.",
+                        }
+                    )
+                    return
+                resolved_memory.record_interaction(sentiment_delta=0.04)
+                await safe_send(
+                    {
+                        "type": "action_executed",
+                        "kind": "pet",
+                        "target": trick.id,
+                        "title": trick.name,
+                        "ok": True,
+                        "trick": {
+                            "id": trick.id,
+                            "icon": trick.icon,
+                            "name": trick.name,
+                            "emotion": trick.emotion,
+                            "duration_ms": trick.duration_ms,
+                        },
+                    }
+                )
 
         async def run_llm_turn(user_text: str) -> None:
             clean_text = ""
@@ -654,6 +1192,8 @@ def create_app(
                 shortcuts_context = resolved_shortcuts.build_agent_shortcuts_prompt(
                     running_apps=running_apps
                 )
+                cowork_context = await asyncio.to_thread(resolved_cowork.build_prompt_context)
+                skills_context = build_skills_prompt(enabled_skill_ids)
 
                 resolved_memory.add_message("user", user_text)
 
@@ -664,6 +1204,8 @@ def create_app(
                     shortcuts_context=shortcuts_context,
                     companion_context=companion_context,
                     temporal_context=temporal_context,
+                    cowork_context=cowork_context,
+                    skills_context=skills_context,
                 ):
                     event_type = event.get("type")
                     if event_type == "emotion":
@@ -725,6 +1267,39 @@ def create_app(
                 await safe_send({"type": "state", "state": "error"})
                 await safe_send({"type": "error", "message": _FRIENDLY_LLM_ERROR})
 
+        async def run_audio_turn(audio_bytes: bytes, mime_type: str, language: str) -> None:
+            try:
+                await safe_send({"type": "state", "state": "thinking"})
+                stt_res = await resolved_stt.transcribe_bytes(
+                    audio_bytes=audio_bytes,
+                    mime_type=mime_type,
+                    language=language,
+                )
+                if asyncio.current_task() is not active_turn_task:
+                    return
+                transcript = str(stt_res.get("text") or "").strip()
+                if not transcript:
+                    err_msg = stt_res.get("error") or "Não foi possível entender o áudio."
+                    await safe_send({"type": "error", "message": str(err_msg)})
+                    await safe_send({"type": "state", "state": "idle"})
+                    return
+
+                await safe_send(
+                    {
+                        "type": "transcript",
+                        "text": transcript,
+                        "engine": stt_res.get("engine"),
+                    }
+                )
+                await run_llm_turn(transcript)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Erro inesperado durante a transcrição WebSocket (%s)", type(exc).__name__)
+                if asyncio.current_task() is active_turn_task:
+                    await safe_send({"type": "state", "state": "error"})
+                    await safe_send({"type": "error", "message": "Falha ao transcrever áudio recebido."})
+
         async def cancel_active_turn(notify: bool) -> None:
             nonlocal active_turn_task
             if active_turn_task is not None and not active_turn_task.done():
@@ -743,6 +1318,10 @@ def create_app(
         def start_llm_turn(user_text: str) -> None:
             nonlocal active_turn_task
             active_turn_task = asyncio.create_task(run_llm_turn(user_text))
+
+        def start_audio_turn(audio_bytes: bytes, mime_type: str, language: str) -> None:
+            nonlocal active_turn_task
+            active_turn_task = asyncio.create_task(run_audio_turn(audio_bytes, mime_type, language))
 
         try:
             while True:
@@ -817,6 +1396,9 @@ def create_app(
                             }
                         )
                         continue
+                    if shortcut.get("requires_confirmation"):
+                        await request_shortcut_approval(shortcut)
+                        continue
                     if shortcut.get("action_type") == "agent_prompt":
                         prompt_text = str((shortcut.get("payload") or {}).get("prompt") or "").strip()
                         if prompt_text:
@@ -865,6 +1447,149 @@ def create_app(
                             }
                         )
                         continue
+                    pending_kind = pending.get("kind", "shortcut")
+                    if pending_kind == "cowork_capture":
+                        preview = pending["preview"]
+                        if not approved:
+                            await safe_send(
+                                {
+                                    "type": "action_executed",
+                                    "approval_id": approval_id,
+                                    "kind": "cowork_capture",
+                                    "target": preview["target_file"],
+                                    "title": preview["summary"],
+                                    "ok": False,
+                                    "cancelled": True,
+                                    "error": "Escrita no Cowork recusada pelo usuário.",
+                                }
+                            )
+                            continue
+                        res = await asyncio.to_thread(resolved_cowork.apply_capture, approval_id)
+                        await safe_send(
+                            {
+                                "type": "action_executed",
+                                "approval_id": approval_id,
+                                "kind": "cowork_capture",
+                                "target": res["target_file"],
+                                "title": res["summary"],
+                                "ok": bool(res.get("ok")),
+                                "result": res,
+                            }
+                        )
+                        continue
+
+                    if pending_kind == "mac_app":
+                        app_name = str(pending.get("app") or "")
+                        if not approved:
+                            await safe_send(
+                                {
+                                    "type": "action_executed",
+                                    "approval_id": approval_id,
+                                    "kind": "app",
+                                    "target": app_name,
+                                    "title": app_name,
+                                    "ok": False,
+                                    "cancelled": True,
+                                    "error": "Abertura de aplicativo recusada pelo usuário.",
+                                }
+                            )
+                            continue
+                        res = await asyncio.to_thread(resolved_mac.activate_app, app_name)
+                        await safe_send(
+                            {
+                                "type": "action_executed",
+                                "approval_id": approval_id,
+                                "kind": "app",
+                                "target": app_name,
+                                "title": app_name,
+                                "ok": bool(res.get("ok")),
+                                "result": res,
+                                "error": res.get("error"),
+                            }
+                        )
+                        continue
+
+                    if pending_kind == "vision_clipboard":
+                        if not approved:
+                            await safe_send(
+                                {
+                                    "type": "action_executed",
+                                    "approval_id": approval_id,
+                                    "kind": "vision",
+                                    "target": "clipboard",
+                                    "title": "Leitura do Clipboard",
+                                    "ok": False,
+                                    "cancelled": True,
+                                    "error": "Leitura do clipboard recusada pelo usuário.",
+                                }
+                            )
+                            continue
+                        clip = await asyncio.to_thread(resolved_mac.read_clipboard_text)
+                        await safe_send(
+                            {
+                                "type": "action_executed",
+                                "approval_id": approval_id,
+                                "kind": "vision",
+                                "target": "clipboard",
+                                "title": "Leitura do Clipboard",
+                                "ok": bool(clip.get("ok")),
+                                "result": clip,
+                                "error": clip.get("error"),
+                            }
+                        )
+                        continue
+
+                    if pending_kind == "vision_screen":
+                        if not approved:
+                            await safe_send(
+                                {
+                                    "type": "action_executed",
+                                    "approval_id": approval_id,
+                                    "kind": "vision",
+                                    "target": "screen",
+                                    "title": "Inspeção de Tela Sob Demanda",
+                                    "ok": False,
+                                    "cancelled": True,
+                                    "error": "Captura de tela recusada pelo usuário.",
+                                }
+                            )
+                            continue
+                        capture = await asyncio.to_thread(
+                            resolved_mac.capture_screen_b64,
+                            resolved_settings.jarvis_vision_max_dim,
+                        )
+                        if not capture.get("ok"):
+                            await safe_send(
+                                {
+                                    "type": "action_executed",
+                                    "approval_id": approval_id,
+                                    "kind": "vision",
+                                    "target": "screen",
+                                    "title": "Inspeção de Tela Sob Demanda",
+                                    "ok": False,
+                                    "error": capture.get("error") or "Falha ao capturar tela.",
+                                }
+                            )
+                            continue
+                        prompt = "Olhe minha tela atual e resuma em 2 frases curtas o que é mais relevante."
+                        emotion, vision_text = await _collect_jarvis_reply(
+                            prompt=prompt,
+                            memory_query=prompt,
+                            image_b64=capture["image_b64"],
+                        )
+                        await safe_send(
+                            {
+                                "type": "action_executed",
+                                "approval_id": approval_id,
+                                "kind": "vision",
+                                "target": "screen",
+                                "title": "Inspeção de Tela Sob Demanda",
+                                "ok": True,
+                                "result": {"emotion": emotion, "text": vision_text},
+                            }
+                        )
+                        continue
+
                     shortcut = pending["shortcut"]
                     if not approved:
                         await safe_send(
@@ -879,6 +1604,34 @@ def create_app(
                                 "error": "Execução recusada pelo usuário.",
                             }
                         )
+                        continue
+                    if shortcut.get("action_type") == "agent_prompt":
+                        prompt_text = str((shortcut.get("payload") or {}).get("prompt") or "").strip()
+                        if not prompt_text:
+                            await safe_send(
+                                {
+                                    "type": "action_executed",
+                                    "approval_id": approval_id,
+                                    "kind": "shortcut",
+                                    "target": shortcut["slug"],
+                                    "title": shortcut["title"],
+                                    "ok": False,
+                                    "error": "O prompt do atalho está vazio.",
+                                }
+                            )
+                            continue
+                        await cancel_active_turn(notify=False)
+                        await safe_send(
+                            {
+                                "type": "action_executed",
+                                "approval_id": approval_id,
+                                "kind": "shortcut",
+                                "target": shortcut["slug"],
+                                "title": shortcut["title"],
+                                "ok": True,
+                            }
+                        )
+                        start_llm_turn(prompt_text)
                         continue
                     res = await asyncio.to_thread(resolved_mac.run_shortcut, shortcut)
                     await safe_send(
@@ -907,27 +1660,7 @@ def create_app(
                         await safe_send({"type": "state", "state": "idle"})
                         continue
 
-                    await safe_send({"type": "state", "state": "thinking"})
-                    stt_res = await resolved_stt.transcribe_bytes(
-                        audio_bytes=audio_bytes,
-                        mime_type=mime_type,
-                        language=language,
-                    )
-                    transcript = str(stt_res.get("text") or "").strip()
-                    if not transcript:
-                        err_msg = stt_res.get("error") or "Não foi possível entender o áudio."
-                        await safe_send({"type": "error", "message": str(err_msg)})
-                        await safe_send({"type": "state", "state": "idle"})
-                        continue
-
-                    await safe_send(
-                        {
-                            "type": "transcript",
-                            "text": transcript,
-                            "engine": stt_res.get("engine"),
-                        }
-                    )
-                    start_llm_turn(transcript)
+                    start_audio_turn(audio_bytes, mime_type, language)
                     continue
 
                 if msg_type == "text":
@@ -958,4 +1691,14 @@ def create_app(
     return fastapi_app
 
 
-app = create_app()
+_cached_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> Any:
+    """Inicializa `app` sob demanda para evitar abertura de SQLite no import do módulo."""
+    if name == "app":
+        global _cached_app
+        if _cached_app is None:
+            _cached_app = create_app()
+        return _cached_app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

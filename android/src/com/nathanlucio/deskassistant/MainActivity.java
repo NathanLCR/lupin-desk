@@ -83,7 +83,7 @@ public class MainActivity extends Activity {
 
     private final Runnable fadeMenuButtonRunnable = () -> {
         if (serverMenuButton != null) {
-            serverMenuButton.animate().alpha(0.08f).setDuration(350L).start();
+            serverMenuButton.animate().alpha(0.22f).setDuration(350L).start();
         }
     };
 
@@ -147,19 +147,19 @@ public class MainActivity extends Activity {
         rootLayout.addView(webView, webParams);
 
         // Botão discreto no canto superior direito para menu de servidor (auto-ocultável em 3s).
-        int sizePx = dpToPx(38);
+        int sizePx = dpToPx(44);
         int marginPx = dpToPx(10);
         serverMenuButton = new TextView(this);
         serverMenuButton.setText("⚙");
-        serverMenuButton.setTextColor(Color.parseColor("#CC00F0FF"));
-        serverMenuButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        serverMenuButton.setTextColor(Color.parseColor("#D956DCFF"));
+        serverMenuButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         serverMenuButton.setGravity(Gravity.CENTER);
         serverMenuButton.setContentDescription("Configurar servidor");
 
         GradientDrawable badgeBg = new GradientDrawable();
         badgeBg.setShape(GradientDrawable.OVAL);
-        badgeBg.setColor(Color.parseColor("#66091016"));
-        badgeBg.setStroke(dpToPx(1), Color.parseColor("#5500F0FF"));
+        badgeBg.setColor(Color.parseColor("#880B0F16"));
+        badgeBg.setStroke(dpToPx(1), Color.parseColor("#6656DCFF"));
         serverMenuButton.setBackground(badgeBg);
 
         FrameLayout.LayoutParams btnParams = new FrameLayout.LayoutParams(sizePx, sizePx);
@@ -167,11 +167,8 @@ public class MainActivity extends Activity {
         btnParams.setMargins(marginPx, marginPx, marginPx, marginPx);
 
         serverMenuButton.setOnClickListener(v -> {
-            if (serverMenuButton.getAlpha() < 0.3f) {
-                revealMenuButtonTemporarily();
-            } else {
-                openServerMenu();
-            }
+            revealMenuButtonTemporarily();
+            openServerMenu();
         });
         serverMenuButton.setOnLongClickListener(v -> {
             revealMenuButtonTemporarily();
@@ -535,12 +532,13 @@ public class MainActivity extends Activity {
                 + "html,body{margin:0;height:100%;background:#000;color:#e6faff;"
                 + "font-family:sans-serif;display:flex;align-items:center;justify-content:center;}"
                 + ".card{max-width:540px;padding:24px;text-align:center;"
-                + "border:1px solid #00f0ff44;border-radius:16px;background:#070d12;}"
-                + "h2{color:#00f0ff;margin:0 0 10px 0;font-size:20px;}"
-                + "p{color:#9ab8c2;font-size:14px;line-height:1.45;word-break:break-all;}"
+                + "border:1px solid #56dcff44;border-radius:16px;background:#0b0f16;}"
+                + "h2{color:#56dcff;margin:0 0 10px 0;font-size:20px;}"
+                + "p{color:#93a3b5;font-size:14px;line-height:1.45;word-break:break-all;}"
                 + ".actions{display:flex;gap:12px;justify-content:center;margin-top:18px;flex-wrap:wrap;}"
-                + "button{background:#00f0ff22;color:#00f0ff;border:1px solid #00f0ff88;"
-                + "border-radius:10px;padding:10px 16px;font-size:14px;font-weight:bold;}"
+                + "button{background:#56dcff22;color:#c9f5ff;border:1px solid #56dcff88;"
+                + "border-radius:10px;padding:10px 16px;font-size:14px;font-weight:bold;cursor:pointer;}"
+                + "button:focus-visible{outline:2px solid #56dcff;outline-offset:2px;}"
                 + "</style></head><body><div class='card'>"
                 + "<h2>Servidor indisponível</h2>"
                 + "<p>Não foi possível conectar em:<br><strong>" + safeUrl + "</strong></p>"

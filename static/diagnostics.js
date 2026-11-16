@@ -21,11 +21,18 @@
   let loopbackRecording = false;
   let loopbackTimer = null;
   let loopbackUrl = null;
+  let loopbackRecorder = null;
+  let micRequestId = 0;
+  let micStarting = false;
 
   // Estado de inspetor de Gamepad e sensores
   let gamepadIntervalId = null;
   let motionBound = false;
   let lastMotion = { ax: 0, ay: 0, az: 0, alpha: 0, beta: 0, gamma: 0, supported: false };
+
+  // Estado do seletor de provedor e modelo LLM
+  let llmPresets = [];
+  let llmActive = null;
 
   function qs(id) {
     return containerEl ? containerEl.querySelector(`#${id}`) : document.getElementById(id);
@@ -70,6 +77,50 @@
           </button>
         </section>
 
+        <!-- Card 1b: Provedor & Modelo LLM -->
+        <section class="diag-card">
+          <div class="diag-card-head">
+            <h3>🧠 Provedor & Modelo LLM</h3>
+            <span id="diag-llm-key-badge" class="diag-pill">Carregando...</span>
+          </div>
+          <label class="diag-field-label" for="diag-llm-provider">Provedor (OpenAI-compat)</label>
+          <select id="diag-llm-provider" class="diag-select" aria-label="Selecionar provedor LLM">
+            <option value="local_proxy">Proxy Local</option>
+          </select>
+          <label class="diag-field-label" for="diag-llm-base-url">URL Base</label>
+          <input
+            id="diag-llm-base-url"
+            type="url"
+            class="diag-input"
+            placeholder="http://127.0.0.1:31415/v1"
+            aria-label="URL base do provedor LLM"
+          />
+          <label class="diag-field-label" for="diag-llm-model-select">Modelo</label>
+          <div class="diag-row">
+            <select id="diag-llm-model-select" class="diag-select" aria-label="Selecionar modelo LLM">
+              <option value="">Carregando modelos...</option>
+            </select>
+            <button id="diag-btn-fetch-models" type="button" class="btn-secondary diag-btn-sm" aria-label="Atualizar lista de modelos LLM">
+              ↻ Listar
+            </button>
+          </div>
+          <input
+            id="diag-llm-model-custom"
+            type="text"
+            class="diag-input"
+            placeholder="Ou digite um ID de modelo manualmente"
+            aria-label="ID do modelo LLM"
+          />
+          <div class="diag-btn-group">
+            <button id="diag-btn-save-llm" type="button" class="btn-primary">
+              💾 Salvar & Aplicar
+            </button>
+          </div>
+          <p id="diag-llm-status" class="diag-hint">
+            Chaves de API são lidas apenas do <code>.env</code> do servidor.
+          </p>
+        </section>
+
         <!-- Card 2: Microfone & Loopback 3s -->
         <section class="diag-card">
           <div class="diag-card-head">
@@ -80,7 +131,7 @@
             <select id="diag-mic-select" class="diag-select" aria-label="Selecionar microfone">
               <option value="">Microfone padrão do sistema</option>
             </select>
-            <button id="diag-btn-list-mics" type="button" class="btn-secondary diag-btn-sm">
+            <button id="diag-btn-list-mics" type="button" class="btn-secondary diag-btn-sm" aria-label="Atualizar lista de microfones">
               ↻ Listar
             </button>
           </div>
@@ -172,6 +223,15 @@
     if (btnMicToggle) btnMicToggle.addEventListener('click', toggleMicMonitor);
     if (btnLoopback) btnLoopback.addEventListener('click', runLoopbackTest);
 
+    const micSelect = qs('diag-mic-select');
+    if (micSelect) {
+      micSelect.addEventListener('change', () => {
+        if (!micStream && !micStarting) return;
+        stopMicMonitor();
+        if (active) startMicMonitor();
+      });
+    }
+
     if (btnTestBrowser) {
       btnTestBrowser.addEventListener('click', () => {
         if (typeof options.onTestBrowserTts === 'function') {
@@ -190,6 +250,29 @@
 
     if (btnMotion) {
       btnMotion.addEventListener('click', requestMotionAccess);
+    }
+
+    const providerSelect = qs('diag-llm-provider');
+    const modelSelect = qs('diag-llm-model-select');
+    const modelCustom = qs('diag-llm-model-custom');
+    const btnFetchModels = qs('diag-btn-fetch-models');
+    const btnSaveLlm = qs('diag-btn-save-llm');
+
+    if (providerSelect) {
+      providerSelect.addEventListener('change', onProviderChange);
+    }
+    if (modelSelect) {
+      modelSelect.addEventListener('change', () => {
+        if (modelCustom && modelSelect.value) {
+          modelCustom.value = modelSelect.value;
+        }
+      });
+    }
+    if (btnFetchModels) {
+      btnFetchModels.addEventListener('click', () => fetchLlmModels(true));
+    }
+    if (btnSaveLlm) {
+      btnSaveLlm.addEventListener('click', saveLlmProvider);
     }
   }
 
@@ -220,18 +303,218 @@
     }
   }
 
+  function findPresetById(providerId) {
+    return llmPresets.find((item) => item.id === providerId) || null;
+  }
+
+  function updateLlmKeyBadge(preset, activeInfo) {
+    const badge = qs('diag-llm-key-badge');
+    if (!badge) return;
+    const hasKey = Boolean((preset && preset.has_api_key) || (activeInfo && activeInfo.has_api_key));
+    const envName = (preset && preset.api_key_env) || (activeInfo && activeInfo.api_key_env) || 'LLM_API_KEY';
+    const requiresKey = Boolean(preset && preset.requires_api_key);
+
+    badge.classList.remove('is-ok', 'is-err', 'is-warn');
+    if (hasKey) {
+      badge.classList.add('is-ok');
+      badge.textContent = `🔑 ${envName} OK`;
+    } else if (requiresKey) {
+      badge.classList.add('is-err');
+      badge.textContent = `⚠️ Falta ${envName}`;
+    } else {
+      badge.classList.add('is-warn');
+      badge.textContent = `Sem chave (${envName})`;
+    }
+  }
+
+  function populateModelOptions(models, selectedModel) {
+    const select = qs('diag-llm-model-select');
+    const customInput = qs('diag-llm-model-custom');
+    if (!select) return;
+
+    const list = Array.isArray(models) ? [...models] : [];
+    if (selectedModel && !list.includes(selectedModel)) {
+      list.unshift(selectedModel);
+    }
+
+    select.innerHTML = '';
+    if (list.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'Nenhum modelo listado — digite abaixo';
+      select.appendChild(opt);
+    } else {
+      list.forEach((modelId) => {
+        const opt = document.createElement('option');
+        opt.value = modelId;
+        opt.textContent = modelId;
+        select.appendChild(opt);
+      });
+    }
+
+    if (selectedModel) {
+      select.value = selectedModel;
+      if (customInput) customInput.value = selectedModel;
+    } else if (list.length > 0 && customInput) {
+      customInput.value = list[0];
+    }
+  }
+
+  async function loadLlmProviders() {
+    const providerSelect = qs('diag-llm-provider');
+    const baseUrlInput = qs('diag-llm-base-url');
+    const statusEl = qs('diag-llm-status');
+    if (!providerSelect) return;
+
+    try {
+      const res = await fetch('/api/llm/providers');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      llmPresets = Array.isArray(data.presets) ? data.presets : [];
+      llmActive = data.active || null;
+
+      providerSelect.innerHTML = '';
+      llmPresets.forEach((preset) => {
+        const opt = document.createElement('option');
+        opt.value = preset.id;
+        opt.textContent = preset.name;
+        providerSelect.appendChild(opt);
+      });
+
+      const activeId = (llmActive && llmActive.provider_id) || 'local_proxy';
+      providerSelect.value = activeId;
+      const preset = findPresetById(activeId);
+      if (baseUrlInput) {
+        baseUrlInput.value = (llmActive && llmActive.base_url) || (preset ? preset.default_base_url : '');
+      }
+      updateLlmKeyBadge(preset, llmActive);
+      populateModelOptions(preset ? preset.suggested_models : [], llmActive ? llmActive.model : '');
+      await fetchLlmModels(false);
+    } catch {
+      if (statusEl) {
+        statusEl.textContent = 'Não foi possível carregar os provedores LLM do servidor.';
+      }
+    }
+  }
+
+  async function onProviderChange() {
+    const providerSelect = qs('diag-llm-provider');
+    const baseUrlInput = qs('diag-llm-base-url');
+    const customInput = qs('diag-llm-model-custom');
+    if (!providerSelect) return;
+
+    const preset = findPresetById(providerSelect.value);
+    if (baseUrlInput && preset) {
+      baseUrlInput.value = preset.default_base_url || '';
+    }
+    updateLlmKeyBadge(preset, null);
+    const defaultModel = preset ? preset.default_model : '';
+    if (customInput) customInput.value = defaultModel;
+    populateModelOptions(preset ? preset.suggested_models : [], defaultModel);
+    await fetchLlmModels(false);
+  }
+
+  async function fetchLlmModels(showFeedback) {
+    const providerSelect = qs('diag-llm-provider');
+    const baseUrlInput = qs('diag-llm-base-url');
+    const customInput = qs('diag-llm-model-custom');
+    const statusEl = qs('diag-llm-status');
+    const btn = qs('diag-btn-fetch-models');
+    if (!providerSelect) return;
+
+    const providerId = providerSelect.value;
+    const baseUrl = baseUrlInput ? baseUrlInput.value.trim() : '';
+    const currentModel = customInput ? customInput.value.trim() : '';
+    if (btn) btn.disabled = true;
+
+    try {
+      const params = new URLSearchParams();
+      if (providerId) params.set('provider_id', providerId);
+      if (baseUrl) params.set('base_url', baseUrl);
+      const res = await fetch(`/api/llm/models?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      populateModelOptions(data.models || [], currentModel);
+      if (showFeedback && statusEl) {
+        statusEl.textContent =
+          data.source === 'remote'
+            ? `✓ ${data.models.length} modelos carregados de /models.`
+            : `Usando lista sugerida (${data.error || 'endpoint /models indisponível'}).`;
+      }
+    } catch (err) {
+      if (showFeedback && statusEl) {
+        statusEl.textContent = `Erro ao listar modelos: ${err.message || err}`;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function saveLlmProvider() {
+    const providerSelect = qs('diag-llm-provider');
+    const baseUrlInput = qs('diag-llm-base-url');
+    const modelSelect = qs('diag-llm-model-select');
+    const customInput = qs('diag-llm-model-custom');
+    const statusEl = qs('diag-llm-status');
+    const btn = qs('diag-btn-save-llm');
+    if (!providerSelect) return;
+
+    const modelId =
+      (customInput && customInput.value.trim()) ||
+      (modelSelect && modelSelect.value.trim()) ||
+      '';
+    const baseUrl = baseUrlInput ? baseUrlInput.value.trim() : '';
+
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch('/api/llm/provider', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: providerSelect.value,
+          base_url: baseUrl || null,
+          model: modelId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `HTTP ${res.status}`);
+      }
+      llmActive = data.active || null;
+      updateLlmKeyBadge(findPresetById(providerSelect.value), llmActive);
+      if (statusEl && llmActive) {
+        statusEl.textContent = `✓ Aplicado e salvo: ${llmActive.model} (${llmActive.base_url}).`;
+      }
+      await fetchServerDiagnostics();
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = `Erro ao salvar provedor: ${err.message || err}`;
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function listMicrophones(requestPermIfNeeded) {
     const select = qs('diag-mic-select');
     if (!select || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
       return;
     }
 
+    const requestId = micRequestId;
     try {
       if (requestPermIfNeeded && navigator.mediaDevices.getUserMedia) {
         const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!active || requestId !== micRequestId) {
+          tempStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         tempStream.getTracks().forEach((t) => t.stop());
       }
       const devices = await navigator.mediaDevices.enumerateDevices();
+      if (!active || requestId !== micRequestId) return;
       const inputs = devices.filter((d) => d.kind === 'audioinput');
       const currentVal = select.value;
 
@@ -256,14 +539,17 @@
       }
     } catch (err) {
       const status = qs('diag-loopback-status');
-      if (status) {
-        status.textContent = `Permissão de microfone recusada ou bloqueada: ${err.message || err}`;
+      if (active && requestId === micRequestId && status) {
+        status.textContent = `Permissão de microfone recusada ou bloqueada: ${err.message || err}. Verifique a permissão e tente novamente.`;
       }
     }
   }
 
   async function startMicMonitor() {
     if (micStream) return true;
+    if (micStarting) return false;
+    const requestId = ++micRequestId;
+    micStarting = true;
     const badge = qs('diag-mic-badge');
     const toggleBtn = qs('diag-btn-mic-toggle');
     const select = qs('diag-mic-select');
@@ -271,8 +557,10 @@
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       if (status) status.textContent = 'API de microfone indisponível neste navegador/origem.';
+      micStarting = false;
       return false;
     }
+    if (toggleBtn) toggleBtn.disabled = true;
 
     try {
       const deviceId = select ? select.value : '';
@@ -281,8 +569,14 @@
           ? { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true }
           : { echoCancellation: true, noiseSuppression: true },
       };
-      micStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (!active || requestId !== micRequestId) {
+        stream.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      micStream = stream;
       await listMicrophones(false);
+      if (!active || requestId !== micRequestId || micStream !== stream) return false;
 
       const AudioCtx = global.AudioContext || global.webkitAudioContext;
       if (AudioCtx) {
@@ -290,7 +584,8 @@
         if (audioCtx.state === 'suspended') {
           await audioCtx.resume();
         }
-        const source = audioCtx.createMediaStreamSource(micStream);
+        if (!active || requestId !== micRequestId || micStream !== stream) return false;
+        const source = audioCtx.createMediaStreamSource(stream);
         analyserNode = audioCtx.createAnalyser();
         analyserNode.fftSize = 256;
         source.connect(analyserNode);
@@ -304,9 +599,16 @@
       if (toggleBtn) toggleBtn.textContent = '⏹️ Parar Monitor';
       return true;
     } catch (err) {
-      if (status) status.textContent = `Falha ao abrir microfone: ${err.message || err}`;
-      stopMicMonitor();
+      if (requestId === micRequestId && status) {
+        status.textContent = `Falha ao abrir microfone: ${err.message || err}. Verifique a permissão e tente novamente.`;
+      }
+      if (requestId === micRequestId) stopMicMonitor();
       return false;
+    } finally {
+      if (requestId === micRequestId) {
+        micStarting = false;
+        if (toggleBtn) toggleBtn.disabled = false;
+      }
     }
   }
 
@@ -328,6 +630,8 @@
   }
 
   function stopMicMonitor() {
+    micRequestId += 1;
+    micStarting = false;
     if (levelRafId !== null) {
       global.cancelAnimationFrame(levelRafId);
       levelRafId = null;
@@ -341,6 +645,13 @@
       audioCtx = null;
       analyserNode = null;
     }
+    if (loopbackTimer) {
+      global.clearTimeout(loopbackTimer);
+      loopbackTimer = null;
+    }
+    if (loopbackRecorder && loopbackRecorder.state === 'recording') {
+      loopbackRecorder.stop();
+    }
     const fill = qs('diag-mic-meter-fill');
     if (fill) fill.style.width = '0%';
     const badge = qs('diag-mic-badge');
@@ -349,7 +660,12 @@
       badge.classList.remove('is-ok');
     }
     const toggleBtn = qs('diag-btn-mic-toggle');
-    if (toggleBtn) toggleBtn.textContent = '🎧 Monitorar Nível';
+    if (toggleBtn) {
+      toggleBtn.disabled = false;
+      toggleBtn.textContent = '🎧 Monitorar Nível';
+    }
+    const loopbackBtn = qs('diag-btn-loopback');
+    if (loopbackBtn) loopbackBtn.disabled = false;
   }
 
   async function toggleMicMonitor() {
@@ -381,6 +697,7 @@
     const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
     const mimeType = preferredTypes.find((t) => global.MediaRecorder.isTypeSupported(t)) || '';
     const recorder = mimeType ? new global.MediaRecorder(micStream, { mimeType }) : new global.MediaRecorder(micStream);
+    loopbackRecorder = recorder;
 
     recorder.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) chunks.push(e.data);
@@ -388,7 +705,9 @@
 
     recorder.onstop = () => {
       loopbackRecording = false;
+      loopbackRecorder = null;
       if (btn) btn.disabled = false;
+      if (!active) return;
       if (loopbackUrl) {
         URL.revokeObjectURL(loopbackUrl);
         loopbackUrl = null;
@@ -579,6 +898,7 @@
     activate() {
       active = true;
       fetchServerDiagnostics();
+      loadLlmProviders();
       listMicrophones(false);
       refreshTtsVoices();
       updateGamepadInspector();
