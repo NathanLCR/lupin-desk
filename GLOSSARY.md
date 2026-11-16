@@ -11,7 +11,7 @@ The product: the whole system across the server, the clients (Mac, RG406H handhe
 _Avoid_: EMO, the app, the assistant (when the product is meant)
 
 **Lupin**:
-The one character who lives in the Desk Assistant: a pet with a face, a voice, a personality, memory and a Mood.
+The one character who lives in the Desk Assistant: a black-and-white cartoon husky with glowing cyan eyes, a white muzzle with a pink nose and a dark collar carrying a cyan sound wave that lights up when he speaks. He is shown as a bust by default and full-body only while performing a Trick. He has a voice, a personality, memory and a Mood.
 _Avoid_: EMO, Jarvis, the face, the bot, the assistant (when the character is meant)
 
 **Brain**:
@@ -32,7 +32,7 @@ _Avoid_: Stream Deck, control panel
 ### Lupin's inner life
 
 **Expression**:
-What Lupin's face shows right now, chosen from a fixed set (happy, sleepy, skeptical…). Short-lived.
+What Lupin's face shows right now, chosen from a fixed set (happy, sleepy, skeptical…). Short-lived. Drawn as a combination of states of Lupin's layers (head, eyes, eyelids, eyebrows, mouth/tongue, ears, collar), the same on every Body.
 _Avoid_: emotion
 
 **Mood**:
@@ -92,11 +92,11 @@ _Avoid_: Jarvis Clipboard
 ### Surfaces
 
 **Mode**:
-One of the two full-screen layouts the user switches between on a device that is both Body and Dock: Pet (Lupin, with a quiet clock, Pomodoro and Now Playing around him) and Dock. A device that is only a Dock, because Lupin is in another Active Body, has no Pet Mode.
+One of the two full-screen layouts the user switches between on a device that is both Body and Dock: Pet (Lupin, with a quiet clock, Pomodoro and Now Playing around him) and Dock. The user switches with `L1`/`R1` or a swipe. A device that is only a Dock, because Lupin is in another Active Body, has no Pet Mode.
 _Avoid_: screen, tab, view, Ambient Display
 
 **Settings**:
-The maintenance area outside the Modes where the user switches Skills on and off and runs diagnostics.
+The area outside the Modes, opened by one discreet button or `Start`, with: Voice and sound, Brain (provider/model, the Mac's address over Wi-Fi/USB), Memory, Skills, Dock (view Shortcuts only; setup stays on the Mac) and Diagnostics (including the Expressions test panel). Pet Mode has no top bar.
 _Avoid_: Skills mode, Diagnostics mode
 
 **Presence**:
