@@ -34,7 +34,8 @@ Combina um **pet de mesa vivo** (rosto SVG + partículas em Canvas + áudio proc
 - **`static/audio_synth.js` (`window.EmoAudio`)**: sintetizador procedural via Web Audio API (0 KB de MP3/WAV) para `chirp(emotion)`, `purr(active)` (~60Hz com LFO), `click()`, `alert()`, `wake()` e `getPulseLevel()`.
 - **`static/face.js` & `static/face.css` (`window.EmoFace`)**: rosto SVG em 60fps + camada `<canvas class="emo-particles-canvas">` com física *squash-and-stretch*, curiosidade direcional (`|lookX| > 0.6`), micro-eventos autônomos em `idle` (inseto virtual, bocejo, espiar canto) antes de `sleepy` aos 90s, toque direto `reactToTouch('poke' | 'pet', nx, ny)`, acessórios (`none`, `sunglasses`, `headphones`, `pomodoro`, `blush`), clima (`rain`, `snow`, `sun`), gotinha de suor (`setSweat`) e modo compacto (`.emo-compact`).
 - **`static/gamepad.js` (`window.DeskGamepad`)**: suporte nativo ao controle do **Anbernic RG406H** via Gamepad API com *haptics* (`navigator.vibrate`) e snapshot ao vivo.
-- **`static/skills.js` & `static/cowork_jarvis.js`**: gerenciamento visual de Skills/Truques do pet, integração com Cowork/Today/Actions, VAD contínuo e Jarvis Vision/Clipboard sob demanda (com aviso de privacidade quando o provedor ativo é externo).
+- **`static/skills.js`**: gerenciamento visual de Skills/Truques do Lupin e integração com Cowork/Today/Actions.
+- **Protocolo Brain↔Body**: o WebSocket `/ws` é o único canal de um Body; veja [`docs/protocolo-cerebro-corpo.md`](docs/protocolo-cerebro-corpo.md).
 - **`static/diagnostics.js` (`window.DeskDiagnostics`)**: Estúdio de Diagnóstico de `isSecureContext`, microfones, loopback de 3s, vozes TTS, Gamepad e sensores.
 - **`static/app.js`, `static/index.html`, `static/style.css`, `static/manifest.json`, `static/icon.svg`**: interface responsiva multiplataforma (`960×720`, desktop Mac e iPhone `100dvh` + `safe-area-inset-*`).
 
@@ -60,7 +61,7 @@ Alterne pela barra superior ou pelos botões **`L1` / `R1`** no RG406H:
 3. **🖥️ Smart Display Ambiente**: relógio e data grandes, resumo **Today** do Cowork, timer **Pomodoro** (`25m` foco / `5m` pausa), *Now Playing* (Spotify / Apple Music com Play/Pause, Anterior, Próxima), clima via Open-Meteo e telemetria do Mac + barras de afinidade e energia do pet.
 4. **✨ Skills & Truques**: ativação/desativação de pacotes de comportamento do copiloto e disparo de truques interativos do pet (navegável por toque, mouse ou `D-Pad` + `A`).
 5. **🩺 Estúdio de Diagnóstico**: validação de contexto seguro (`isSecureContext`), seletor de provedor/modelo LLM, seletor de microfone + medidor em tempo real + gravação **Loopback 3s**, inspetor de vozes TTS (Browser vs Servidor Mac), inspetor ao vivo do Gamepad RG406H e leitura de giroscópio/acelerômetro (com botão de permissão para iOS 13+).
-6. **🧠 Nathan OS (Shell Electron)**: aba dedicada para Cowork Today, proposta/aplicação de tarefas com diff, ações de `actions.yaml` e Jarvis Vision/Clipboard sob demanda.
+6. **🧠 Nathan OS (Shell Electron)**: aba dedicada para Cowork Today, proposta/aplicação de tarefas com diff, ações de `actions.yaml`.
 
 ---
 

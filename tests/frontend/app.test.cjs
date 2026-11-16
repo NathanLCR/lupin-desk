@@ -298,6 +298,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
     Headers,
     Request,
     Buffer,
+    atob,
   };
   window.MediaRecorder = FakeMediaRecorder;
   const instrumentedSource = appSource.replace(
@@ -308,7 +309,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       initGamepad, moveGamepadFocus, activateGamepadFocused, getNavigableTiles,
       renderShortcutsGrid, runShortcut, openShortcutModal, closeShortcutModal,
       openMemoryDrawer, closeMemoryDrawer, trapDialogFocus, scheduleHudAutoHide,
-      promptForPairingToken, fetchMacStatus,
+      promptForPairingToken, fetchMacStatus, enqueueServerAudio,
     };\n})();`
   );
   assert.notEqual(instrumentedSource, appSource, 'o IIFE do app deve aceitar instrumentação apenas no teste');
@@ -350,43 +351,31 @@ test('cada gravação PTT mantém seus próprios chunks mesmo após o gravador a
   assert.equal(Buffer.from(audioMessages[1].data, 'base64').toString(), 'B'.repeat(500));
 });
 
-test('interromper TTS aborta a requisição e ignora uma resposta antiga', async () => {
-  const pendingFetch = deferred();
-  const requests = [];
-  const harness = makeHarness({
-    fetch: (url, options) => {
-      requests.push({ url, options });
-      return pendingFetch.promise;
-    },
-  });
+test('interromper TTS descarta áudio enfileirado e ignora reprodução antiga', async () => {
+  const harness = makeHarness();
   const { app, elements } = harness;
   app.state.ttsMode = 'server';
-  app.enqueueTtsSentence('fala antiga');
-  assert.equal(requests.length, 1);
+  app.enqueueServerAudio(new Blob(['fala antiga']));
+  await flush();
+  assert.equal(elements.get('server-tts-audio').playCount, 1);
 
   app.stopSpeaking();
-  assert.equal(requests[0].options.signal.aborted, true);
-  pendingFetch.resolve({ ok: true, blob: async () => new Blob(['áudio antigo']) });
-  await flush();
-
-  assert.equal(elements.get('server-tts-audio').playCount, 0);
   assert.equal(app.state.ttsPlaying, false);
+  assert.equal(app.state.ttsQueue.length, 0);
 });
 
 test('callback de reprodução cancelada não altera uma fala TTS posterior', async () => {
-  const harness = makeHarness({
-    fetch: async () => ({ ok: true, blob: async () => new Blob(['áudio']) }),
-  });
+  const harness = makeHarness();
   const { app, elements } = harness;
   const audio = elements.get('server-tts-audio');
   app.state.ttsMode = 'server';
-  app.enqueueTtsSentence('primeira fala');
+  app.enqueueServerAudio(new Blob(['áudio']));
   await flush();
   assert.equal(audio.playCount, 1);
   const staleOnEnded = audio.onended;
 
   app.stopSpeaking();
-  app.enqueueTtsSentence('fala nova');
+  app.enqueueServerAudio(new Blob(['áudio novo']));
   await flush();
   assert.equal(audio.playCount, 2);
   staleOnEnded();
