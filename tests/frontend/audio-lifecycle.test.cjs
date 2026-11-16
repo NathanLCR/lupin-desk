@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const rootDir = path.resolve(__dirname, '../..');
 const diagnosticsSource = fs.readFileSync(path.join(rootDir, 'static/diagnostics.js'), 'utf8');
-const jarvisSource = fs.readFileSync(path.join(rootDir, 'static/cowork_jarvis.js'), 'utf8');
+const coworkSource = fs.readFileSync(path.join(rootDir, 'static/cowork.js'), 'utf8');
 
 function deferred() {
   let resolve;
@@ -135,9 +135,9 @@ function makeDiagnosticsHarness(getUserMedia) {
   return { api: window.DeskDiagnostics, elements, intervalCallbacks };
 }
 
-function makeJarvisHarness({ providerResponse, fetchImpl, getUserMedia, AudioContext, MediaRecorder } = {}) {
+function makeCoworkHarness({ fetchImpl, getUserMedia, AudioContext, MediaRecorder } = {}) {
   const elements = Object.fromEntries([
-    'btn-vad-toggle', 'btn-jarvis-vision', 'btn-jarvis-clipboard', 'nathan-jarvis-output',
+    'btn-vad-toggle', 'vad-status',
     'chat-input', 'chat-form',
   ].map((id) => [id, new Element()]));
   let submitCount = 0;
@@ -150,15 +150,6 @@ function makeJarvisHarness({ providerResponse, fetchImpl, getUserMedia, AudioCon
     },
     querySelectorAll: () => [],
   };
-  const defaultProviderResponse = {
-    ok: true,
-    status: 200,
-    json: async () => ({
-      presets: [{ id: 'local_proxy' }],
-      active: { provider_id: 'local_proxy', base_url: 'http://127.0.0.1:31415/v1' },
-    }),
-  };
-
   const window = {
     location: { search: '' },
     confirm: () => true,
@@ -173,7 +164,6 @@ function makeJarvisHarness({ providerResponse, fetchImpl, getUserMedia, AudioCon
   const fetch = async (url, options = {}) => {
     fetchCalls.push({ url, options });
     if (fetchImpl) return fetchImpl(url, options);
-    if (url === '/api/llm/providers') return providerResponse || defaultProviderResponse;
     return { ok: true, status: 200, json: async () => ({}) };
   };
   const context = {
@@ -181,38 +171,9 @@ function makeJarvisHarness({ providerResponse, fetchImpl, getUserMedia, AudioCon
     navigator: { mediaDevices: { getUserMedia: getUserMedia || (async () => makeStream()) } },
     MediaRecorder, setTimeout, clearTimeout,
   };
-  vm.runInNewContext(jarvisSource, context, { filename: 'static/cowork_jarvis.js' });
+  vm.runInNewContext(coworkSource, context, { filename: 'static/cowork.js' });
   document.ready();
   return { elements, fetchCalls, intervals, window, get submitCount() { return submitCount; } };
-}
-
-test('Jarvis bloqueia captura quando a consulta de provedor falha por HTTP', async () => {
-  const harness = makeJarvisHarness({ providerResponse: { ok: false, status: 503, json: async () => ({}) } });
-  await harness.elements['btn-jarvis-vision'].dispatch('click');
-
-  assert.equal(harness.fetchCalls.some(({ url }) => url === '/api/jarvis/vision'), false);
-  assert.match(harness.elements['nathan-jarvis-output'].textContent, /Nenhuma captura foi enviada/);
-  assert.match(harness.elements['nathan-jarvis-output'].textContent, /tente novamente/);
-});
-
-for (const [label, active] of [
-  ['ausente', null],
-  ['desconhecido', { provider_id: 'provedor-novo', base_url: 'https://llm.example/v1' }],
-  ['sem URL', { provider_id: 'local_proxy' }],
-]) {
-  test(`Jarvis bloqueia captura com dados de provedor ${label}`, async () => {
-    const harness = makeJarvisHarness({
-      providerResponse: {
-        ok: true,
-        status: 200,
-        json: async () => ({ presets: [{ id: 'local_proxy' }], active }),
-      },
-    });
-    await harness.elements['btn-jarvis-clipboard'].dispatch('click');
-
-    assert.equal(harness.fetchCalls.some(({ url }) => url === '/api/jarvis/clipboard'), false);
-    assert.match(harness.elements['nathan-jarvis-output'].textContent, /Nenhuma captura foi enviada/);
-  });
 }
 
 test('VAD desligado invalida e aborta a transcrição já iniciada', async () => {
@@ -242,14 +203,11 @@ test('VAD desligado invalida e aborta a transcrição já iniciada', async () =>
     close() { return Promise.resolve(); }
   }
   let harnessSttSignal;
-  const harness = makeJarvisHarness({
+  const harness = makeCoworkHarness({
     AudioContext: AudioContextMock,
     MediaRecorder: MediaRecorderMock,
     getUserMedia: () => new Promise((resolve) => { vadGetUserMediaResolve = resolve; }),
     fetchImpl: async (url, options = {}) => {
-      if (url === '/api/llm/providers') {
-        return { ok: true, status: 200, json: async () => ({ presets: [{ id: 'local_proxy' }], active: { provider_id: 'local_proxy', base_url: 'http://localhost/v1' } }) };
-      }
       if (url === '/api/stt') {
         harnessSttSignal = options.signal;
         return sttRequest.promise;

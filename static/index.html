@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="mode-pet">
-  <!-- Palco do rosto animado (tela cheia no modo Pet, compacto nos modos Dock e Display) -->
+  <!-- Palco do rosto animado (tela cheia no modo Pet) -->
   <main id="stage" class="stage">
     <h1 class="sr-only">Lupin — Desk Assistant</h1>
     <div id="face-container" role="img" aria-label="Rosto animado de Lupin"></div>
@@ -30,15 +30,24 @@
       <span id="pet-clock-date" class="pet-clock-date"></span>
     </div>
 
-    <!-- Chip discreto de Pomodoro ativo no modo Pet -->
-    <button
-      id="pet-pomodoro-chip"
-      type="button"
-      class="pet-pomodoro-chip hidden"
-      title="Abrir Smart Display / Pomodoro"
-    >
-      <span id="pet-pomodoro-text">🍅 25:00</span>
-    </button>
+    <!-- Faixa ambiente pequena no modo Pet: Pomodoro e Tocando no Mac -->
+    <div id="pet-ambient" class="pet-ambient" aria-label="Pomodoro e música">
+      <div class="pet-ambient-pomo">
+        <span id="pomodoro-phase-label" class="panel-pill">Pronto</span>
+        <span id="pomodoro-timer" class="pomodoro-timer">25:00</span>
+        <button id="btn-pomo-focus" type="button" class="btn-secondary btn-sm" title="Foco 25 minutos">▶ 25m</button>
+        <button id="btn-pomo-break" type="button" class="btn-secondary btn-sm" title="Pausa 5 minutos">☕ 5m</button>
+        <button id="btn-pomo-stop" type="button" class="btn-secondary btn-sm" aria-label="Parar Pomodoro" title="Parar Pomodoro">⏹</button>
+      </div>
+      <div class="pet-ambient-media">
+        <span id="now-playing-state" class="panel-pill">Pausado</span>
+        <span id="now-playing-title" class="media-title">Nenhuma mídia ativa</span>
+        <span id="now-playing-artist" class="media-artist">Spotify / Apple Music</span>
+        <button id="btn-media-prev" type="button" class="btn-secondary btn-sm" aria-label="Faixa anterior" title="Faixa anterior">⏮</button>
+        <button id="btn-media-play" type="button" class="btn-secondary btn-sm" aria-label="Play ou pausa" title="Play / Pause">⏯</button>
+        <button id="btn-media-next" type="button" class="btn-secondary btn-sm" aria-label="Próxima faixa" title="Próxima faixa">⏭</button>
+      </div>
+    </div>
   </main>
 
   <!-- Controles do mini-pet: visíveis ao passar o ponteiro ou navegar pelo teclado. -->
@@ -76,22 +85,13 @@
       </div>
     </div>
 
-    <!-- Seletor dos 4 modos de tela -->
+    <!-- Seletor dos modos de tela -->
     <nav id="mode-switcher" class="mode-switcher" aria-label="Modos de tela">
       <button type="button" class="mode-btn is-active" data-mode="pet" aria-pressed="true" aria-label="Modo Pet Vivo" title="Modo Pet Vivo">
         🐾 Pet
       </button>
       <button type="button" class="mode-btn" data-mode="dock" aria-pressed="false" aria-label="Modo Dock e Atalhos do Mac" title="Modo Dock e Atalhos do Mac">
         🎛️ Dock
-      </button>
-      <button type="button" class="mode-btn" data-mode="display" aria-pressed="false" aria-label="Modo Smart Display Ambiente" title="Modo Smart Display Ambiente">
-        🖥️ Display
-      </button>
-      <button type="button" class="mode-btn" data-mode="skills" aria-pressed="false" aria-label="Modo Skills e Truques do Pet" title="Modo Skills e Truques do Pet">
-        ✨ Skills
-      </button>
-      <button type="button" class="mode-btn" data-mode="diagnostics" aria-pressed="false" aria-label="Modo Estúdio de Diagnóstico" title="Modo Estúdio de Diagnóstico">
-        🩺 Diagnóstico
       </button>
       <button id="btn-mode-nathan" type="button" class="mode-btn hidden" data-mode="nathan" aria-pressed="false" aria-label="Modo Nathan OS" title="Modo Nathan OS">
         🧭 Nathan OS
@@ -116,6 +116,16 @@
         aria-controls="memory-drawer"
       >
         🧠 Memória (<span id="memory-count">0</span>)
+      </button>
+      <button
+        id="btn-settings"
+        type="button"
+        class="hud-btn"
+        aria-expanded="false"
+        aria-controls="settings-panel"
+        title="Abrir ajustes: Skills e Diagnóstico"
+      >
+        ⚙️ Ajustes
       </button>
       <button
         id="btn-pet-sounds"
@@ -236,31 +246,8 @@
             >
               ↻ Apps
             </button>
-            <button
-              id="btn-toggle-dock-cowork"
-              type="button"
-              class="btn-secondary btn-sm"
-              aria-expanded="false"
-              aria-controls="cowork-quick-strip"
-              title="Abrir ou recolher captura rápida Cowork"
-            >
-              📝 Cowork
-            </button>
           </div>
         </div>
-      </div>
-
-      <!-- Ações Rápidas Cowork (recolhível por padrão para priorizar o Stream Deck) -->
-      <div id="cowork-quick-strip" class="panel-card cowork-quick-drawer hidden">
-        <div class="panel-head">
-          <h2>📝 Captura Rápida Cowork</h2>
-          <span class="panel-pill">Requer confirmação</span>
-        </div>
-        <div class="cowork-quick-row">
-          <input id="dock-cowork-input" class="chat-input" type="text" placeholder="Nova tarefa em tasks.yaml..." aria-label="Nova tarefa em tasks.yaml" />
-          <button id="btn-dock-cowork-add" type="button" class="btn-primary btn-sm">➕ Propor</button>
-        </div>
-        <pre id="dock-cowork-status" class="code-preview"></pre>
       </div>
 
       <!-- Grade Principal: Virtual Stream Deck -->
@@ -309,124 +296,30 @@
     </div>
   </section>
 
-  <!-- Painel de Modo 3: Smart Display Ambiente -->
-  <section id="mode-display" class="workspace-panel hidden" aria-label="Smart Display Ambiente">
-    <div class="display-grid">
-      <!-- Relógio & Data OLED grandes -->
-      <article class="panel-card display-clock-card">
-        <div class="display-eyebrow">Relógio Ambiente</div>
-        <div id="display-clock-time" class="display-clock-time">00:00:00</div>
-        <div id="display-clock-date" class="display-clock-date">—</div>
-      </article>
-
-      <!-- Pomodoro Interativo -->
-      <article class="panel-card display-pomo-card">
-        <div class="panel-head">
-          <h2>🍅 Pomodoro Foco</h2>
-          <span id="pomodoro-phase-label" class="panel-pill">Pronto</span>
-        </div>
-        <div id="pomodoro-timer" class="pomodoro-timer">25:00</div>
-        <div class="pomo-actions">
-          <button id="btn-pomo-focus" type="button" class="btn-primary">▶ Foco 25m</button>
-          <button id="btn-pomo-break" type="button" class="btn-secondary">☕ Pausa 5m</button>
-          <button id="btn-pomo-stop" type="button" class="btn-danger-ghost-sm">⏹ Parar</button>
-        </div>
-      </article>
-
-      <!-- Now Playing do Mac -->
-      <article class="panel-card display-media-card">
-        <div class="panel-head">
-          <h2>🎵 Tocando no Mac</h2>
-          <span id="now-playing-state" class="panel-pill">Pausado</span>
-        </div>
-        <div id="now-playing-title" class="media-title">Nenhuma mídia ativa</div>
-        <div id="now-playing-artist" class="media-artist">Spotify / Apple Music</div>
-        <div class="media-controls">
-          <button id="btn-media-prev" type="button" class="btn-secondary" aria-label="Faixa anterior" title="Faixa anterior">⏮</button>
-          <button id="btn-media-play" type="button" class="btn-primary" title="Play / Pause">⏯ Play/Pause</button>
-          <button id="btn-media-next" type="button" class="btn-secondary" aria-label="Próxima faixa" title="Próxima faixa">⏭</button>
-        </div>
-      </article>
-
-      <!-- Clima -->
-      <article class="panel-card display-weather-card">
-        <div class="panel-head">
-          <h2>🌤️ Clima</h2>
-          <button id="btn-refresh-weather" type="button" class="btn-secondary btn-sm" aria-label="Atualizar clima" title="Atualizar clima">↻</button>
-        </div>
-        <div class="weather-main">
-          <span id="weather-icon" class="weather-icon">☀️</span>
-          <div>
-            <div id="weather-temp" class="weather-temp">--°C</div>
-            <div id="weather-desc" class="weather-desc">Carregando...</div>
-            <div id="weather-city" class="weather-city">—</div>
-          </div>
-        </div>
-      </article>
-
-      <!-- Telemetria do Mac & Afinidade do Pet -->
-      <article class="panel-card display-telemetry-card">
-        <div class="panel-head">
-          <h2>⚡ Mac & Estado do Pet</h2>
-          <span id="pet-mood-label" class="panel-pill">Humor: neutro</span>
-        </div>
-        <div class="telemetry-rows">
-          <div class="telemetry-kv">
-            <span>App Ativo</span>
-            <strong id="mac-telemetry-app">—</strong>
-          </div>
-          <div class="telemetry-kv">
-            <span>Bateria</span>
-            <strong id="mac-telemetry-battery">—</strong>
-          </div>
-          <div class="telemetry-kv">
-            <span>Volume</span>
-            <strong id="mac-telemetry-volume">—</strong>
-          </div>
-        </div>
-        <div class="pet-bars">
-          <div class="pet-bar-row">
-            <span>❤️ Afinidade (<strong id="pet-affinity-val">50</strong>)</span>
-            <div class="pet-bar-track"><div id="pet-affinity-bar" class="pet-bar-fill is-love"></div></div>
-          </div>
-          <div class="pet-bar-row">
-            <span>⚡ Energia (<strong id="pet-energy-val">85</strong>)</span>
-            <div class="pet-bar-track"><div id="pet-energy-bar" class="pet-bar-fill is-energy"></div></div>
-          </div>
-        </div>
-      </article>
-
-      <!-- Card Today + Sync LED no Smart Display -->
-      <article id="display-today-card" class="panel-card">
-        <div class="panel-head">
-          <h2>🧭 Today &amp; Sync</h2>
-          <span id="display-sync-led" class="panel-pill">🟡 —</span>
-        </div>
-        <p id="display-today-headline" class="display-today-headline">Carregando Cowork...</p>
-        <ul id="display-today-top" class="first-wake-list"></ul>
-      </article>
+  <!-- Ajustes: Skills e Diagnóstico (não são modos de tela) -->
+  <section id="settings-panel" class="workspace-panel hidden" aria-label="Ajustes">
+    <div class="settings-head">
+      <div class="category-tabs">
+        <button type="button" class="cat-tab settings-subtab is-active" data-subtab="skills">✨ Skills</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="diagnostics">🩺 Diagnóstico</button>
+      </div>
+      <button id="btn-settings-close" type="button" class="btn-secondary btn-sm" aria-label="Fechar ajustes">✕ Fechar</button>
+    </div>
+    <div id="settings-tab-skills" class="settings-subpanel">
+      <div id="skills-root" class="skills-root"></div>
+    </div>
+    <div id="settings-tab-diagnostics" class="settings-subpanel hidden">
+      <div id="diagnostics-root" class="diagnostics-root"></div>
     </div>
   </section>
 
-  <!-- Painel de Modo 4: Skills do Pet -->
-  <section id="mode-skills" class="workspace-panel hidden" aria-label="Skills do Pet">
-    <div id="skills-root" class="skills-root"></div>
-  </section>
-
-  <!-- Painel de Modo 5: Estúdio de Diagnóstico -->
-  <section id="mode-diagnostics" class="workspace-panel hidden" aria-label="Estúdio de Diagnóstico">
-    <div id="diagnostics-root" class="diagnostics-root"></div>
-  </section>
-
-  <!-- Painel Exclusivo Mac Electron: Nathan OS (Today, Capture, Actions, Sync, Jarvis) -->
+  <!-- Painel Exclusivo Mac Electron: Nathan OS (Today e Sync, somente leitura) -->
   <section id="mode-nathan" class="workspace-panel hidden" aria-label="Espaço de Trabalho Nathan OS">
     <div class="panel-card nathan-shell-card">
       <div class="panel-head">
         <div class="category-tabs">
           <button type="button" class="cat-tab nathan-subtab is-active" data-subtab="today">Today</button>
-          <button type="button" class="cat-tab nathan-subtab" data-subtab="capture">Capture</button>
-          <button type="button" class="cat-tab nathan-subtab" data-subtab="actions">Actions</button>
-          <button type="button" class="cat-tab nathan-subtab" data-subtab="sync">Sync &amp; Jarvis</button>
+          <button type="button" class="cat-tab nathan-subtab" data-subtab="sync">Sync</button>
         </div>
         <span id="nathan-sync-badge" class="panel-pill">🟡 —</span>
       </div>
@@ -437,29 +330,8 @@
         <ul id="nathan-today-warnings" class="first-wake-list"></ul>
       </div>
 
-      <div id="nathan-tab-capture" class="nathan-subpanel hidden">
-        <div class="cowork-capture-form">
-          <input id="capture-task-title" class="chat-input" type="text" placeholder="Título da tarefa..." aria-label="Título da tarefa" />
-          <input id="capture-task-domain" class="chat-input" type="text" placeholder="Domínio (ex: dissertation, personal)" aria-label="Domínio da tarefa" />
-          <input id="capture-task-due" class="chat-input" type="text" placeholder="Prazo YYYY-MM-DD (opcional)" aria-label="Prazo da tarefa" />
-          <button id="btn-capture-preview" type="button" class="btn-secondary btn-sm">🔍 Gerar Diff</button>
-          <button id="btn-capture-apply" type="button" class="btn-primary btn-sm hidden">✓ Confirmar Gravação</button>
-        </div>
-        <pre id="capture-diff-preview" class="code-preview"></pre>
-      </div>
-
-      <div id="nathan-tab-actions" class="nathan-subpanel hidden">
-        <div id="nathan-actions-list" class="nathan-actions-list"></div>
-        <pre id="nathan-actions-log" class="code-preview"></pre>
-      </div>
-
       <div id="nathan-tab-sync" class="nathan-subpanel hidden">
         <p id="nathan-sync-detail" class="muted-note">—</p>
-        <div class="pomo-actions">
-          <button id="btn-jarvis-vision" type="button" class="btn-secondary btn-sm">👁️ Olhar Tela (Sob Demanda)</button>
-          <button id="btn-jarvis-clipboard" type="button" class="btn-secondary btn-sm">📋 Ler Clipboard</button>
-        </div>
-        <pre id="nathan-jarvis-output" class="code-preview"></pre>
       </div>
     </div>
   </section>
@@ -481,6 +353,8 @@
     <div id="caption-box" class="caption-box is-empty" role="status" aria-live="polite" aria-atomic="true">
       <p id="caption-text" class="caption-text"></p>
     </div>
+
+    <p id="vad-status" class="muted-note" role="status" aria-live="polite"></p>
 
     <form id="chat-form" class="chat-form" autocomplete="off" aria-label="Mensagem para Lupin">
       <button
@@ -822,6 +696,6 @@
   <script src="/static/diagnostics.js"></script>
   <script src="/static/skills.js"></script>
   <script src="/static/app.js"></script>
-  <script src="/static/cowork_jarvis.js"></script>
+  <script src="/static/cowork.js"></script>
 </body>
 </html>

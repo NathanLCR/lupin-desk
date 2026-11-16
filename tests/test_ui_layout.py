@@ -65,7 +65,7 @@ def test_each_mode_has_a_descriptive_accessible_name():
         for element in MARKUP.elements
         if element["tag"] == "button" and element["attrs"].get("data-mode")
     }
-    for mode in ("pet", "dock", "display", "skills", "diagnostics", "nathan"):
+    for mode in ("pet", "dock", "nathan"):
         assert modes[mode].get("aria-label")
         assert modes[mode].get("title")
         assert "aria-pressed" in modes[mode]
