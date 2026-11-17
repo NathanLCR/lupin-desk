@@ -17,6 +17,10 @@ dev = [
     "pytest-asyncio==0.25.2",
     "websockets==14.1",
 ]
+# Local speech-to-text on Apple silicon (the Mac listens for Lupin).
+stt = [
+    "mlx-whisper==0.4.3",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
