@@ -1,25 +1,25 @@
-# 08 - Editor de imagens
+# 08 - Image editor
 
 Status: needs-triage
 
-## Contexto
+## Context
 
-Última feature da fila (02..08). Lupin ajuda com edição simples de imagens a pedido do usuário, como uma Action. Escopo ainda indefinido.
+Last feature in the queue (02..08). Lupin helps with simple image edits at the user's request, as an Action. Scope still undefined.
 
-## Escopo
+## Scope
 
-- Definir quais edições entram (cortar, redimensionar, remover fundo, outras).
-- Definir a entrada (arquivo no Mac, área de transferência) e a saída.
-- Sem reintroduzir Screen Look nem Clipboard Read removidos na 01, a menos que seja revisto.
+- Define which edits are in (crop, resize, remove background, others).
+- Define the input (a file on the Mac, the clipboard) and the output.
+- Without reintroducing Screen Look or Clipboard Read, removed in 01, unless that is revisited.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [ ] Escopo mínimo definido e aprovado.
-- [ ] Fluxo por voz ou toque descrito.
-- [ ] Decidido se é local ou depende de provedor externo.
-- [ ] 1 semana de uso real (mín. 4 dias) sem bug irritante.
+- [ ] Minimum scope defined and approved.
+- [ ] Voice or touch flow described.
+- [ ] Decided whether it is local or depends on an external provider.
+- [ ] 1 week of real use (min. 4 days) without an irritating bug.
 
-## Perguntas em aberto
+## Open questions
 
-- Qual edição o usuário realmente faz com frequência?
-- Como obter a imagem sem Clipboard Read?
+- Which edit does the user actually make often?
+- How to get the image without Clipboard Read?

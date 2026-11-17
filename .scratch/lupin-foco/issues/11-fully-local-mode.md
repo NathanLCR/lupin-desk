@@ -4,7 +4,7 @@ Status: needs-triage
 
 ## Context
 
-The market survey (`docs/pesquisa-de-mercado.md`) found that Taby works with Wi-Fi off: its LLM, speech-to-text and voice all run on the computer. Lupin depends on the chosen LLM provider (the default local proxy forwards to the cloud) and on server-side TTS. ADR 0001 says offline operation is not a requirement for now. This issue records the gap so it isn't lost. It does not reopen the ADR.
+The market survey (`docs/market-research.md`) found that Taby works with Wi-Fi off: its LLM, speech-to-text and voice all run on the computer. Lupin depends on the chosen LLM provider (the default local proxy forwards to the cloud) and on server-side TTS. ADR 0001 says offline operation is not a requirement for now. This issue records the gap so it isn't lost. It does not reopen the ADR.
 
 ## Scope (to be refined in triage)
 

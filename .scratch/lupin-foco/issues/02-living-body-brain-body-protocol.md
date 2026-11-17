@@ -1,52 +1,52 @@
-# 02 - Corpo vivo: protocolo Brain-Body
+# 02 - Living Body: Brain-Body protocol
 
 Status: ready-for-agent
 
-## Contexto
+## Context
 
-Feature 1 da fila. O Body principal será um ESP32-S3 JC4832W535 (3,5" 480x320, touch, Arduino + LVGL) quando chegar; então ele vira o Active Body e o RG406H vira Dock (e Body quando o ESP32 estiver desligado). Para que portar seja só escrever firmware, o Body web do RG406H deve falar com o Brain exclusivamente pelo protocolo que o ESP32 usará (ADR 0001).
+Feature 1 in the queue. The main Body will be an ESP32-S3 JC4832W535 (3.5" 480x320, touch, Arduino + LVGL) once it arrives; then it becomes the Active Body and the RG406H becomes Dock (and a Body when the ESP32 is off). So that porting is only a matter of writing firmware, the RG406H web Body must talk to the Brain exclusively through the protocol the ESP32 will use (ADR 0001).
 
-## Escopo
+## Scope
 
-- Definir o protocolo WebSocket Brain-Body, aberto pelo Body: eventos JSON de Expression, Mood, frase sendo falada e toque, mais chunks de áudio da voz.
-- Documentar o protocolo como contrato (versão, tipos de evento, campos).
-- Implementar o lado Brain do protocolo.
-- Migrar o Body web do RG406H para usar apenas esse protocolo, sem endpoints paralelos.
-- Garantir um único Active Body por vez.
-- Sem firmware ESP32 nesta issue.
+- Define the Brain-Body WebSocket protocol, opened by the Body: JSON events for Expression, Mood, the sentence being spoken and touch, plus audio chunks of the voice.
+- Document the protocol as a contract (version, event types, fields).
+- Implement the Brain side of the protocol.
+- Migrate the RG406H web Body to use only this protocol, with no parallel endpoints.
+- Guarantee a single Active Body at a time.
+- No ESP32 firmware in this issue.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [x] Existe documento do protocolo com todos os eventos e exemplos JSON.
-- [x] O Brain envia Expression, Mood, frase falada e áudio; recebe toque pelo mesmo WebSocket.
-- [x] O Body web do RG406H não usa nenhum outro canal para mostrar ou ouvir Lupin.
-- [x] Lupin nunca está em dois Bodies ao mesmo tempo.
-- [x] O Body cuida sozinho dos comportamentos ociosos pequenos (piscar, olhar em volta).
-- [ ] Uso real no RG406H por 1 semana (mín. 4 dias) sem bug irritante antes de iniciar a 03.
+- [x] A protocol document exists with all events and JSON examples.
+- [x] The Brain sends Expression, Mood, spoken sentence and audio; it receives touch over the same WebSocket.
+- [x] The RG406H web Body uses no other channel to show or hear Lupin.
+- [x] Lupin is never in two Bodies at the same time.
+- [x] The Body handles small idle behaviours on its own (blinking, looking around).
+- [ ] Real use on the RG406H for 1 week (min. 4 days) without an irritating bug before starting 03.
 
-## Feedback do teste no RG406H (2026-11-16) e decisões
+## RG406H test feedback (2026-11-16) and decisions
 
-- A barra superior (Pet/Dock + 9 ações) confunde: some. Pet sem barra; um botão discreto + `Start` abrem Ajustes; Pet↔Dock por `L1`/`R1` ou deslize; Expressões vai para Ajustes › Diagnóstico; Memória, sons, voz e legenda vão para Ajustes; tela cheia automática; "fixar barra" removido.
-- Ajustes: Voz e som, Cérebro (provedor/modelo, endereço do Mac Wi-Fi/USB), Memória, Skills, Dock (só ver Atalhos), Diagnóstico.
-- O visual do Lupin está errado: ele é o husky de desenho preto e branco da referência (olhos ciano, dois pontos ciano, contorno ciano, focinho branco, nariz rosa, coleira com onda ciano). Busto como padrão; corpo inteiro só nos Truques. Animação por camadas (cabeça, olhos, pálpebras, sobrancelhas, boca/língua, orelhas, coleira), iguais na web e no LVGL.
+- The top bar (Pet/Dock + 9 actions) is confusing: it goes away. Pet has no bar; a discreet button + `Start` open Settings; Pet↔Dock by `L1`/`R1` or swipe; Expressions moves to Settings › Diagnostics; Memory, sounds, voice and captions go to Settings; automatic fullscreen; "pin bar" removed.
+- Settings: Voice and sound, Brain (provider/model, Mac address over Wi-Fi/USB), Memory, Skills, Dock (only view Shortcuts), Diagnostics.
+- Lupin's look is wrong: he is the black-and-white cartoon husky from the reference (cyan eyes, two cyan dots, cyan outline, white muzzle, pink nose, collar with a cyan wave). Bust as the default; full body only in Tricks. Layered animation (head, eyes, eyelids, eyebrows, mouth/tongue, ears, collar), identical on web and LVGL.
 
-### Ordem de entrega (2026-11-16)
+### Delivery order (2026-11-16)
 
-1. Primeiro barra removida + Ajustes (botão discreto, `Start`, `L1`/`R1`/deslize, Diagnóstico com Expressões), em commit próprio.
-2. Depois o husky em camadas (issue 10), em outro commit.
-3. O rosto antigo EMO (`face.js`/`face.css`) é removido quando o husky entrar; não fica como fallback. O painel de Expressões em Diagnóstico passa a mostrar o husky.
+1. First the bar removal + Settings (discreet button, `Start`, `L1`/`R1`/swipe, Diagnostics with Expressions), in its own commit.
+2. Then the layered husky (issue 10), in another commit.
+3. The old EMO face (`face.js`/`face.css`) is removed when the husky lands; it does not stay as a fallback. The Expressions panel in Diagnostics shows the husky from then on.
 
-### Entregue: passo 1 (barra e Ajustes)
+### Delivered: step 1 (bar and Settings)
 
-- [x] Pet sem barra superior; só um botão discreto (engrenagem com ponto de conexão) no canto.
-- [x] Ajustes com 6 seções: Voz e som, Cérebro (conexão, endereço do Mac, provedor e modelo, só leitura), Memória, Skills, Dock (só lista os Atalhos) e Diagnóstico (Expressões e Estados).
-- [x] `Start` abre/fecha Ajustes; `B`/`Esc` fecham; `L1`/`R1` trocam de Modo (Pet↔Dock) e, dentro dos Ajustes, de seção. Deslize horizontal rápido e `Alt`+setas fazem o mesmo.
-- [x] Tela cheia automática no primeiro toque ou tecla (`Select` ainda alterna); "fixar barra" removido.
-- Fora do passo: trocar endereço/provedor/modelo pelo RG406H (continua no Mac); o rosto EMO segue até o passo 2 (issue 10).
-- Teste do mini-pet `minipet-state.test.cjs` já falhava antes (rótulo "Ativar som"); não faz parte deste passo.
+- [x] Pet without the top bar; only a discreet button (gear with a connection dot) in the corner.
+- [x] Settings with 6 sections: Voice and sound, Brain (connection, Mac address, provider and model, read-only), Memory, Skills, Dock (only lists the Shortcuts) and Diagnostics (Expressions and States).
+- [x] `Start` opens/closes Settings; `B`/`Esc` close them; `L1`/`R1` switch Mode (Pet↔Dock) and, inside Settings, switch section. A quick horizontal swipe and `Alt`+arrows do the same.
+- [x] Automatic fullscreen on the first touch or key (`Select` still toggles); "pin bar" removed.
+- Out of this step: changing address/provider/model from the RG406H (stays on the Mac); the EMO face stays until step 2 (issue 10).
+- The mini-pet test `minipet-state.test.cjs` was already failing before (label "Ativar som"); it is not part of this step.
 
 ### Active Body (2026-11-17)
 
-- O Brain escolhe um Active Body: `esp32` > `rg406h-web` > `web`; no mesmo tipo, o último `hello` vence. Os outros recebem `active_body` com `active: false` e viram só Dock (sem Pet, sem voz). Decisão do usuário: o aparelho sem Lupin fica como Dock, não é desconectado.
-- A página se apresenta como `rg406h-web` só no Android; navegador do Mac e iPhone são `web`, para não roubarem Lupin do RG406H.
-- Piscar e olhar em volta já são do Body (`lupin.js`); a piscada usa o busto de olhos fechados.
+- The Brain picks one Active Body: `esp32` > `rg406h-web` > `web`; within the same type, the latest `hello` wins. The others receive `active_body` with `active: false` and become Dock only (no Pet, no voice). User decision: the device without Lupin stays as Dock, it is not disconnected.
+- The page identifies itself as `rg406h-web` only on Android; the Mac browser and the iPhone are `web`, so they don't steal Lupin from the RG406H.
+- Blinking and looking around already belong to the Body (`lupin.js`); the blink uses the closed-eyes bust.

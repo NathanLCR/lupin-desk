@@ -1,26 +1,26 @@
-# 07 - Ditado
+# 07 - Dictation
 
 Status: needs-triage
 
-## Contexto
+## Context
 
-Inspirado no Taby (ditado): o usuário fala e o texto aparece no app em foco no Mac. A escuta usa o microfone do Mac, iniciada pelo toque no Body (tap-to-talk). Fica para depois da 06.
+Inspired by Taby (dictation): the user speaks and the text appears in the focused app on the Mac. Listening uses the Mac's microphone, started by a touch on the Body (tap-to-talk). Comes after 06.
 
-## Escopo
+## Scope
 
-- Iniciar e parar o ditado por toque no Body.
-- Inserir o texto no app ativo do Mac.
-- Definir correções e pontuação.
+- Start and stop dictation by touching the Body.
+- Insert the text into the Mac's active app.
+- Define corrections and punctuation.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [ ] Fluxo de início/fim por toque definido.
-- [ ] O texto chega ao app em foco de forma confiável.
-- [ ] Lupin dá feedback (Expression) durante a escuta.
-- [ ] Decidido o provedor de reconhecimento de voz e para onde o áudio vai.
-- [ ] 1 semana de uso real (mín. 4 dias) sem bug irritante.
+- [ ] Touch start/stop flow defined.
+- [ ] The text reaches the focused app reliably.
+- [ ] Lupin gives feedback (Expression) while listening.
+- [ ] Speech recognition provider decided, and where the audio goes.
+- [ ] 1 week of real use (min. 4 days) without an irritating bug.
 
-## Perguntas em aberto
+## Open questions
 
-- Reconhecimento local ou em nuvem?
-- Como inserir o texto (Accessibility, colar, teclas)?
+- Local or cloud recognition?
+- How to insert the text (Accessibility, paste, keystrokes)?

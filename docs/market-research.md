@@ -1,112 +1,112 @@
-# Pesquisa de mercado: companheiros de mesa com IA (novembro de 2026)
+# Market research: AI desk companions (November 2026)
 
-Objetivo: entender o que existe parecido com o Lupin, no que cada um é bom, onde falha, e o que isso diz sobre o Desk Assistant como produto pessoal e como portfólio.
+Goal: understand what exists that resembles Lupin, what each product is good at, where it falls short, and what that says about Desk Assistant as a personal product and as a portfolio piece.
 
-## O mapa do mercado
+## The market map
 
-O mercado se divide em cinco grupos.
+The market splits into five groups.
 
-### 1. Robôs companheiros (hardware fechado, foco em fofura)
+### 1. Companion robots (closed hardware, built around cuteness)
 
-| Produto | Preço | No que é bom | Onde falha |
+| Product | Price | Good at | Falls short |
 |---|---|---|---|
-| **EMO** (Living.AI) | US$ 279 (US$ 379 com dock) | Mais de mil expressões, anda pela mesa sem cair, reconhece até 10 rostos, conversa via ChatGPT | Bateria de ~2 h, voz só em inglês, app instável, suporte fraco, Wi-Fi só 2,4 GHz. Reações roteirizadas; não faz tarefas |
-| **Loona** (KEYi) | US$ 429 | O mais "cachorro": anda pela casa, volta sozinho para o dock, ChatGPT-4o sem assinatura | ~2 h de bateria, motor barulhento, às vezes não acha o carregador |
-| **Eilik** (Energize Lab) | US$ 140 | Barato, offline, sem app nem conta, 8–10 h de bateria, tem Pomodoro | Não conversa; é um brinquedo expressivo |
-| **Vector 2.0** | US$ 250 + plano anual | Personalidade autônoma, fãs do original | Voz atrás de assinatura. A Anki, empresa original, quebrou e o robô quase virou peso de papel |
-| **Moflin** (Casio) | — | Vínculo emocional forte, áudio só no aparelho (privacidade) | Não fala, não faz nada; motor zumbindo |
-| **LOOI** | US$ 180–220 | Barato, usa o celular como cérebro e rosto, ~5 h | Prende o seu celular; lento em celular antigo |
+| **EMO** (Living.AI) | US$ 279 (US$ 379 with dock) | Over a thousand expressions, walks around the desk without falling, recognizes up to 10 faces, chats through ChatGPT | ~2 h battery, English-only voice, unstable app, weak support, 2.4 GHz Wi-Fi only. Scripted reactions; does no tasks |
+| **Loona** (KEYi) | US$ 429 | The most "dog-like": roams the house, returns to its dock by itself, ChatGPT-4o with no subscription | ~2 h battery, noisy motor, sometimes can't find its charger |
+| **Eilik** (Energize Lab) | US$ 140 | Cheap, offline, no app or account, 8-10 h battery, has a Pomodoro timer | Doesn't talk; it is an expressive toy |
+| **Vector 2.0** | US$ 250 + yearly plan | Autonomous personality, fans of the original | Voice sits behind a subscription. Anki, the original company, went under and the robot nearly became a paperweight |
+| **Moflin** (Casio) | n/a | Strong emotional bond, audio stays on the device (privacy) | Doesn't speak, does nothing; motor hums |
+| **LOOI** | US$ 180-220 | Cheap, uses your phone as brain and face, ~5 h | Ties up your phone; slow on an older phone |
 
-**Padrão:** todos vendem **presença e personalidade**. Quase nenhum é útil. As reclamações se repetem: bateria, app ruim, nuvem obrigatória, assinatura e o risco de a empresa sumir e o robô morrer junto.
+**Pattern:** they all sell **presence and personality**. Almost none is useful. The complaints repeat: battery, a bad app, mandatory cloud, subscriptions, and the risk of the company disappearing and the robot dying with it.
 
-### 2. Robôs de mesa "que trabalham" (o grupo mais próximo do Lupin)
+### 2. Desk robots that "work" (the group closest to Lupin)
 
-- **Autonomous Lamp** (US$ 699): robô de mesa open source que roda agentes (Claude Code, Codex, OpenCode…) e skills instaláveis, como lembrete de água, pausa e postura, além de agenda e Home Assistant. Deixa trocar o agente e usar suas próprias chaves. Ligado na tomada, sem bateria e ainda sem histórico de donos.
-- **Reachy Mini** (Hugging Face/Pollen, US$ 399–499): kit para quem programa. Faz o que você codar.
+- **Autonomous Lamp** (US$ 699): an open-source desk robot that runs agents (Claude Code, Codex, OpenCode...) and installable skills, such as water, break and posture reminders, plus calendar and Home Assistant. It lets you swap the agent and use your own keys. Plugged in, no battery, and no track record with owners yet.
+- **Reachy Mini** (Hugging Face/Pollen, US$ 399-499): a kit for people who code. It does whatever you program.
 
-O próprio blog da Autonomous propõe um teste de três perguntas para separar companheiro de "robô que trabalha":
-1. Dá para escolher a IA?
-2. Ele age fora do próprio corpo (agenda, computador)?
-3. Dá para mudar as skills sem esperar o fabricante?
+Autonomous's own blog proposes a three-question test to tell a companion from a "robot that works":
+1. Can you choose the AI?
+2. Does it act outside its own body (calendar, computer)?
+3. Can you change its skills without waiting for the manufacturer?
 
-**O Lupin passa nas três:** tem provider escolhível (inclusive Ollama local), age no Mac (Shortcuts, Dock, Cowork Tasks) e tem Skills. Quase todo o grupo 1 falha nas três.
+**Lupin passes all three:** he has a selectable provider (including local Ollama), acts on the Mac (Shortcuts, Dock, Cowork Tasks) and has Skills. Almost all of group 1 fails all three.
 
-### 3. Assistentes de software com mascote (o "Taby" e parecidos)
+### 3. Software assistants with a mascot (Taby and similar)
 
-- **Taby** (heytaby.com): é a referência mais próxima e já está no ADR 0001. É um bichinho no topo da tela do Mac/Windows que:
-  - planeja o dia em cima da agenda (Google, Outlook ou Apple);
-  - tria o inbox ("3 e-mails precisam de você");
-  - faz busca inteligente de arquivos e fotos, ditado e voz;
-  - fecha distrações.
+- **Taby** (heytaby.com): the closest reference and already cited in ADR 0001. A small critter at the top of the Mac/Windows screen that:
+  - plans the day on top of your calendar (Google, Outlook or Apple);
+  - triages the inbox ("3 emails need you");
+  - does smart search over files and photos, dictation and voice;
+  - closes distractions.
 
-  A IA roda **local** e funciona com o Wi-Fi desligado. Não pede conta. É grátis, com Premium na nuvem a €8,99/mês. Também existe um **Taby físico "build your own"**, e usuários já ligam o Taby a outros agentes via MCP local.
-- **Toby, DeskFerry e similares:** assistentes de Mac sem personagem, focados em e-mail, agenda e automação.
-- **Pets de desktop com LLM:** Nibbii (no notch do MacBook), Desktop Pet, PetClaw, DumbPet, Your Friendly AI, Ollama Pet, PawPal. Muitos são open source ou feitos por indie devs. Normalmente são um personagem na tela com chat, e às vezes trazem Pomodoro e lembretes.
+  The AI runs **locally** and works with Wi-Fi off. It asks for no account. It is free, with a cloud Premium at EUR 8.99/month. There is also a physical "build your own" **Taby**, and users already connect Taby to other agents through a local MCP.
+- **Toby, DeskFerry and similar:** Mac assistants with no character, focused on email, calendar and automation.
+- **Desktop pets with an LLM:** Nibbii (in the MacBook notch), Desktop Pet, PetClaw, DumbPet, Your Friendly AI, Ollama Pet, PawPal. Many are open source or made by indie devs. Usually a character on screen with chat, sometimes with a Pomodoro timer and reminders.
 
-**Padrão:** o Taby prova que "bichinho + utilidade + privacidade local" é uma proposta que as pessoas querem, e a comunidade dele reage muito ao lado fofo e físico. Os pets de desktop são muitos e rasos: chat com skin.
+**Pattern:** Taby proves that "critter + usefulness + local privacy" is a proposal people want, and its community reacts strongly to the cute and physical side. Desktop pets are many and shallow: chat with a skin.
 
-### 4. Open source em ESP32 (o mesmo hardware do Body do Lupin)
+### 4. Open source on ESP32 (the same hardware as Lupin's Body)
 
-- **xiaozhi-esp32** (licença MIT): firmware de chatbot de voz para ESP32, com mais de 170 releases e comunidade enorme. Fala com LLMs (Qwen, DeepSeek), tem wake word offline e controla dispositivos via **MCP**. É a referência técnica mais forte para o firmware do ESP32 do Lupin.
-- **StackChan** (M5Stack, ESP32-S3): robozinho de mesa com tela, câmera e servos, open source, com "AI Agent", animações e OTA. Tem variantes que usam só serviços locais de STT, LLM e TTS.
+- **xiaozhi-esp32** (MIT license): voice chatbot firmware for ESP32, with over 170 releases and a huge community. It talks to LLMs (Qwen, DeepSeek), has an offline wake word and controls devices through **MCP**. It is the strongest technical reference for Lupin's ESP32 firmware.
+- **StackChan** (M5Stack, ESP32-S3): a small desk robot with a screen, camera and servos, open source, with an "AI Agent", animations and OTA. Some variants use only local STT, LLM and TTS services.
 
-**Padrão:** a parte de "ESP32 que conversa com um LLM" virou commodity. O diferencial não está aí.
+**Pattern:** the "ESP32 that talks to an LLM" part has become a commodity. The differentiator is not there.
 
-### 5. Ambições e nichos
+### 5. Ambitions and niches
 
-- **Razer Project AVA:** companheiro holográfico em um pote, previsto para o fim de 2026.
-- **ElliQ:** companheiro para idosos.
-- **Friend:** pingente que escuta tudo, o mais polêmico em privacidade.
+- **Razer Project AVA:** a holographic companion in a jar, expected in late 2026.
+- **ElliQ:** a companion for older adults.
+- **Friend:** a pendant that listens to everything, the most controversial on privacy.
 
-## Onde o Lupin se encaixa
+## Where Lupin fits
 
-O Lupin fica no cruzamento que quase ninguém ocupa: o **personagem com corpo físico** dos grupos 1 e 4, com a **utilidade real no computador** dos grupos 2 e 3, e um **controle de privacidade explícito**.
+Lupin sits at the intersection almost nobody occupies: the **character with a physical body** of groups 1 and 4, the **real usefulness on the computer** of groups 2 and 3, and an **explicit privacy control**.
 
-| | Robôs companheiros | Autonomous Lamp | Taby | xiaozhi/StackChan | **Lupin** |
+| | Companion robots | Autonomous Lamp | Taby | xiaozhi/StackChan | **Lupin** |
 |---|---|---|---|---|---|
-| Personagem com Mood/memória | ✅ | parcial | ✅ (leve) | parcial | ✅ (Mood, Affinity, Energy) |
-| Corpo físico | ✅ | ✅ | DIY | ✅ | ✅ ESP32 + RG406H |
-| Age no computador | ❌ | ✅ (agentes) | ✅ | via MCP | ✅ Shortcuts, Dock, Cowork |
-| Escolha de LLM | ❌/parcial | ✅ | local + nuvem | ✅ | ✅ (Ollama, OpenAI, Gemini…) |
-| Funciona offline | Eilik/Moflin | ❌ | ✅ | depende | ❌ (ainda) |
-| Consentimento de dados por provider | ❌ | ❌ | "nada sai" | ❌ | ✅ (Data Consent) |
-| Vários aparelhos, um personagem | ❌ | ❌ | ❌ | ❌ | ✅ (Active Body) |
-| Preço | US$ 140–430 | US$ 699 | grátis / €9 | ~US$ 30–100 | hardware barato |
+| Character with Mood/memory | ✅ | partial | ✅ (light) | partial | ✅ (Mood, Affinity, Energy) |
+| Physical body | ✅ | ✅ | DIY | ✅ | ✅ ESP32 + RG406H |
+| Acts on the computer | ❌ | ✅ (agents) | ✅ | via MCP | ✅ Shortcuts, Dock, Cowork |
+| Choice of LLM | ❌/partial | ✅ | local + cloud | ✅ | ✅ (Ollama, OpenAI, Gemini...) |
+| Works offline | Eilik/Moflin | ❌ | ✅ | depends | ❌ (not yet) |
+| Per-provider data consent | ❌ | ❌ | "nothing leaves" | ❌ | ✅ (Data Consent) |
+| Several devices, one character | ❌ | ❌ | ❌ | ❌ | ✅ (Active Body) |
+| Price | US$ 140-430 | US$ 699 | free / EUR 9 | ~US$ 30-100 | cheap hardware |
 
-### Diferenciais reais do Lupin
+### Lupin's real differentiators
 
-1. **Brain separado do Body com um protocolo próprio.** Um Lupin só pode morar em vários aparelhos (ESP32, RG406H, mini-pet no Mac) sem aparecer em dois ao mesmo tempo, e você fala de qualquer aparelho. Nenhum concorrente faz isso.
-2. **Ação com aprovação por risco.** Cowork Tasks com nível read/write/external, e escrita de Shortcuts só no Mac. Mais seguro que "o agente faz tudo".
-3. **Privacidade concreta.** Agenda e e-mail só saem com Data Consent para um provider nomeado, e o consentimento cai sozinho se o provider mudar.
-4. **Today que não inventa.** O First Wake é determinístico e não passa por LLM. É uma resposta direta ao problema de alucinação que quase todo assistente tem.
-5. **Expressão local no Body.** O Body anima sozinho e o Brain só manda a Expression. Pela mesma razão que fez você rejeitar o streaming de pixels, a animação continua viva com Wi-Fi ruim.
+1. **Brain separate from Body, with its own protocol.** A single Lupin can live on several devices (ESP32, RG406H, mini-pet on the Mac) without appearing on two at once, and you can talk to him from any device. No competitor does this.
+2. **Risk-based approval for actions.** Cowork Tasks with read/write/external levels, and Shortcut writes only on the Mac. Safer than "the agent does everything".
+3. **Concrete privacy.** Calendar and email leave only with Data Consent for a named provider, and the consent drops by itself if the provider changes.
+4. **A Today that doesn't make things up.** First Wake is deterministic and does not go through an LLM. It is a direct answer to the hallucination problem almost every assistant has.
+5. **Local expression on the Body.** The Body animates on its own and the Brain only sends the Expression. For the same reason that made you reject pixel streaming, the animation stays alive on bad Wi-Fi.
 
-### Lacunas comparando com o mercado
+### Gaps compared with the market
 
-- **Offline:** o Taby funciona sem Wi-Fi. O Lupin depende do provider (o padrão é o proxy local, que encaminha para a nuvem) e de TTS no servidor. Um modo 100% local (Ollama + STT/TTS locais) seria um argumento forte.
-- **Microfone e câmera no Body:** EMO, Loona e StackChan ouvem e enxergam pelo próprio corpo. O Lupin escuta pelo Mac.
-- **Movimento:** o Lupin não se mexe fisicamente. Isso é escolha consciente (ADR 0001), mas vale assumir isso na apresentação.
-- **Ecossistema de Skills e MCP:** a Lamp e o xiaozhi abrem para agentes externos via MCP. Expor o Lupin como servidor MCP (ou consumir MCP) o encaixaria nesse ecossistema.
-- **Instalação:** os concorrentes saem da caixa funcionando. O Lupin hoje exige o setup do servidor, certificados etc.
+- **Offline:** Taby works without Wi-Fi. Lupin depends on the provider (the default is the local proxy, which forwards to the cloud) and on server-side TTS. A 100% local mode (Ollama + local STT/TTS) would be a strong argument.
+- **Microphone and camera on the Body:** EMO, Loona and StackChan listen and see through their own bodies. Lupin listens through the Mac.
+- **Movement:** Lupin doesn't move physically. This is a conscious choice (ADR 0001), but it is worth owning it in the presentation.
+- **Skills and MCP ecosystem:** the Lamp and xiaozhi open up to external agents through MCP. Exposing Lupin as an MCP server (or consuming MCP) would fit him into that ecosystem.
+- **Installation:** competitors work out of the box. Lupin today requires server setup, certificates and so on.
 
-## Para o portfólio
+## For the portfolio
 
-O que este projeto demonstra, e que vale destacar:
+What this project demonstrates, and is worth highlighting:
 
-- **Arquitetura distribuída de verdade:** Brain/Body, um protocolo WebSocket versionado (`docs/protocolo-cerebro-corpo.md`), roteamento de Active Body e espelhamento de resposta.
-- **Decisões documentadas:** ADRs com opções rejeitadas e o motivo, além de um glossário de domínio. Pouca gente mostra isso em projeto pessoal.
-- **Segurança e privacidade como requisito:** `subprocess` com whitelist, nenhum segredo em logs, Data Consent ligado ao provider, Mac-only para escrita.
-- **Testes:** suíte Python e frontend, com TDD nas features recentes.
-- **Hardware + web + LLM no mesmo projeto:** firmware ESP32 (LVGL), web Body no RG406H e Electron no Mac.
+- **A genuinely distributed architecture:** Brain/Body, a versioned WebSocket protocol (`docs/brain-body-protocol.md`), Active Body routing and response mirroring.
+- **Documented decisions:** ADRs with rejected options and the reason, plus a domain glossary. Few people show this in a personal project.
+- **Security and privacy as a requirement:** `subprocess` with a whitelist, no secrets in logs, Data Consent tied to the provider, Mac-only writes.
+- **Tests:** Python and frontend suites, with TDD on recent features.
+- **Hardware + web + LLM in the same project:** ESP32 firmware (LVGL), a web Body on the RG406H and Electron on the Mac.
 
-Sugestões de apresentação:
+Presentation suggestions:
 
-1. **Um vídeo de 60–90 s** mostrando o First Wake no ESP32, você falando pelo RG406H e o Lupin respondendo no ESP32, e um Shortcut agindo no Mac. Nesse mercado, todo mundo vende pelo vídeo.
-2. **Um README de vitrine:** um GIF do Lupin, o diagrama Brain/Body, a tabela comparativa acima (versão curta) e os três diferenciais.
-3. **Usar o teste de três perguntas** da Autonomous como gancho: "um companheiro que passa no teste de robô que trabalha, a uma fração do preço".
-4. **Um post técnico** sobre um problema específico: "por que o Today não usa LLM" ou "como um personagem mora em vários aparelhos sem se duplicar".
+1. **A 60-90 s video** showing First Wake on the ESP32, you talking through the RG406H and Lupin answering on the ESP32, and a Shortcut acting on the Mac. In this market, everyone sells through video.
+2. **A showcase README:** a GIF of Lupin, the Brain/Body diagram, the comparison table above (short version) and the three differentiators.
+3. **Use Autonomous's three-question test** as the hook: "a companion that passes the working-robot test, at a fraction of the price".
+4. **A technical post** about one specific problem: "why Today doesn't use an LLM" or "how a character lives on several devices without duplicating itself".
 
-## Fontes
+## Sources
 
 - [Best AI Desk Robots in 2026: Companions vs Work Bots (Autonomous)](https://www.autonomous.ai/ourblog/best-ai-desk-robots)
 - [Best AI Companion Robots 2026 (Robot Review Desk)](https://robotreviewdesk.com/guides/best-ai-companion-robots-2026/)
@@ -114,4 +114,4 @@ Sugestões de apresentação:
 - [Taby (heytaby.com)](https://www.heytaby.com)
 - [xiaozhi-esp32 (GitHub)](https://github.com/78/xiaozhi-esp32)
 - [StackChan (M5Stack docs)](https://docs.m5stack.com/en/StackChan/)
-- Busca por pets de desktop com LLM: Nibbii, Desktop Pet, PetClaw, Ollama Pet, PawPal (resultados do DuckDuckGo)
+- Search for desktop pets with an LLM: Nibbii, Desktop Pet, PetClaw, Ollama Pet, PawPal (DuckDuckGo results)

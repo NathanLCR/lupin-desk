@@ -1,29 +1,29 @@
-# 04 - Presença
+# 04 - Presence
 
 Status: needs-triage
 
-## Contexto
+## Context
 
-Presence é Lupin estar na mesa enquanto o usuário trabalha, reagindo ao que acontece. Depende da 02 e roda no Active Body.
+Presence is Lupin being on the desk while the user works, reacting to what happens. Depends on 02 and runs on the Active Body.
 
-## Escopo
+## Scope
 
-- Lembretes de pausa a partir do tempo contínuo de trabalho.
-- Reações ao horário do dia, à voz e ao toque.
-- Música tocando como tempero (Now Playing), não como foco.
-- O app ativo do Mac só em segundo plano, como contexto, sem Lupin comentar ou registrar de forma intrusiva.
-- Reações vêm do Brain (Expression e Mood), nunca de lógica própria do Body além dos comportamentos ociosos.
+- Break reminders based on continuous working time.
+- Reactions to the time of day, to voice and to touch.
+- Music playing as seasoning (Now Playing), not as the focus.
+- The Mac's active app only in the background, as context, without Lupin commenting on it or logging it intrusively.
+- Reactions come from the Brain (Expression and Mood), never from the Body's own logic beyond idle behaviours.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [ ] Lupin sugere pausa após um tempo contínuo configurável de trabalho.
-- [ ] Reações mudam com horário, voz e toque.
-- [ ] A música influencia o tom sem dominar o comportamento.
-- [ ] O app ativo do Mac só é usado em segundo plano.
-- [ ] Nenhum lembrete é repetitivo ou irritante (limite de frequência).
-- [ ] 1 semana de uso real (mín. 4 dias) sem bug irritante.
+- [ ] Lupin suggests a break after a configurable stretch of continuous work.
+- [ ] Reactions change with time of day, voice and touch.
+- [ ] Music influences the tone without dominating the behaviour.
+- [ ] The Mac's active app is only used in the background.
+- [ ] No reminder is repetitive or annoying (frequency limit).
+- [ ] 1 week of real use (min. 4 days) without an irritating bug.
 
-## Perguntas em aberto
+## Open questions
 
-- Qual o intervalo padrão de pausa e como o usuário ajusta?
-- O que conta como "trabalho contínuo" (atividade de teclado, app ativo)?
+- What is the default break interval, and how does the user adjust it?
+- What counts as "continuous work" (keyboard activity, active app)?

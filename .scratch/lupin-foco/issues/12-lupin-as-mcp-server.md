@@ -4,7 +4,7 @@ Status: needs-triage
 
 ## Context
 
-The Autonomous Lamp and xiaozhi-esp32 plug into the agent ecosystem through MCP (see `docs/pesquisa-de-mercado.md`). Lupin could expose a small MCP server so local agents can reach him. For example, Claude Code could have Lupin say "the build finished" in the Active Body.
+The Autonomous Lamp and xiaozhi-esp32 plug into the agent ecosystem through MCP (see `docs/market-research.md`). Lupin could expose a small MCP server so local agents can reach him. For example, Claude Code could have Lupin say "the build finished" in the Active Body.
 
 ## Scope (to be refined in triage)
 
