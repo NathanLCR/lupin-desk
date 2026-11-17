@@ -23,23 +23,23 @@ _LLM_FACT_TAG_RE = re.compile(r"\[fact\s*:\s*([^\]]+)\]", re.IGNORECASE)
 # They match stored fact text and user speech, so they stay Portuguese/English.
 _NAME_KEY_RE = re.compile(
     r"^(?:(?:o|a)\s+)?(?:nome(?:\s+do\s+usu[aá]rio)?|chama-se|se\s+chama|"
-    r"usu[aá]rio\s+se\s+chama|apelido|user\s*name|name)\b(?:\s*[:=]\s*|\s+[eé]\s+|\s+)",
+    r"usu[aá]rio\s+se\s+chama|apelido|user['’]?s?\s*name|name)\b(?:\s*[:=]\s*|\s+[eé]\s+|\s+)",
     re.IGNORECASE,
 )
 _LOCATION_KEY_RE = re.compile(
-    r"^(?:(?:o|a)\s+)?(?:usu[aá]rio\s+)?(?:mora\s+em|vive\s+em|cidade|"
+    r"^(?:(?:o|a)\s+)?(?:(?:usu[aá]rio|user)\s+)?(?:mora\s+em|vive\s+em|cidade|"
     r"localiza[çc][aã]o|lives\s+in|city|location)\b(?:\s*[:=]\s*|\s+)",
     re.IGNORECASE,
 )
 
 # Heuristic patterns (pt-BR and EN) that capture explicit facts from the user's speech.
-# The regexes parse user input and the templates build the stored fact text, so both stay
-# Portuguese: stored facts and the consolidation signatures below depend on these exact words.
+# The regexes parse user input and the templates build the stored fact text. pt-BR clauses
+# produce Portuguese facts and English clauses produce English facts (never mixed). Stored facts
+# and the consolidation signatures below depend on these exact words.
 _HEURISTIC_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (
         re.compile(
-            r"(?:^|\b)(?:meu\s+nome\s+[ée]|me\s+chamo|pode\s+me\s+chamar\s+de|"
-            r"my\s+name\s+is|call\s+me)\s+([^.!?\n,;]+)",
+            r"(?:^|\b)(?:meu\s+nome\s+[ée]|me\s+chamo|pode\s+me\s+chamar\s+de)\s+([^.!?\n,;]+)",
             re.IGNORECASE,
         ),
         "identity",
@@ -59,7 +59,7 @@ _HEURISTIC_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
             re.IGNORECASE,
         ),
         "preference",
-        "Prefere {value}",
+        "Prefers {value}",
     ),
     (
         re.compile(
@@ -71,11 +71,19 @@ _HEURISTIC_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     ),
     (
         re.compile(
-            r"(?:^|\b)(?<!don't\s)(?<!do not\s)i\s+like\s+([^.!?\n;]+)",
+            r"(?:^|\b)i\s+like\s+([^.!?\n;]+)",
             re.IGNORECASE,
         ),
         "preference",
-        "Gosta de {value}",
+        "Likes {value}",
+    ),
+    (
+        re.compile(
+            r"(?:^|\b)i\s+(?:don['’]?t|do\s+not)\s+like\s+([^.!?\n;]+)",
+            re.IGNORECASE,
+        ),
+        "preference",
+        "Doesn't like {value}",
     ),
     (
         re.compile(
@@ -95,11 +103,27 @@ _HEURISTIC_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     ),
     (
         re.compile(
-            r"(?:^|\b)i\s+work\s+(?:with|as)\s+([^.!?\n;]+)",
+            r"(?:^|\b)i\s+work\s+with\s+([^.!?\n;]+)",
             re.IGNORECASE,
         ),
         "work",
-        "Trabalha com/como {value}",
+        "Works with {value}",
+    ),
+    (
+        re.compile(
+            r"(?:^|\b)i\s+work\s+as\s+([^.!?\n;]+)",
+            re.IGNORECASE,
+        ),
+        "work",
+        "Works as {value}",
+    ),
+    (
+        re.compile(
+            r"(?:^|\b)i\s+work\s+(?:at|for)\s+([^.!?\n;]+)",
+            re.IGNORECASE,
+        ),
+        "work",
+        "Works at {value}",
     ),
     (
         re.compile(
@@ -115,7 +139,7 @@ _HEURISTIC_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
             re.IGNORECASE,
         ),
         "location",
-        "Mora em {value}",
+        "Lives in {value}",
     ),
     (
         re.compile(
@@ -124,6 +148,41 @@ _HEURISTIC_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
         ),
         "general",
         "Tem {article} {value}",
+    ),
+    # English counterparts: English clauses produce English facts.
+    (
+        re.compile(
+            r"(?:^|\b)(?:my\s+name\s+is|(?:you\s+can\s+)?call\s+me)\s+([^.!?\n,;]+)",
+            re.IGNORECASE,
+        ),
+        "identity",
+        "User's name: {value}",
+    ),
+    (
+        re.compile(
+            r"(?:^|\b)i\s+have\s+(a|an)\s+([^.!?\n;]+)",
+            re.IGNORECASE,
+        ),
+        "general",
+        "Has {article} {value}",
+    ),
+    (
+        re.compile(
+            r"(?:^|\b)my\s+(?:favou?rite)\s+([a-z]+(?:\s[a-z]+)?)\s+is\s+([^.!?\n,;]+)",
+            re.IGNORECASE,
+        ),
+        "preference",
+        "User's favorite {thing}: {value}",
+    ),
+    (
+        re.compile(
+            r"(?:^|\b)my\s+(dog|cat|pet|car|phone|laptop|computer|job|birthday|"
+            r"wife|husband|partner|girlfriend|boyfriend|brother|sister|mother|father|mom|dad)"
+            r"\s+is\s+([^.!?\n,;]+)",
+            re.IGNORECASE,
+        ),
+        "general",
+        "User's {thing}: {value}",
     ),
 )
 
@@ -142,6 +201,22 @@ _IGNORED_POSSESSION_NOUNS = {
     "fome",
     "sede",
     "pressa",
+}
+
+_IGNORED_POSSESSION_NOUNS_EN = {
+    "question",
+    "doubt",
+    "idea",
+    "problem",
+    "issue",
+    "feeling",
+    "headache",
+    "cold",
+    "fever",
+    "minute",
+    "moment",
+    "second",
+    "meeting",
 }
 
 _STOPWORDS = {
@@ -249,27 +324,54 @@ def _normalize_fact_key(fact: str, category: str = "general") -> str:
     return f"fact:{plain}"
 
 
+_EN_THIRD_PERSON = {
+    "like": "likes",
+    "prefer": "prefers",
+    "use": "uses",
+    "work": "works",
+    "live": "lives",
+    "have": "has",
+}
+
+
 def _consolidation_signature(fact: str, category: str = "general") -> str:
     """Compute a semantic signature to group duplicate or contradictory facts."""
     cleaned = _clean_whitespace(fact)
     plain = _strip_accents(cleaned).lower().rstrip(".,;!?")
     plain = re.sub(r"^(?:o\s+|a\s+)?(?:usuario|user)\s+", "", plain)
 
+    plain = plain.replace("’", "'")
+
     key = _normalize_fact_key(cleaned, category)
     if key.startswith("attr:") or key.startswith("prefix:"):
         return key
 
     # Detect direct polarity contradictions (e.g. "Gosta de café" vs "Não gosta de café").
-    negated = re.sub(r"^(?:nao|nunca|jamais|don't|do not|does not)\s+", "", plain)
+    negated = re.sub(r"^(?:nao|nunca|jamais)\s+", "", plain)
     if negated != plain:
         return f"polarity:{negated}"
 
+    # English negations: "Doesn't like coffee" lines up with "Likes coffee".
+    en_negated = re.sub(r"^(?:doesn't|does not|don't|do not|never)\s+", "", plain)
+    if en_negated != plain:
+        first, _, rest = en_negated.partition(" ")
+        return f"polarity:{_EN_THIRD_PERSON.get(first, first)} {rest}".strip()
+
     # Detect exclusive theme/style contradictions (e.g. "Prefere tema claro" vs "Prefere tema escuro").
-    for exclusive_prefix in ("prefere tema ", "trabalha como ", "mora em ", "chama-se "):
+    if re.match(r"^prefers\s+(?:\w+\s+){0,2}theme\b", plain):
+        return "slot:prefers theme"
+    for exclusive_prefix in (
+        "prefere tema ",
+        "trabalha como ",
+        "mora em ",
+        "chama-se ",
+        "works as ",
+        "lives in ",
+    ):
         if plain.startswith(exclusive_prefix):
             return f"slot:{exclusive_prefix.strip()}"
 
-    if re.match(r"^(?:gosta\s+de|prefere|usa|trabalha\s+com)\s+", plain):
+    if re.match(r"^(?:gosta\s+de|prefere|usa|trabalha\s+com|likes|prefers|uses|works\s+with)\s+", plain):
         return f"polarity:{plain}"
 
     return f"exact:{plain}"
@@ -293,6 +395,10 @@ def _split_clauses(user_text: str) -> list[str]:
     """Split the user text into short clauses for safe extraction."""
     raw_sentences = re.split(r"[.\n;!]+", user_text)
     clauses: list[str] = []
+    en_connector_re = re.compile(
+        r"(?:,\s*(?:and\s+)?|\s+and\s+)(?=(?:i|my|call|you\s+can\s+call)\b)",
+        re.IGNORECASE,
+    )
     connector_re = re.compile(
         r"(?:,\s*(?:e\s+)?|\s+e\s+)(?=(?:eu|meu|me|pode|moro|trabalho|tenho|prefiro|gosto)\b)",
         re.IGNORECASE,
@@ -301,7 +407,9 @@ def _split_clauses(user_text: str) -> list[str]:
         stripped = sentence.strip()
         if not stripped or stripped.endswith("?"):
             continue
-        sub_parts = connector_re.split(stripped)
+        sub_parts = [
+            piece for part in connector_re.split(stripped) for piece in en_connector_re.split(part)
+        ]
         for part in sub_parts:
             part_clean = part.strip(" ,")
             if part_clean and not part_clean.endswith("?"):
@@ -947,11 +1055,22 @@ class MemoryStore:
                 if not match:
                     continue
 
-                if "{article}" in template:
+                if "{thing}" in template:
+                    thing = _clean_whitespace(match.group(1)).lower()
+                    raw_value = _clean_whitespace(match.group(2))
+                    if not raw_value:
+                        continue
+                    candidate = template.format(thing=thing, value=raw_value)
+                elif "{article}" in template:
                     article = match.group(1).lower()
                     raw_value = _clean_whitespace(match.group(2))
                     first_word = _strip_accents(raw_value.split(" ", 1)[0].lower()) if raw_value else ""
                     if not raw_value or first_word in _IGNORED_POSSESSION_NOUNS:
+                        continue
+                    if template.startswith("Has ") and any(
+                        word in _IGNORED_POSSESSION_NOUNS_EN
+                        for word in raw_value.lower().split()[:2]
+                    ):
                         continue
                     candidate = template.format(article=article, value=raw_value)
                 else:
