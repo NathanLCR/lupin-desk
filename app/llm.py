@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from app import speech_pt_br as speech
+from app import speech
 from app.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ def build_system_prompt(
     skills_context: str = "",
     personal_context: str = "",
 ) -> str:
-    """Build the pt-BR system prompt with memory, temporal context, mood and Mac actions."""
+    """Build the system prompt (in Lupin's current language) with memory, temporal context, mood and Mac actions."""
     emotions_list = ", ".join(SUPPORTED_EMOTIONS)
     sections = [speech.persona_prompt(emotions_list)]
 

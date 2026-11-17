@@ -43,7 +43,7 @@ from app.skills import (
     load_enabled_skills,
     set_skill_enabled,
 )
-from app import speech_pt_br
+from app import speech
 from app.stt import LocalSTT
 from app.consent import DataConsent, build_personal_context
 from app.today import FirstWakeTracker, TodayEngine, compose_first_wake_speech
@@ -51,7 +51,7 @@ from app.tts import ServerTTS
 
 logger = logging.getLogger(__name__)
 
-FRIENDLY_LLM_ERROR = speech_pt_br.FRIENDLY_LLM_ERROR
+_META_KEY_LUPIN_LANGUAGE = "lupin_language"
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 _BASE_URL_OVERRIDE_PROVIDERS = frozenset({"local_proxy", "ollama", "custom"})
 
@@ -170,6 +170,12 @@ PROTOCOL_VERSION = 1
 _AUDIO_CHUNK_BYTES = 24 * 1024
 # Priority for choosing the Active Body; types missing from the table count as 1.
 _BODY_RANK = {"esp32": 3, "rg406h-web": 2}
+
+
+class LupinLanguageRequest(BaseModel):
+    """Payload to change Lupin's language (pt-BR or en)."""
+
+    language: str
 
 
 class TTSRequest(BaseModel):
@@ -308,6 +314,8 @@ def create_app(
         env_fallback_key=env_llm_api_key,
     )
     enabled_skill_ids = load_enabled_skills(resolved_memory)
+    # Lupin's language lives on the Brain (app_meta) so every Body sees the same value.
+    speech.set_language(resolved_memory.get_meta(_META_KEY_LUPIN_LANGUAGE))
 
     own_shortcuts = shortcut_store is None
     resolved_shortcuts = shortcut_store or ShortcutStore(db_path=resolved_settings.db_path)
@@ -691,6 +699,52 @@ def create_app(
     # Voice (Mac server TTS + local STT) & Diagnostics
     # ------------------------------------------------------------------
 
+    def current_tts_voice() -> str:
+        """The server voice that matches Lupin's current language."""
+        if speech.get_language() == "en":
+            return resolved_settings.tts_voice_en
+        return resolved_settings.tts_voice
+
+    def current_stt_language() -> str:
+        """The speech-to-text language code that matches Lupin's current language."""
+        if speech.get_language() == "en":
+            return "en"
+        return resolved_settings.stt_language
+
+    def lupin_language_payload() -> dict[str, Any]:
+        lang = speech.get_language()
+        phrases = speech.for_language(lang)
+        return {
+            "language": lang,
+            "languages": list(speech.SUPPORTED_LANGUAGES),
+            "tts_voice": current_tts_voice(),
+            "stt_language": current_stt_language(),
+            "phrases": {
+                "pomodoro_focus_done": phrases.POMODORO_FOCUS_DONE,
+                "pomodoro_break_done": phrases.POMODORO_BREAK_DONE,
+                "diag_test_browser_tts": phrases.DIAG_TEST_BROWSER_TTS,
+                "diag_test_server_tts": phrases.DIAG_TEST_SERVER_TTS,
+            },
+        }
+
+    @fastapi_app.get("/api/lupin-language")
+    async def get_lupin_language() -> dict[str, Any]:
+        """Lupin's language (pt-BR default or en) and what follows from it."""
+        return lupin_language_payload()
+
+    @fastapi_app.put("/api/lupin-language")
+    async def put_lupin_language(body: LupinLanguageRequest) -> dict[str, Any]:
+        """Change Lupin's language from any device; takes effect on the next turn."""
+        lang = speech.normalize_language(body.language)
+        if lang is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Unsupported language. Use 'pt-BR' or 'en'.",
+            )
+        resolved_memory.set_meta(_META_KEY_LUPIN_LANGUAGE, lang)
+        speech.set_language(lang)
+        return {"ok": True, **lupin_language_payload()}
+
     @fastapi_app.post("/api/tts")
     async def synthesize_tts(payload: TTSRequest) -> Response:
         """Generate offline audio via `/usr/bin/say` + `/usr/bin/afconvert` (m4a or wav)."""
@@ -698,7 +752,7 @@ def create_app(
         try:
             audio_bytes, media_type = await resolved_tts.synthesize_async(
                 text=payload.text,
-                voice=payload.voice,
+                voice=payload.voice or current_tts_voice(),
                 output_format=fmt,
             )
         except ValueError as exc:
@@ -723,7 +777,7 @@ def create_app(
         ]
         return {
             "voices": voices,
-            "default_voice": resolved_settings.tts_voice,
+            "default_voice": current_tts_voice(),
         }
 
     @fastapi_app.post("/api/stt")
@@ -731,7 +785,7 @@ def create_app(
         """Transcribe audio received as base64 JSON, multipart or raw binary."""
         audio_bytes, mime_type, language = await _extract_stt_request(
             request,
-            default_language=resolved_settings.stt_language,
+            default_language=current_stt_language(),
         )
         return await resolved_stt.transcribe_bytes(
             audio_bytes=audio_bytes,
@@ -765,7 +819,7 @@ def create_app(
             "stt_engine": stt_status["engine"],
             "tts": {
                 "available": tts_available,
-                "default_voice": resolved_settings.tts_voice,
+                "default_voice": current_tts_voice(),
             },
             "tts_available": tts_available,
         }
@@ -1145,7 +1199,7 @@ def create_app(
                 index += 1
                 try:
                     audio_bytes, _mime = await resolved_tts.synthesize_async(
-                        text=sentence_text, voice=None, output_format="m4a"
+                        text=sentence_text, voice=current_tts_voice(), output_format="m4a"
                     )
                 except Exception as exc:
                     logger.warning("TTS failed for an audio sentence (%s); audio skipped.", type(exc).__name__)
@@ -1355,14 +1409,14 @@ def create_app(
             except LLMError as exc:
                 logger.error("Failed to process message via LLM: %s", exc)
                 await safe_send({"type": "state", "state": "error"})
-                await safe_send({"type": "error", "message": FRIENDLY_LLM_ERROR})
+                await safe_send({"type": "error", "message": speech.FRIENDLY_LLM_ERROR})
             except Exception as exc:
                 logger.error(
                     "Unexpected error during WebSocket streaming (%s)",
                     type(exc).__name__,
                 )
                 await safe_send({"type": "state", "state": "error"})
-                await safe_send({"type": "error", "message": FRIENDLY_LLM_ERROR})
+                await safe_send({"type": "error", "message": speech.FRIENDLY_LLM_ERROR})
             finally:
                 if audio_task is not None and not audio_task.done():
                     audio_task.cancel()
@@ -1680,7 +1734,7 @@ def create_app(
                     await cancel_active_turn(notify=False)
                     raw_b64 = str(data.get("data") or data.get("audio") or "")
                     mime_type = str(data.get("mime_type") or "audio/webm")
-                    language = str(data.get("language") or resolved_settings.stt_language)
+                    language = str(data.get("language") or current_stt_language())
                     try:
                         audio_bytes = _decode_base64_audio(raw_b64)
                     except ValueError as exc:

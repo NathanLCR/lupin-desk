@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 import httpx
 
-from app import speech_pt_br as speech
+from app import speech
 from app.config import Settings
 from app.cowork import CoworkStore
 from app.memory import MemoryStore
@@ -416,7 +416,7 @@ def compose_first_wake_speech(
     `calendar` is None when the calendar could not be read; `unread` is None when Mail.app
     could not be read (nothing is said about them). Never speaks sender or subject.
     Does not use the LLM: no calendar or e-mail data leaves the machine.
-    The wording comes from `app.speech_pt_br`.
+    The wording comes from `app.speech`.
     """
     sentences: list[str] = []
     open_tasks = _open_tasks(state)

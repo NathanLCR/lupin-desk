@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app import speech_pt_br as speech
+from app import speech
 from app.config import BASE_DIR
 
 _DEFAULT_DB_PATH = BASE_DIR / "data" / "memory.db"
