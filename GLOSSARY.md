@@ -78,8 +78,12 @@ An operation in Cowork that carries a risk level (read, write, external); anythi
 _Avoid_: Cowork action, job
 
 **Today**:
-The daily summary of the user's day, built from Cowork and checked so it never states things Cowork doesn't contain.
+The daily summary of the user's day, built from Cowork, the calendar and the inbox, and checked so it never states things those sources don't contain.
 _Avoid_: briefing, digest
+
+**Data Consent**:
+The user's permission, given on the Mac, for one named LLM provider to see their calendar or their email (one permission for each). It lapses by itself when the provider changes. Without it, calendar and email never leave the Mac.
+_Avoid_: privacy setting, sharing
 
 **First Wake**:
 The user's first interaction with Lupin on the main device after 5am, when Lupin tells the user Today in his own voice.
