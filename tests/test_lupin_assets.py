@@ -48,9 +48,8 @@ def test_truques_de_corpo_inteiro_sao_so_dance_stretch_e_nap():
 
 def test_arte_so_usa_a_paleta_do_lupin():
     permitidas = {
-        "#0b0b0f", "#26262e", "#f4f4f5", "#22d3ee", "#f9a8d4", "#111114", "#1d1d24",
-        "#d4d4d8", "#3b0d1a", "#db2777", "#fff",
+        "#000", "#0b0b0b", "#1d1d24", "#11c3fb", "#ebebea", "#d6d5d5", "#eb617e",
     }
     for svg in LUPIN.rglob("*.svg"):
-        cores = {c.lower() for c in re.findall(r"#[0-9a-fA-F]{3,6}\b", svg.read_text(encoding="utf-8"))}
+        cores = {c.lower() for c in re.findall(r"(?<!\()#[0-9a-fA-F]{3,6}\b", svg.read_text(encoding="utf-8"))}
         assert cores <= permitidas, f"{svg}: {cores - permitidas}"

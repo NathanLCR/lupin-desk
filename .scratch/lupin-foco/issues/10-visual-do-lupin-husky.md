@@ -33,3 +33,10 @@ Feedback do teste no RG406H: o rosto abstrato estilo EMO está errado. Lupin é 
 - Pendente: o orçamento falava em até ~24 camadas, e são 34 variantes (só 7 aparecem ao mesmo tempo). Decidir com a medição na placa se isso é problema.
 - Pendente: `setAccessory` só registra o valor; a arte de fones e Pomodoro no rosto ainda não existe. Clima, suor e bocejo do rosto antigo não foram portados.
 - Sem tela física: o husky só foi visto no navegador (960x720), não no RG406H.
+
+## Arte do Recraft (2026-11-17)
+
+- A cabeça, a máscara, o nariz, as orelhas, o peito e a coleira agora vêm do traçado SVG gerado no Recraft (husky simétrico, vista frontal), dividido em camadas pelo mesmo formato de antes. A tabela `expressoes.json` não mudou de contrato.
+- Só existia o SVG da pose neutra. Olhos, sobrancelhas e bocas das outras expressões foram redesenhados à mão no estilo do traçado. Os PNGs de feliz, surpreso e corações do Recraft não viraram SVG; se exportar esses SVGs, dá para trocar as variantes.
+- Os 6 quadros de corpo inteiro reutilizam a nova cabeça num corpo simples ainda desenhado à mão.
+- Paleta: ciano `#11c3fb`, branco `#ebebea`, cinza `#d6d5d5`, rosa `#eb617e`, preto. Maior PNG: 8 KB.
