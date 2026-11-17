@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Tema OLED preto puro sem barra de título para o RG406H -->
+    <!-- Pure black OLED theme with no title bar for the RG406H -->
     <style name="AppTheme" parent="@android:style/Theme.Black.NoTitleBar.Fullscreen">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:colorBackground">#000000</item>

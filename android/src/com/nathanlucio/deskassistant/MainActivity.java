@@ -48,9 +48,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Activity principal em tela cheia imersiva para o Anbernic RG406H.
- * Hospeda a interface web do Desk Assistant com suporte a microfone,
- * Gamepad API, certificado local autoassinado e ponte nativa AndroidBridge.
+ * Main immersive full-screen Activity for the Anbernic RG406H.
+ * Hosts the Desk Assistant web interface with microphone support,
+ * Gamepad API, a local self-signed certificate and the native AndroidBridge.
  */
 public class MainActivity extends Activity {
 
@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Mantém a tela sempre ativa no uso como pet de mesa OLED.
+        // Keep the screen always on when used as an OLED desk pet.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= 28) {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
@@ -146,7 +146,7 @@ public class MainActivity extends Activity {
         );
         rootLayout.addView(webView, webParams);
 
-        // Botão discreto no canto superior direito para menu de servidor (auto-ocultável em 3s).
+        // Discreet button in the top-right corner for the server menu (auto-hides after 3s).
         int sizePx = dpToPx(44);
         int marginPx = dpToPx(10);
         serverMenuButton = new TextView(this);
@@ -154,7 +154,7 @@ public class MainActivity extends Activity {
         serverMenuButton.setTextColor(Color.parseColor("#D956DCFF"));
         serverMenuButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         serverMenuButton.setGravity(Gravity.CENTER);
-        serverMenuButton.setContentDescription("Configurar servidor");
+        serverMenuButton.setContentDescription("Configure server");
 
         GradientDrawable badgeBg = new GradientDrawable();
         badgeBg.setShape(GradientDrawable.OVAL);
@@ -274,7 +274,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        // Nunca intercepta eventos vindos de controle/gamepad para não atrapalhar a Gamepad API.
+        // Never intercept events coming from a controller/gamepad so the Gamepad API is not disrupted.
         boolean fromGamepad = isGamepadEvent(event);
         if (!fromGamepad
                 && event.getKeyCode() == KeyEvent.KEYCODE_BACK
@@ -287,7 +287,7 @@ public class MainActivity extends Activity {
                 lastBackPressMs = now;
                 Toast.makeText(
                         this,
-                        "Pressione VOLTAR novamente para abrir o menu do servidor",
+                        "Press BACK again to open the server menu",
                         Toast.LENGTH_SHORT
                 ).show();
             }
@@ -341,7 +341,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Faz probe rápido na porta 8000 local (túnel USB ADB); se indisponível, cai para Wi-Fi HTTPS.
+        // Quick probe on local port 8000 (USB ADB tunnel); if unavailable, fall back to Wi-Fi HTTPS.
         networkExecutor.execute(() -> {
             boolean usbTunnelReady = isTcpPortReachable(
                     LOCAL_PROBE_HOST,
@@ -399,8 +399,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Valida estritamente se o host é local ou pertence a uma faixa privada RFC 1918 / loopback.
-     * Aceita apenas: localhost, 127.x.x.x, ::1, *.local, 10.x.x.x, 192.168.x.x, 172.16-31.x.x.
+     * Strictly validate that the host is local or belongs to an RFC 1918 private range / loopback.
+     * Accepts only: localhost, 127.x.x.x, ::1, *.local, 10.x.x.x, 192.168.x.x, 172.16-31.x.x.
      */
     static boolean isPrivateOrLocalHost(String rawHost) {
         if (rawHost == null) {
@@ -457,11 +457,11 @@ public class MainActivity extends Activity {
             String[] options = new String[]{
                     "USB ADB (" + DEFAULT_USB_URL + ")",
                     "Wi-Fi HTTPS (" + DEFAULT_WIFI_URL + ")",
-                    "URL Customizada...",
-                    "Recarregar Página"
+                    "Custom URL...",
+                    "Reload Page"
             };
             new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("Servidor — Desk Assistant")
+                    .setTitle("Server — Desk Assistant")
                     .setItems(options, (dialog, which) -> {
                         if (which == 0) {
                             saveAndLoadServerUrl(DEFAULT_USB_URL);
@@ -474,7 +474,7 @@ public class MainActivity extends Activity {
                             loadServerUrl(currentUrl);
                         }
                     })
-                    .setNegativeButton("Fechar", null)
+                    .setNegativeButton("Close", null)
                     .show();
         });
     }
@@ -491,9 +491,9 @@ public class MainActivity extends Activity {
         container.addView(input);
 
         new AlertDialog.Builder(this)
-                .setTitle("URL do Servidor")
+                .setTitle("Server URL")
                 .setView(container)
-                .setPositiveButton("Conectar", (dialog, which) -> {
+                .setPositiveButton("Connect", (dialog, which) -> {
                     String entered = input.getText().toString();
                     String valid = sanitizeServerUrl(entered);
                     if (valid != null) {
@@ -501,12 +501,12 @@ public class MainActivity extends Activity {
                     } else {
                         Toast.makeText(
                                 this,
-                                "URL inválida. Use http:// ou https://",
+                                "Invalid URL. Use http:// or https://",
                                 Toast.LENGTH_SHORT
                         ).show();
                     }
                 })
-                .setNegativeButton("Cancelar", null)
+                .setNegativeButton("Cancel", null)
                 .show();
     }
 
@@ -525,8 +525,8 @@ public class MainActivity extends Activity {
             return;
         }
         String safeUrl = escapeHtml(failedUrl);
-        String safeReason = escapeHtml(reason != null ? reason : "Sem resposta do servidor");
-        String html = "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'>"
+        String safeReason = escapeHtml(reason != null ? reason : "No response from the server");
+        String html = "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
                 + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
                 + "<style>"
                 + "html,body{margin:0;height:100%;background:#000;color:#e6faff;"
@@ -540,12 +540,12 @@ public class MainActivity extends Activity {
                 + "border-radius:10px;padding:10px 16px;font-size:14px;font-weight:bold;cursor:pointer;}"
                 + "button:focus-visible{outline:2px solid #56dcff;outline-offset:2px;}"
                 + "</style></head><body><div class='card'>"
-                + "<h2>Servidor indisponível</h2>"
-                + "<p>Não foi possível conectar em:<br><strong>" + safeUrl + "</strong></p>"
+                + "<h2>Server unavailable</h2>"
+                + "<p>Could not connect to:<br><strong>" + safeUrl + "</strong></p>"
                 + "<p>" + safeReason + "</p>"
                 + "<div class='actions'>"
-                + "<button onclick='window.AndroidBridge.reloadApp()'>Tentar novamente</button>"
-                + "<button onclick='window.AndroidBridge.openServerMenu()'>Trocar servidor</button>"
+                + "<button onclick='window.AndroidBridge.reloadApp()'>Try again</button>"
+                + "<button onclick='window.AndroidBridge.openServerMenu()'>Switch server</button>"
                 + "</div></div></body></html>";
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
     }
@@ -571,7 +571,7 @@ public class MainActivity extends Activity {
         ) {
             String errorUrl = error != null ? error.getUrl() : null;
             String host = errorUrl != null ? Uri.parse(errorUrl).getHost() : null;
-            // Aceita certificado autoassinado APENAS em hosts locais/privados da LAN.
+            // Accept a self-signed certificate ONLY on local/private LAN hosts.
             if (isPrivateOrLocalHost(host)) {
                 handler.proceed();
             } else {
@@ -642,7 +642,7 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Ponte JavaScript exposta em `window.AndroidBridge` para integração nativa no RG406H.
+     * JavaScript bridge exposed as `window.AndroidBridge` for native integration on the RG406H.
      */
     public class AndroidBridge {
         @JavascriptInterface

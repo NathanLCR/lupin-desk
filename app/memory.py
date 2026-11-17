@@ -1,4 +1,4 @@
-"""Sistema de memória cognitiva persistente em SQLite (curto prazo, longo prazo, resumo e estado do pet)."""
+"""Persistent cognitive memory in SQLite (short term, long term, summary and pet state)."""
 
 from __future__ import annotations
 
@@ -11,14 +11,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app import speech_pt_br as speech
 from app.config import BASE_DIR
 
 _DEFAULT_DB_PATH = BASE_DIR / "data" / "memory.db"
 
-# Padrões de fatos emitidos explicitamente pelo LLM no texto bruto
+# Fact tags explicitly emitted by the LLM in the raw text
 _LLM_FACT_TAG_RE = re.compile(r"\[fact\s*:\s*([^\]]+)\]", re.IGNORECASE)
 
-# Padrões para identificar fatos de atributo único (atualizam em vez de duplicar)
+# Patterns that identify single-attribute facts (they update instead of duplicating).
+# They match stored fact text and user speech, so they stay Portuguese/English.
 _NAME_KEY_RE = re.compile(
     r"^(?:(?:o|a)\s+)?(?:nome(?:\s+do\s+usu[aá]rio)?|chama-se|se\s+chama|"
     r"usu[aá]rio\s+se\s+chama|apelido|user\s*name|name)\b(?:\s*[:=]\s*|\s+[eé]\s+|\s+)",
@@ -30,7 +32,9 @@ _LOCATION_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Padrões heurísticos em PT-BR e EN para capturar fatos explícitos da fala do usuário
+# Heuristic patterns (pt-BR and EN) that capture explicit facts from the user's speech.
+# The regexes parse user input and the templates build the stored fact text, so both stay
+# Portuguese: stored facts and the consolidation signatures below depend on these exact words.
 _HEURISTIC_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (
         re.compile(
@@ -179,17 +183,17 @@ _STOPWORDS = {
 
 
 def _now_utc() -> datetime:
-    """Retorna o datetime UTC atual."""
+    """Return the current UTC datetime."""
     return datetime.now(timezone.utc)
 
 
 def _now_iso() -> str:
-    """Retorna o timestamp UTC atual no formato ISO-8601."""
+    """Return the current UTC timestamp in ISO-8601 format."""
     return _now_utc().isoformat()
 
 
 def _parse_iso_utc(raw: str | None) -> datetime:
-    """Converte string ISO-8601 em datetime UTC, com fallback seguro para agora."""
+    """Convert an ISO-8601 string to a UTC datetime, safely falling back to now."""
     if not raw:
         return _now_utc()
     try:
@@ -202,30 +206,30 @@ def _parse_iso_utc(raw: str | None) -> datetime:
 
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:
-    """Limita um valor numérico ao intervalo `[minimum, maximum]`."""
+    """Clamp a numeric value to the range `[minimum, maximum]`."""
     return max(minimum, min(maximum, value))
 
 
 def _strip_accents(text: str) -> str:
-    """Remove acentos mantendo apenas caracteres base para normalização de chaves."""
+    """Strip accents, keeping only base characters, to normalize keys."""
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
 def _clean_whitespace(text: str) -> str:
-    """Colapsa espaços repetidos e remove espaços nas pontas."""
+    """Collapse repeated whitespace and trim both ends."""
     return " ".join(text.strip().split())
 
 
 def _tokenize_plain(text: str) -> list[str]:
-    """Extrai tokens alfanuméricos normalizados sem acentos para busca e comparação."""
+    """Extract accent-free normalized alphanumeric tokens for search and comparison."""
     plain = _strip_accents(text).lower()
     tokens = re.findall(r"[a-z0-9]{2,}", plain)
     return [tok for tok in tokens if tok not in _STOPWORDS]
 
 
 def _normalize_fact_key(fact: str, category: str = "general") -> str:
-    """Gera chave normalizada para deduplicar e atualizar fatos semelhantes."""
+    """Generate a normalized key to deduplicate and update similar facts."""
     cleaned = _clean_whitespace(fact)
     plain = _strip_accents(cleaned).lower().rstrip(".,;!?")
 
@@ -246,7 +250,7 @@ def _normalize_fact_key(fact: str, category: str = "general") -> str:
 
 
 def _consolidation_signature(fact: str, category: str = "general") -> str:
-    """Calcula assinatura semântica para agrupar fatos duplicados ou contraditórios."""
+    """Compute a semantic signature to group duplicate or contradictory facts."""
     cleaned = _clean_whitespace(fact)
     plain = _strip_accents(cleaned).lower().rstrip(".,;!?")
     plain = re.sub(r"^(?:o\s+|a\s+)?(?:usuario|user)\s+", "", plain)
@@ -255,12 +259,12 @@ def _consolidation_signature(fact: str, category: str = "general") -> str:
     if key.startswith("attr:") or key.startswith("prefix:"):
         return key
 
-    # Detecta contradição direta de polaridade (ex: "Gosta de café" vs "Não gosta de café").
+    # Detect direct polarity contradictions (e.g. "Gosta de café" vs "Não gosta de café").
     negated = re.sub(r"^(?:nao|nunca|jamais|don't|do not|does not)\s+", "", plain)
     if negated != plain:
         return f"polarity:{negated}"
 
-    # Detecta contradição de tema/estilo exclusivo (ex: "Prefere tema claro" vs "Prefere tema escuro").
+    # Detect exclusive theme/style contradictions (e.g. "Prefere tema claro" vs "Prefere tema escuro").
     for exclusive_prefix in ("prefere tema ", "trabalha como ", "mora em ", "chama-se "):
         if plain.startswith(exclusive_prefix):
             return f"slot:{exclusive_prefix.strip()}"
@@ -272,7 +276,7 @@ def _consolidation_signature(fact: str, category: str = "general") -> str:
 
 
 def _infer_category(fact_text: str) -> str:
-    """Infere categoria simples para fatos extraídos por tag sem categoria explícita."""
+    """Infer a simple category for facts extracted from a tag without an explicit category."""
     plain = _strip_accents(fact_text).lower()
     if _NAME_KEY_RE.match(fact_text):
         return "identity"
@@ -286,7 +290,7 @@ def _infer_category(fact_text: str) -> str:
 
 
 def _split_clauses(user_text: str) -> list[str]:
-    """Divide o texto do usuário em sentenças curtas para extração segura."""
+    """Split the user text into short clauses for safe extraction."""
     raw_sentences = re.split(r"[.\n;!]+", user_text)
     clauses: list[str] = []
     connector_re = re.compile(
@@ -305,40 +309,25 @@ def _split_clauses(user_text: str) -> list[str]:
     return clauses
 
 
-def _format_elapsed_ptbr(seconds: float) -> str:
-    """Formata tempo decorrido em português do Brasil de forma concisa."""
-    secs = max(0, int(seconds))
-    if secs < 60:
-        return "menos de 1 minuto"
-    minutes = secs // 60
-    if minutes < 60:
-        return f"há {minutes} minuto" if minutes == 1 else f"há {minutes} minutos"
-    hours = minutes // 60
-    if hours < 24:
-        return f"há {hours} hora" if hours == 1 else f"há {hours} horas"
-    days = hours // 24
-    return f"há {days} dia" if days == 1 else f"há {days} dias"
-
-
 def _derive_mood_label(pleasure: float, arousal: float, energy: float) -> str:
-    """Traduz dimensões afetivas e energia em um rótulo de humor em PT-BR."""
+    """Translate affective dimensions and energy into a (pt-BR) mood label."""
     if energy < 25.0:
-        return "sonolento"
+        return speech.MOOD_SLEEPY
     if pleasure >= 0.45 and arousal >= 0.25:
-        return "animado"
+        return speech.MOOD_EXCITED
     if pleasure >= 0.35:
-        return "feliz"
+        return speech.MOOD_HAPPY
     if pleasure >= 0.1:
-        return "tranquilo"
+        return speech.MOOD_CALM
     if pleasure <= -0.35 and arousal >= 0.2:
-        return "irritado"
+        return speech.MOOD_IRRITATED
     if pleasure <= -0.2:
-        return "carente"
-    return "neutro"
+        return speech.MOOD_NEEDY
+    return speech.MOOD_NEUTRAL
 
 
 class MemoryStore:
-    """Armazenamento cognitivo em SQLite (curto prazo, longo prazo, resumo e humor do pet)."""
+    """SQLite cognitive storage (short term, long term, summary and pet mood)."""
 
     def __init__(
         self,
@@ -371,7 +360,7 @@ class MemoryStore:
         self._initialize_db()
 
     def _initialize_db(self) -> None:
-        """Habilita WAL/integridade, cria tabelas e migra colunas novas de forma idempotente."""
+        """Enable WAL/integrity, create tables and migrate new columns idempotently."""
         now_iso = _now_iso()
         with self._lock:
             if not self._is_in_memory:
@@ -408,7 +397,7 @@ class MemoryStore:
                     """
                 )
 
-                # Migração idempotente para bancos criados na Fase 1.
+                # Idempotent migration for databases created in Phase 1.
                 existing_cols = {
                     str(row["name"])
                     for row in self._conn.execute("PRAGMA table_info(user_facts)").fetchall()
@@ -438,7 +427,7 @@ class MemoryStore:
                     """
                 )
 
-                # Estado de resumo contínuo (camada intermediária para mensagens antigas).
+                # Rolling summary state (intermediate layer for old messages).
                 self._conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS rolling_state (
@@ -456,7 +445,7 @@ class MemoryStore:
                     (now_iso,),
                 )
 
-                # Estado emocional persistente do pet.
+                # Persistent emotional state of the pet.
                 self._conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS companion_state (
@@ -479,7 +468,7 @@ class MemoryStore:
                     (now_iso,),
                 )
 
-                # Metadados leves da aplicação (ex.: data do último First Wake).
+                # Lightweight application metadata (e.g. date of the last First Wake).
                 self._conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS app_meta (
@@ -490,7 +479,7 @@ class MemoryStore:
                     """
                 )
 
-                # Índice FTS5 para busca textual rápida com fallback seguro caso indisponível.
+                # FTS5 index for fast text search, with a safe fallback when unavailable.
                 try:
                     self._conn.execute(
                         """
@@ -507,7 +496,7 @@ class MemoryStore:
                     self._fts_enabled = False
 
     def _rebuild_fts_locked(self) -> None:
-        """Sincroniza o índice FTS5 com todos os fatos ativos em `user_facts`."""
+        """Sync the FTS5 index with every active fact in `user_facts`."""
         if not self._fts_enabled:
             return
         self._conn.execute("DELETE FROM user_facts_fts")
@@ -525,7 +514,7 @@ class MemoryStore:
             )
 
     def _sync_fts_row_locked(self, fact_id: int, fact: str, category: str) -> None:
-        """Atualiza um registro específico no índice FTS5."""
+        """Update a single record in the FTS5 index."""
         if not self._fts_enabled:
             return
         self._conn.execute("DELETE FROM user_facts_fts WHERE rowid = ?", (fact_id,))
@@ -535,14 +524,14 @@ class MemoryStore:
         )
 
     def _delete_fts_row_locked(self, fact_id: int) -> None:
-        """Remove um registro do índice FTS5."""
+        """Remove a record from the FTS5 index."""
         if not self._fts_enabled:
             return
         self._conn.execute("DELETE FROM user_facts_fts WHERE rowid = ?", (fact_id,))
 
     @staticmethod
     def _row_to_fact(row: sqlite3.Row) -> dict[str, Any]:
-        """Converte uma linha SQLite de `user_facts` para dicionário serializável."""
+        """Convert a `user_facts` SQLite row into a serializable dict."""
         superseded_raw = row["superseded_by"]
         return {
             "id": int(row["id"]),
@@ -557,12 +546,12 @@ class MemoryStore:
         }
 
     def close(self) -> None:
-        """Fecha a conexão SQLite de forma segura."""
+        """Close the SQLite connection safely."""
         with self._lock:
             self._conn.close()
 
     # ------------------------------------------------------------------
-    # Camada 1: Curto Prazo (Janela Deslizante de Mensagens)
+    # Layer 1: Short term (sliding window of messages)
     # ------------------------------------------------------------------
 
     def add_message(
@@ -571,7 +560,7 @@ class MemoryStore:
         content: str,
         emotion: str | None = None,
     ) -> int:
-        """Registra uma mensagem na memória de curto prazo e retorna seu ID."""
+        """Record a message in short-term memory and return its ID."""
         cleaned_role = role.strip() or "user"
         created_at = _now_iso()
         with self._lock, self._conn:
@@ -585,7 +574,7 @@ class MemoryStore:
             return int(cursor.lastrowid)
 
     def get_recent_messages(self, limit: int | None = None) -> list[dict[str, str]]:
-        """Retorna as últimas mensagens em ordem cronológica sem inflar o contexto."""
+        """Return the latest messages in chronological order without inflating the context."""
         effective_limit = self.max_short_term_messages if limit is None else int(limit)
         if effective_limit <= 0:
             return []
@@ -604,17 +593,17 @@ class MemoryStore:
         return [{"role": str(row["role"]), "content": str(row["content"])} for row in reversed(rows)]
 
     def get_recent_messages_count(self) -> int:
-        """Retorna a quantidade de mensagens armazenadas atualmente na camada 1."""
+        """Return how many messages are currently stored in layer 1."""
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) AS total FROM messages").fetchone()
         return int(row["total"]) if row is not None else 0
 
     # ------------------------------------------------------------------
-    # Camada Intermediária: Resumo Contínuo (Rolling Summary)
+    # Intermediate layer: Rolling Summary
     # ------------------------------------------------------------------
 
     def get_rolling_summary(self) -> str:
-        """Retorna o resumo contínuo atual das mensagens antigas."""
+        """Return the current rolling summary of old messages."""
         with self._lock:
             row = self._conn.execute(
                 "SELECT summary FROM rolling_state WHERE id = 1"
@@ -622,7 +611,7 @@ class MemoryStore:
         return str(row["summary"]).strip() if row is not None else ""
 
     def update_rolling_summary(self, summary: str) -> str:
-        """Atualiza e persiste o resumo contínuo da conversa."""
+        """Update and persist the conversation rolling summary."""
         cleaned = _clean_whitespace(summary)
         now_iso = _now_iso()
         with self._lock, self._conn:
@@ -639,7 +628,7 @@ class MemoryStore:
         return cleaned
 
     # ------------------------------------------------------------------
-    # Camada 2: Longo Prazo (Perfil, Core Memory e Fatos Aprendidos)
+    # Layer 2: Long term (profile, Core Memory and learned facts)
     # ------------------------------------------------------------------
 
     def add_fact(
@@ -649,10 +638,10 @@ class MemoryStore:
         pinned: bool | None = None,
         importance: int | None = None,
     ) -> dict[str, Any]:
-        """Adiciona ou atualiza um fato deduplicado protegendo fatos `pinned=True` da eviction."""
+        """Add or update a deduplicated fact, protecting `pinned=True` facts from eviction."""
         cleaned_fact = _clean_whitespace(fact)
         if not cleaned_fact:
-            raise ValueError("O fato não pode ser vazio.")
+            raise ValueError("The fact cannot be empty.")
 
         cleaned_category = _clean_whitespace(category).lower() or "general"
         normalized_key = _normalize_fact_key(cleaned_fact, cleaned_category)
@@ -786,7 +775,7 @@ class MemoryStore:
             saved_id = int(saved["id"])
             self._sync_fts_row_locked(saved_id, str(saved["fact"]), str(saved["category"]))
 
-            # Remove fatos não-fixados mais antigos se o total ativo exceder `max_user_facts`.
+            # Remove the oldest unpinned facts when the active total exceeds `max_user_facts`.
             active_count_row = self._conn.execute(
                 "SELECT COUNT(*) AS total FROM user_facts WHERE superseded_by IS NULL"
             ).fetchone()
@@ -815,7 +804,7 @@ class MemoryStore:
         return self._row_to_fact(saved)
 
     def get_facts(self, include_superseded: bool = False) -> list[dict[str, Any]]:
-        """Lista os fatos aprendidos priorizando fixados e depois os mais recentes."""
+        """List learned facts, pinned first and then the most recent."""
         where_clause = "" if include_superseded else "WHERE superseded_by IS NULL"
         with self._lock:
             rows = self._conn.execute(
@@ -831,7 +820,7 @@ class MemoryStore:
         return [self._row_to_fact(row) for row in rows]
 
     def set_fact_pinned(self, fact_id: int, pinned: bool) -> dict[str, Any] | None:
-        """Fixa ou desfixa um fato na Core Memory (fatos fixados não sofrem eviction)."""
+        """Pin or unpin a fact in Core Memory (pinned facts are never evicted)."""
         now_iso = _now_iso()
         with self._lock, self._conn:
             cursor = self._conn.execute(
@@ -856,7 +845,7 @@ class MemoryStore:
         return self._row_to_fact(row) if row is not None else None
 
     def update_fact_importance(self, fact_id: int, importance: int) -> dict[str, Any] | None:
-        """Atualiza a importância (`1..10`) de um fato específico."""
+        """Update the importance (`1..10`) of a specific fact."""
         clamped = max(1, min(10, int(importance)))
         with self._lock, self._conn:
             cursor = self._conn.execute(
@@ -881,7 +870,7 @@ class MemoryStore:
         return self._row_to_fact(row) if row is not None else None
 
     def delete_fact(self, fact_id: int) -> bool:
-        """Remove um fato pelo ID e informa se algum registro foi excluído."""
+        """Delete a fact by ID and report whether any record was removed."""
         target_id = int(fact_id)
         with self._lock, self._conn:
             cursor = self._conn.execute(
@@ -892,7 +881,7 @@ class MemoryStore:
             return cursor.rowcount > 0
 
     def consolidate_facts(self) -> int:
-        """Consolida fatos duplicados ou contraditórios marcando `superseded_by`."""
+        """Consolidate duplicate or contradictory facts by setting `superseded_by`."""
         with self._lock, self._conn:
             rows = self._conn.execute(
                 """
@@ -916,7 +905,7 @@ class MemoryStore:
                 if len(group_rows) < 2:
                     continue
 
-                # Mantém o fato mais recente como vencedor e preserva status de pin/importância.
+                # Keep the most recent fact as the winner and preserve pin/importance status.
                 winner = group_rows[0]
                 winner_id = int(winner["id"])
                 max_pinned = max(int(r["pinned"]) for r in group_rows)
@@ -948,10 +937,10 @@ class MemoryStore:
         user_text: str,
         assistant_raw_text: str,
     ) -> list[dict[str, Any]]:
-        """Extrai fatos de tags `[fact: ...]` do LLM e heurísticas explícitas do usuário."""
+        """Extract facts from the LLM `[fact: ...]` tags and explicit user heuristics."""
         stored_by_id: dict[int, dict[str, Any]] = {}
 
-        # 1) Fatos heurísticos explícitos presentes na mensagem do usuário (PT-BR / EN).
+        # 1) Explicit heuristic facts present in the user message (pt-BR / EN).
         for clause in _split_clauses(user_text):
             for pattern, category, template in _HEURISTIC_RULES:
                 match = pattern.search(clause)
@@ -977,7 +966,7 @@ class MemoryStore:
                 saved = self.add_fact(candidate, category=category)
                 stored_by_id[saved["id"]] = saved
 
-        # 2) Blocos [fact: <texto>] emitidos pelo LLM (têm precedência se atualizarem o mesmo slot).
+        # 2) [fact: <text>] blocks emitted by the LLM (they take precedence if they update the same slot).
         for raw_tag_fact in _LLM_FACT_TAG_RE.findall(assistant_raw_text or ""):
             cleaned = _clean_whitespace(raw_tag_fact)
             if not cleaned:
@@ -989,7 +978,7 @@ class MemoryStore:
         return list(stored_by_id.values())
 
     def _search_fts_scores_locked(self, query: str) -> dict[int, float]:
-        """Busca IDs relevantes via FTS5 e retorna pontuação positiva por `fact_id`."""
+        """Find relevant IDs via FTS5 and return a positive score per `fact_id`."""
         if not self._fts_enabled:
             return {}
         tokens = _tokenize_plain(query)
@@ -1017,7 +1006,7 @@ class MemoryStore:
         return scores
 
     def build_memory_context(self, max_chars: int = 1200, query: str = "") -> str:
-        """Monta contexto enxuto priorizando `pinned`, relevância (`query`), importância e recência."""
+        """Build a lean context prioritizing `pinned`, relevance (`query`), importance and recency."""
         if max_chars <= 0:
             return ""
 
@@ -1103,7 +1092,7 @@ class MemoryStore:
                 )
 
         if rolling_summary:
-            summary_line = f"Resumo recente: {rolling_summary}"
+            summary_line = f"{speech.RECENT_SUMMARY_PREFIX}{rolling_summary}"
             if not lines:
                 if len(summary_line) <= max_chars:
                     return summary_line
@@ -1122,21 +1111,13 @@ class MemoryStore:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # Âncora Temporal & Máquina de Estado Emocional do Pet
+    # Temporal anchor & the pet's emotional state machine
     # ------------------------------------------------------------------
 
     def get_temporal_context(self) -> str:
-        """Retorna período do dia em PT-BR e tempo decorrido desde a última interação."""
+        """Return the part of the day (pt-BR) and the time elapsed since the last interaction."""
         local_now = datetime.now()
-        hour = local_now.hour
-        if 5 <= hour < 12:
-            period = "manhã"
-        elif 12 <= hour < 18:
-            period = "tarde"
-        elif 18 <= hour < 24:
-            period = "noite"
-        else:
-            period = "madrugada"
+        period = speech.day_period(local_now.hour)
 
         with self._lock:
             row = self._conn.execute(
@@ -1145,14 +1126,11 @@ class MemoryStore:
 
         last_dt = _parse_iso_utc(str(row["last_interaction_at"])) if row is not None else _now_utc()
         elapsed_secs = max(0.0, (_now_utc() - last_dt).total_seconds())
-        elapsed_str = _format_elapsed_ptbr(elapsed_secs)
-        return (
-            f"Período do dia: {period} ({local_now.strftime('%H:%M')}). "
-            f"Última interação: {elapsed_str}."
-        )
+        elapsed_str = speech.format_elapsed(elapsed_secs)
+        return speech.temporal_context_line(period, local_now.strftime("%H:%M"), elapsed_str)
 
     def _apply_companion_decay(self, row: sqlite3.Row, now_dt: datetime) -> dict[str, Any]:
-        """Calcula estado emocional atualizado aplicando decaimento suave pelo tempo ocioso."""
+        """Compute the updated emotional state, applying smooth decay for idle time."""
         last_iso = str(row["last_interaction_at"])
         last_dt = _parse_iso_utc(last_iso)
         dt_hours = max(0.0, (now_dt - last_dt).total_seconds() / 3600.0)
@@ -1162,7 +1140,7 @@ class MemoryStore:
         energy_raw = float(row["energy"])
         affinity_raw = float(row["affinity"])
 
-        # Decaimento suave em direção à linha de base emocional.
+        # Smooth decay toward the emotional baseline.
         baseline_pleasure = 0.15
         pleasure = baseline_pleasure + (pleasure_raw - baseline_pleasure) * math.exp(-dt_hours / 12.0)
         arousal = arousal_raw * math.exp(-dt_hours / 2.0)
@@ -1184,7 +1162,7 @@ class MemoryStore:
         }
 
     def get_companion_state(self) -> dict[str, Any]:
-        """Retorna o estado emocional atual do pet com decaimento temporal aplicado."""
+        """Return the pet's current emotional state with time decay applied."""
         now_dt = _now_utc()
         with self._lock:
             row = self._conn.execute(
@@ -1198,7 +1176,7 @@ class MemoryStore:
         return self._apply_companion_decay(row, now_dt)
 
     def record_interaction(self, sentiment_delta: float = 0.08) -> dict[str, Any]:
-        """Registra uma conversa e atualiza humor, energia e afinidade do pet."""
+        """Record a conversation and update the pet's mood, energy and affinity."""
         now_dt = _now_utc()
         now_iso = now_dt.isoformat()
         with self._lock, self._conn:
@@ -1241,7 +1219,7 @@ class MemoryStore:
         }
 
     def record_pet(self, intensity: float = 1.0) -> dict[str, Any]:
-        """Registra um carinho no rosto do pet aumentando afinidade, energia e prazer."""
+        """Record a pat on the pet's face, raising affinity, energy and pleasure."""
         clamped_intensity = _clamp(float(intensity), 0.1, 3.0)
         now_dt = _now_utc()
         now_iso = now_dt.isoformat()
@@ -1281,15 +1259,12 @@ class MemoryStore:
         }
 
     def get_companion_prompt_line(self) -> str:
-        """Retorna uma linha compacta de tom emocional para o prompt (sem alterar precisão factual)."""
+        """Return a compact emotional-tone line for the prompt (without altering factual accuracy)."""
         state = self.get_companion_state()
-        return (
-            f"Estado do pet: humor {state['mood']} "
-            f"(energia {state['energy']:.0f}/100, afinidade {state['affinity']:.0f}/100)."
-        )
+        return speech.companion_prompt_line(state["mood"], state["energy"], state["affinity"])
 
     def clear_short_term(self) -> None:
-        """Apaga apenas o histórico recente e resumo contínuo, preservando fatos aprendidos."""
+        """Delete only the recent history and rolling summary, keeping learned facts."""
         now_iso = _now_iso()
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM messages")
@@ -1299,7 +1274,7 @@ class MemoryStore:
             )
 
     def clear_all(self) -> None:
-        """Apaga o histórico de curto prazo, resumo contínuo e todos os fatos de longo prazo."""
+        """Delete the short-term history, rolling summary and all long-term facts."""
         now_iso = _now_iso()
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM messages")
@@ -1312,7 +1287,7 @@ class MemoryStore:
             )
 
     def get_meta(self, key: str) -> str | None:
-        """Lê um valor persistido na tabela `app_meta`."""
+        """Read a value persisted in the `app_meta` table."""
         with self._lock:
             row = self._conn.execute(
                 "SELECT value FROM app_meta WHERE key = ?",
@@ -1321,7 +1296,7 @@ class MemoryStore:
         return str(row["value"]) if row is not None else None
 
     def set_meta(self, key: str, value: str) -> None:
-        """Grava ou atualiza um valor na tabela `app_meta`."""
+        """Write or update a value in the `app_meta` table."""
         now_iso = _now_iso()
         with self._lock, self._conn:
             self._conn.execute(

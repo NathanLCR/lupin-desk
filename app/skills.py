@@ -1,4 +1,4 @@
-"""Catálogo de habilidades (Skills) do agente e truques interativos do pet."""
+"""Catalog of the agent's skills and the pet's interactive tricks."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from app import speech_pt_br as speech
 from app.memory import MemoryStore
 
 _META_KEY_ENABLED_SKILLS = "pet_skills_enabled"
@@ -13,7 +14,7 @@ _META_KEY_ENABLED_SKILLS = "pet_skills_enabled"
 
 @dataclass(frozen=True, slots=True)
 class SkillPack:
-    """Pacote modular de instruções e capacidades injetáveis no system prompt."""
+    """Modular pack of instructions and capabilities injectable into the system prompt."""
 
     id: str
     icon: str
@@ -26,7 +27,7 @@ class SkillPack:
 
 @dataclass(frozen=True, slots=True)
 class PetTrick:
-    """Truque físico/audiovisual do pet acionável por UI ou tag `[action:pet:<id>]`."""
+    """Physical/audiovisual pet trick triggered from the UI or by an `[action:pet:<id>]` tag."""
 
     id: str
     icon: str
@@ -41,63 +42,47 @@ SKILL_PACKS: tuple[SkillPack, ...] = (
     SkillPack(
         id="focus_coach",
         icon="🎯",
-        name="Coach de Foco",
-        description="Ajuda a iniciar sessões Pomodoro, manter blocos de foco e sugerir pausas curtas.",
-        voice_hint='"bora focar 25 min" / "inicia um pomodoro"',
+        name="Focus Coach",
+        description="Helps start Pomodoro sessions, keep focus blocks and suggest short breaks.",
+        voice_hint=speech.SKILL_VOICE_HINTS["focus_coach"],
         default_enabled=True,
-        prompt_instruction=(
-            "Skill Coach de Foco ativa: incentive blocos de trabalho focado e, quando o usuário "
-            "pedir para focar ou iniciar Pomodoro, emita [action:pomodoro:start] (ou [action:pomodoro:stop])."
-        ),
+        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["focus_coach"],
     ),
     SkillPack(
         id="daily_briefing",
         icon="☀️",
-        name="Briefing Diário",
-        description="Combina hora do dia, clima e prioridades do Cowork Today em resumos objetivos.",
-        voice_hint='"como está meu dia?" / "resumo de hoje"',
+        name="Daily Briefing",
+        description="Combines time of day, weather and Cowork Today priorities into concise summaries.",
+        voice_hint=speech.SKILL_VOICE_HINTS["daily_briefing"],
         default_enabled=True,
-        prompt_instruction=(
-            "Skill Briefing Diário ativa: ao ser perguntado sobre o dia, agenda ou prioridades, "
-            "consulte o contexto do Cowork/clima e, se útil, emita [action:today:brief]."
-        ),
+        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["daily_briefing"],
     ),
     SkillPack(
         id="coding_buddy",
         icon="💻",
-        name="Parceiro de Código",
-        description="Auxilia em debugging, arquitetura e inspeção rápida da tela ou clipboard.",
-        voice_hint='"olha minha tela" / "resume o que copiei"',
+        name="Coding Buddy",
+        description="Helps with debugging, architecture and quick inspection of the screen or clipboard.",
+        voice_hint=speech.SKILL_VOICE_HINTS["coding_buddy"],
         default_enabled=True,
-        prompt_instruction=(
-            "Skill Parceiro de Código ativa: dê respostas técnicas diretas e concisas; use "
-            "[action:vision:screen] ou [action:vision:clipboard] quando o usuário pedir para olhar tela/clipboard."
-        ),
+        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["coding_buddy"],
     ),
     SkillPack(
         id="wellness_breaks",
         icon="🧘",
-        name="Bem-Estar & Pausas",
-        description="Lembretes gentis de hidratação, postura, regra 20-20-20 e respiração guiada.",
-        voice_hint='"vamos respirar" / "preciso alongar"',
+        name="Wellness & Breaks",
+        description="Gentle reminders for hydration, posture, the 20-20-20 rule and guided breathing.",
+        voice_hint=speech.SKILL_VOICE_HINTS["wellness_breaks"],
         default_enabled=False,
-        prompt_instruction=(
-            "Skill Bem-Estar & Pausas ativa: sugira pausas breves de água, postura e respiração "
-            "quando notar cansaço, podendo acionar [action:pet:meditate] ou [action:pet:stretch]."
-        ),
+        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["wellness_breaks"],
     ),
     SkillPack(
         id="playful_companion",
         icon="✨",
-        name="Pet Brincalhão",
-        description="Habilita truques expressivos como dançar, cantar, celebrar, espreguiçar e cochilar.",
-        voice_hint='"faz uma dancinha" / "canta pra mim"',
+        name="Playful Pet",
+        description="Enables expressive tricks such as dancing, singing, celebrating, stretching and napping.",
+        voice_hint=speech.SKILL_VOICE_HINTS["playful_companion"],
         default_enabled=True,
-        prompt_instruction=(
-            "Skill Pet Brincalhão ativa: reaja com carisma e use [action:pet:dance], "
-            "[action:pet:sing], [action:pet:celebrate], [action:pet:meditate], [action:pet:stretch] "
-            "ou [action:pet:nap] quando combinar com o pedido do usuário."
-        ),
+        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["playful_companion"],
     ),
 )
 
@@ -105,54 +90,54 @@ PET_TRICKS: tuple[PetTrick, ...] = (
     PetTrick(
         id="dance",
         icon="💃",
-        name="Dançar",
-        description="Sequência rítmica de saltinhos, brilho nos olhos e confetes.",
-        voice_hint='"faz uma dancinha"',
+        name="Dance",
+        description="Rhythmic sequence of little hops, sparkling eyes and confetti.",
+        voice_hint=speech.TRICK_VOICE_HINTS["dance"],
         emotion="excited",
         duration_ms=2800,
     ),
     PetTrick(
         id="sing",
         icon="🎵",
-        name="Cantar",
-        description="Melodia procedural em Web Audio com notas musicais flutuantes.",
-        voice_hint='"canta uma música"',
+        name="Sing",
+        description="Procedural Web Audio melody with floating musical notes.",
+        voice_hint=speech.TRICK_VOICE_HINTS["sing"],
         emotion="happy",
         duration_ms=3000,
     ),
     PetTrick(
         id="meditate",
         icon="🧘",
-        name="Meditar",
-        description="Respiração calma e ritmo zen para acompanhar pausas.",
-        voice_hint='"medita comigo"',
+        name="Meditate",
+        description="Calm breathing and a zen rhythm to go with breaks.",
+        voice_hint=speech.TRICK_VOICE_HINTS["meditate"],
         emotion="love",
         duration_ms=3400,
     ),
     PetTrick(
         id="nap",
         icon="😴",
-        name="Cochilar",
-        description="Soneca aconchegante com partículas Zzz e respiração lenta.",
-        voice_hint='"tira um cochilo"',
+        name="Nap",
+        description="Cozy nap with Zzz particles and slow breathing.",
+        voice_hint=speech.TRICK_VOICE_HINTS["nap"],
         emotion="sleepy",
         duration_ms=3400,
     ),
     PetTrick(
         id="celebrate",
         icon="🎉",
-        name="Celebrar",
-        description="Comemoração animada com fanfarra sonora e chuva de partículas.",
-        voice_hint='"comemora!"',
+        name="Celebrate",
+        description="Lively celebration with a sound fanfare and a shower of particles.",
+        voice_hint=speech.TRICK_VOICE_HINTS["celebrate"],
         emotion="excited",
         duration_ms=2600,
     ),
     PetTrick(
         id="stretch",
         icon="🤸",
-        name="Espreguiçar",
-        description="Alongamento elástico (squash-and-stretch) para recarregar energia.",
-        voice_hint='"se espreguiça"',
+        name="Stretch",
+        description="Elastic squash-and-stretch to recharge energy.",
+        voice_hint=speech.TRICK_VOICE_HINTS["stretch"],
         emotion="happy",
         duration_ms=2400,
     ),
@@ -163,12 +148,12 @@ _TRICKS_BY_ID: dict[str, PetTrick] = {trick.id: trick for trick in PET_TRICKS}
 
 
 def default_enabled_skill_ids() -> list[str]:
-    """Retorna os IDs das skills habilitadas por padrão."""
+    """Return the IDs of the skills enabled by default."""
     return [pack.id for pack in SKILL_PACKS if pack.default_enabled]
 
 
 def load_enabled_skills(memory: MemoryStore) -> list[str]:
-    """Carrega do SQLite (`app_meta`) a lista de skills ativas, com fallback seguro."""
+    """Load the list of active skills from SQLite (`app_meta`), with a safe fallback."""
     raw = memory.get_meta(_META_KEY_ENABLED_SKILLS)
     if not raw:
         return default_enabled_skill_ids()
@@ -183,10 +168,10 @@ def load_enabled_skills(memory: MemoryStore) -> list[str]:
 
 
 def set_skill_enabled(memory: MemoryStore, skill_id: str, enabled: bool) -> list[str]:
-    """Ativa ou desativa uma skill por ID e persiste no SQLite (`app_meta`)."""
+    """Enable or disable a skill by ID and persist it in SQLite (`app_meta`)."""
     cleaned = skill_id.strip().lower()
     if cleaned not in _PACKS_BY_ID:
-        raise ValueError(f"Skill desconhecida: '{skill_id}'.")
+        raise ValueError(f"Unknown skill: '{skill_id}'.")
 
     current = load_enabled_skills(memory)
     current_set = set(current)
@@ -201,12 +186,12 @@ def set_skill_enabled(memory: MemoryStore, skill_id: str, enabled: bool) -> list
 
 
 def get_trick(trick_id: str) -> PetTrick | None:
-    """Retorna o `PetTrick` correspondente ao identificador, se existir."""
+    """Return the `PetTrick` for the identifier, if it exists."""
     return _TRICKS_BY_ID.get(trick_id.strip().lower())
 
 
 def list_skills_payload(enabled_ids: list[str]) -> dict[str, Any]:
-    """Serializa pacotes de skills e truques do pet para a API REST."""
+    """Serialize the skill packs and pet tricks for the REST API."""
     enabled_set = set(enabled_ids)
     return {
         "enabled_ids": [pack.id for pack in SKILL_PACKS if pack.id in enabled_set],
@@ -237,7 +222,7 @@ def list_skills_payload(enabled_ids: list[str]) -> dict[str, Any]:
 
 
 def build_skills_prompt(enabled_ids: list[str]) -> str:
-    """Gera o bloco de contexto de skills ativas para o system prompt do LLM."""
+    """Build the active-skills context block for the LLM system prompt."""
     enabled_set = set(enabled_ids)
     lines = [
         _PACKS_BY_ID[pack.id].prompt_instruction
@@ -247,5 +232,5 @@ def build_skills_prompt(enabled_ids: list[str]) -> str:
     if not lines:
         return ""
     tricks_list = ", ".join(trick.id for trick in PET_TRICKS)
-    lines.append(f"Truques físicos disponíveis via [action:pet:<nome>]: {tricks_list}.")
+    lines.append(speech.PET_TRICKS_PROMPT_LINE.format(tricks_list=tricks_list))
     return "\n".join(f"- {line}" for line in lines)

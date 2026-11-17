@@ -1,4 +1,4 @@
-"""Testes para o sistema de Skills do Pet (pacotes modulares, truques interativos e WebSocket)."""
+"""Tests for the Pet Skills system (modular packs, interactive tricks and WebSocket)."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def test_skills_api_and_persistence_across_restarts(tmp_path: Path) -> None:
         assert toggle_off.status_code == 200
         assert "focus_coach" not in toggle_off.json()["enabled_ids"]
 
-        unknown_skill = client.put("/api/skills/inexistente", json={"enabled": True})
+        unknown_skill = client.put("/api/skills/nonexistent", json={"enabled": True})
         assert unknown_skill.status_code == 404
 
         trick_ok = client.post("/api/skills/tricks/dance")
@@ -50,7 +50,7 @@ def test_skills_api_and_persistence_across_restarts(tmp_path: Path) -> None:
         trick_404 = client.post("/api/skills/tricks/backflip")
         assert trick_404.status_code == 404
 
-    # Nova instância com o mesmo SQLite preserva as escolhas
+    # A new instance on the same SQLite preserves the choices
     app2 = create_app(settings=_build_settings(tmp_path))
     with TestClient(app2) as client2:
         data2 = client2.get("/api/skills").json()

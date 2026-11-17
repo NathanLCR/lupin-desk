@@ -1,4 +1,4 @@
-"""Testes automatizados para CoworkStore (somente leitura), TodayEngine e FirstWake."""
+"""Automated tests for CoworkStore (read-only), TodayEngine and FirstWake."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def _seed_cowork(tmp_path: Path) -> Path:
     return ws
 
 
-def test_cowork_store_confinement_e_leitura(tmp_path: Path) -> None:
+def test_cowork_store_confinement_and_reading(tmp_path: Path) -> None:
     ws = _seed_cowork(tmp_path)
     store = CoworkStore(ws)
 
@@ -127,7 +127,7 @@ def test_first_wake_route(tmp_path: Path) -> None:
     app = create_app(settings=settings, memory_store=mem)
     try:
         with TestClient(app) as tc:
-            # O First Wake agora é falado por Lupin no WebSocket (tests/test_first_wake.py).
+            # The First Wake is now spoken by Lupin over the WebSocket (tests/test_first_wake.py).
             assert tc.get("/api/first-wake").status_code == 404
             assert tc.get("/api/jarvis/first-wake").status_code == 404
     finally:

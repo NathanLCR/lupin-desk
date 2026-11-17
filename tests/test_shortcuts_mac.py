@@ -1,4 +1,4 @@
-"""Testes unitários para o banco de atalhos configuráveis (`ShortcutStore`) e controle seguro do macOS (`MacController`)."""
+"""Unit tests for the configurable shortcut store (`ShortcutStore`) and safe macOS control (`MacController`)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from app.shortcuts import ShortcutStore
 
 
 def test_default_seed_and_find_replace(tmp_path: Path) -> None:
-    """Garante seed automático com todos os atalhos essenciais (incluindo `find_replace`) e idempotência."""
+    """Ensure automatic seeding with all essential shortcuts (including `find_replace`) and idempotency."""
     db_file = tmp_path / "shortcuts.db"
     store = ShortcutStore(db_path=db_file)
     try:
@@ -62,7 +62,7 @@ def test_default_seed_and_find_replace(tmp_path: Path) -> None:
         assert find_replace["payload"] == {"keys": "cmd+opt+f"}
         assert "substituir" in find_replace["voice_triggers"]
 
-        # Filtro por categoria
+        # Category filter
         capture_items = store.list_shortcuts(category="capture")
         assert {item["slug"] for item in capture_items} == {
             "screenshot_clipboard",
@@ -72,7 +72,7 @@ def test_default_seed_and_find_replace(tmp_path: Path) -> None:
     finally:
         store.close()
 
-    # Reabrir o banco não deve duplicar o seed
+    # Reopening the database must not duplicate the seed
     reopened = ShortcutStore(db_path=db_file)
     try:
         assert len(reopened.list_shortcuts()) == len(items)
@@ -81,7 +81,7 @@ def test_default_seed_and_find_replace(tmp_path: Path) -> None:
 
 
 def test_crud_reorder_trigger_and_reset_defaults(tmp_path: Path) -> None:
-    """Valida criação, leitura por ID/slug, atualização, reordenação, trigger de voz, remoção e reset."""
+    """Validate creation, lookup by ID/slug, update, reorder, voice trigger, removal and reset."""
     store = ShortcutStore(db_path=tmp_path / "crud.db")
     try:
         created = store.create_shortcut(
@@ -101,7 +101,7 @@ def test_crud_reorder_trigger_and_reset_defaults(tmp_path: Path) -> None:
         assert created["requires_confirmation"] is True
         assert created["is_default"] is False
 
-        # Colisão de título gera slug único com sufixo numérico
+        # A title collision generates a unique slug with a numeric suffix
         duplicate_title = store.create_shortcut(
             {
                 "title": "Abrir Notas Rápidas",
@@ -111,12 +111,12 @@ def test_crud_reorder_trigger_and_reset_defaults(tmp_path: Path) -> None:
         )
         assert duplicate_title["slug"] == "abrir_notas_rapidas_2"
 
-        # Busca por ID inteiro e por slug
+        # Lookup by integer ID and by slug
         by_id = store.get_shortcut(created["id"])
         by_slug = store.get_shortcut("abrir_notas_rapidas")
         assert by_id == by_slug
 
-        # Validação estrita de action_type e slug explícito duplicado
+        # Strict validation of action_type and duplicate explicit slug
         with pytest.raises(ValueError):
             store.create_shortcut(
                 {
@@ -148,7 +148,7 @@ def test_crud_reorder_trigger_and_reset_defaults(tmp_path: Path) -> None:
         assert updated["title"] == "Abrir Apple Notes"
         assert updated["requires_confirmation"] is False
 
-        # Busca por gatilho de voz (priorizando match mais específico)
+        # Voice trigger lookup (preferring the most specific match)
         match_replace = store.find_by_trigger("Ei, abre o pesquisar e substituir aí")
         assert match_replace is not None
         assert match_replace["slug"] == "find_replace"
@@ -157,7 +157,7 @@ def test_crud_reorder_trigger_and_reset_defaults(tmp_path: Path) -> None:
         assert match_custom is not None
         assert match_custom["slug"] == "abrir_notas_rapidas"
 
-        # Reorder colocando item customizado no topo
+        # Reorder putting the custom item on top
         reordered = store.reorder_shortcuts(["abrir_notas_rapidas", "find_replace"])
         assert reordered[0]["slug"] == "abrir_notas_rapidas"
         assert reordered[1]["slug"] == "find_replace"
@@ -167,7 +167,7 @@ def test_crud_reorder_trigger_and_reset_defaults(tmp_path: Path) -> None:
         assert store.delete_shortcut("abrir_notas_rapidas") is False
         assert store.get_shortcut(created["id"]) is None
 
-        # Reset defaults restaura catálogo limpo
+        # Reset defaults restores a clean catalog
         restored = store.reset_defaults()
         restored_slugs = {item["slug"] for item in restored}
         assert "abrir_notas_rapidas_2" not in restored_slugs
@@ -177,7 +177,7 @@ def test_crud_reorder_trigger_and_reset_defaults(tmp_path: Path) -> None:
 
 
 def test_build_agent_shortcuts_prompt_respects_limit(tmp_path: Path) -> None:
-    """Garante que o prompt de atalhos inclui slugs, gatilhos, apps abertos e respeita `max_chars`."""
+    """Ensure the shortcuts prompt includes slugs, triggers and open apps, and respects `max_chars`."""
     store = ShortcutStore(db_path=tmp_path / "prompt.db")
     try:
         running_apps = [
@@ -200,7 +200,7 @@ def test_build_agent_shortcuts_prompt_respects_limit(tmp_path: Path) -> None:
 
 
 def test_mac_controller_prevents_command_injection() -> None:
-    """Rejeita payloads maliciosos em `activate_app`, `execute_keystroke` e `execute_mac_command` sem invocar subprocess."""
+    """Reject malicious payloads in `activate_app`, `execute_keystroke` and `execute_mac_command` without invoking a subprocess."""
     calls: list[list[str]] = []
 
     def fake_runner(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
@@ -242,12 +242,12 @@ def test_mac_controller_prevents_command_injection() -> None:
         res = mac.execute_mac_command(bad_cmd)
         assert res["ok"] is False
 
-    # Nenhuma tentativa inválida pode acionar subprocess
+    # No invalid attempt may trigger a subprocess
     assert calls == []
 
 
 def test_keystroke_whitelist_and_accessibility_diagnostics() -> None:
-    """Valida tradução segura de keystrokes para `osascript` e diagnóstico claro de Acessibilidade."""
+    """Validate safe translation of keystrokes to `osascript` and a clear Accessibility diagnostic."""
     recorded: list[list[str]] = []
 
     def ok_runner(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
@@ -277,7 +277,7 @@ def test_keystroke_whitelist_and_accessibility_diagnostics() -> None:
         "using {command down, control down, shift down}"
     )
 
-    # Erro 1002 de Acessibilidade no macOS
+    # macOS Accessibility error 1002
     def denied_runner(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(
             args=argv,
@@ -290,11 +290,11 @@ def test_keystroke_whitelist_and_accessibility_diagnostics() -> None:
     denied = mac_denied.execute_keystroke("cmd+opt+f")
     assert denied["ok"] is False
     assert denied["needs_accessibility"] is True
-    assert "Ajustes do Sistema → Privacidade e Segurança → Acessibilidade" in denied["error"]
+    assert "System Settings → Privacy & Security → Accessibility" in denied["error"]
 
 
 def test_activate_app_and_mac_commands_use_safe_argv() -> None:
-    """Verifica que `activate_app`, `execute_mac_command` e `run_shortcut` montam listas `argv` válidas."""
+    """Check that `activate_app`, `execute_mac_command` and `run_shortcut` build valid `argv` lists."""
     recorded: list[list[str]] = []
 
     def fake_runner(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
@@ -320,7 +320,7 @@ def test_activate_app_and_mac_commands_use_safe_argv() -> None:
     assert res_vol["ok"] is True
     assert res_vol["volume"] == 74
 
-    # Pomodoro não precisa de subprocesso
+    # Pomodoro does not need a subprocess
     prev_len = len(recorded)
     res_pomo = mac.run_shortcut(
         {
@@ -334,7 +334,7 @@ def test_activate_app_and_mac_commands_use_safe_argv() -> None:
     assert res_pomo["pomodoro"]["active"] is True
     assert len(recorded) == prev_len
 
-    # agent_prompt devolve o prompt sem subprocesso
+    # agent_prompt returns the prompt without a subprocess
     res_prompt = mac.run_shortcut(
         {
             "slug": "resumo",
@@ -348,7 +348,7 @@ def test_activate_app_and_mac_commands_use_safe_argv() -> None:
 
 
 def test_list_running_apps_and_mac_status_cache() -> None:
-    """Valida parsing de apps abertos, app frontal, telemetria de status e cache de 3s."""
+    """Validate parsing of open apps, frontmost app, status telemetry and the 3s cache."""
     calls: list[list[str]] = []
 
     def fake_runner(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
@@ -392,7 +392,7 @@ def test_list_running_apps_and_mac_status_cache() -> None:
     status1 = mac.get_mac_status()
     status2 = mac.get_mac_status()
     assert status1 == status2
-    # Segunda chamada deve vir do cache (apenas 2 subprocessos no total: osascript + pmset)
+    # The second call must come from the cache (only 2 subprocesses in total: osascript + pmset)
     assert len(calls) == 2
     assert status1["active_app"] == "Visual Studio Code"
     assert status1["volume"] == 65
@@ -408,7 +408,7 @@ def test_list_running_apps_and_mac_status_cache() -> None:
 
 
 def test_weather_cache_and_offline_fallback() -> None:
-    """Valida consulta Open-Meteo com cache de 15 min e fallback gracioso quando offline."""
+    """Validate the Open-Meteo query with a 15-minute cache and a graceful fallback when offline."""
     fetch_count = 0
 
     def fake_weather(lat: float, lon: float, city: str) -> dict[str, Any]:
@@ -432,11 +432,11 @@ def test_weather_cache_and_offline_fallback() -> None:
     assert w1["ok"] is True
     assert w1["offline"] is False
     assert w1["temperature_c"] == 24.5
-    assert w1["condition"] == "Chuva"
+    assert w1["condition"] == "Rain"
     assert w1["effect"] == "rain"
 
     def offline_weather(lat: float, lon: float, city: str) -> dict[str, Any]:
-        raise RuntimeError("sem internet")
+        raise RuntimeError("no internet")
 
     mac_offline = MacController(weather_fetcher=offline_weather)
     fallback = mac_offline.get_weather(-23.5505, -46.6333, "São Paulo")
@@ -447,7 +447,7 @@ def test_weather_cache_and_offline_fallback() -> None:
 
 
 def test_mac_status_and_media_omit_uninstalled_players(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Omite blocos AppleScript de Spotify/Music quando não instalados para evitar erro de compilação."""
+    """Omit the Spotify/Music AppleScript blocks when not installed to avoid compile errors."""
     recorded: list[list[str]] = []
 
     def fake_subprocess_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -463,7 +463,7 @@ def test_mac_status_and_media_omit_uninstalled_players(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
 
-    # Caso 1: Spotify ausente e Music presente
+    # Case 1: Spotify missing and Music present
     def exists_only_music(self: Path) -> bool:
         return str(self) == "/System/Applications/Music.app"
 
@@ -483,7 +483,7 @@ def test_mac_status_and_media_omit_uninstalled_players(monkeypatch: pytest.Monke
     assert 'application "Spotify"' not in media_script
     assert 'application "Music"' in media_script
 
-    # Caso 2: Nenhum dos players instalado
+    # Case 2: neither player installed
     recorded.clear()
     monkeypatch.setattr(Path, "exists", lambda self: False)
     mac_none = MacController()

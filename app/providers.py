@@ -1,4 +1,4 @@
-"""Catálogo de provedores LLM compatíveis com OpenAI, persistência em SQLite e descoberta de modelos."""
+"""Catalog of OpenAI-compatible LLM providers, SQLite persistence and model discovery."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ _MODELS_FETCH_TIMEOUT_S = 8.0
 
 @dataclass(frozen=True, slots=True)
 class ProviderPreset:
-    """Definição de um provedor LLM compatível com OpenAI."""
+    """Definition of an OpenAI-compatible LLM provider."""
 
     id: str
     name: str
@@ -95,21 +95,21 @@ _PRESETS_BY_ID: dict[str, ProviderPreset] = {preset.id: preset for preset in PRO
 
 
 def get_preset(provider_id: str) -> ProviderPreset | None:
-    """Retorna o preset correspondente ao `provider_id`, se existir."""
+    """Return the preset matching `provider_id`, if any."""
     return _PRESETS_BY_ID.get(provider_id.strip().lower())
 
 
 def validate_base_url(url: str) -> str:
-    """Valida que a URL base usa HTTP/HTTPS com host válido e remove barra final."""
+    """Validate that the base URL uses HTTP/HTTPS with a valid host and strip the trailing slash."""
     cleaned = url.strip().rstrip("/")
     parsed = urlparse(cleaned)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("URL base inválida: informe uma URL http:// ou https:// com host válido.")
+        raise ValueError("Invalid base URL: provide an http:// or https:// URL with a valid host.")
     return cleaned
 
 
 def infer_provider_id(base_url: str) -> str:
-    """Infere o `provider_id` mais adequado a partir de uma URL base."""
+    """Infer the best-matching `provider_id` from a base URL."""
     normalized = base_url.strip().rstrip("/").lower()
     for preset in PROVIDER_PRESETS:
         if preset.default_base_url and preset.default_base_url.lower() == normalized:
@@ -118,7 +118,7 @@ def infer_provider_id(base_url: str) -> str:
 
 
 def resolve_provider_api_key(provider_id: str, fallback_key: str = "") -> tuple[str, str]:
-    """Resolve a API key a partir das variáveis de ambiente sem persistir segredos no banco."""
+    """Resolve the API key from environment variables without persisting secrets in the database."""
     preset = get_preset(provider_id)
     env_name = preset.api_key_env if preset is not None else "LLM_API_KEY"
     env_val = os.getenv(env_name, "").strip()
@@ -135,7 +135,7 @@ def build_active_provider_state(
     provider_id: str | None = None,
     env_fallback_key: str = "",
 ) -> dict[str, Any]:
-    """Monta a visão pública (sem segredos) do provedor e modelo ativos."""
+    """Build the public view (no secrets) of the active provider and model."""
     resolved_id = (provider_id or infer_provider_id(settings.llm_base_url)).strip().lower()
     if resolved_id not in _PRESETS_BY_ID:
         resolved_id = "custom"
@@ -151,7 +151,7 @@ def build_active_provider_state(
 
 
 def list_provider_presets(env_fallback_key: str = "") -> list[dict[str, Any]]:
-    """Lista os presets disponíveis com status booleano da chave no ambiente (sem expor segredos)."""
+    """List the available presets with a boolean key status from the environment (without exposing secrets)."""
     items: list[dict[str, Any]] = []
     for preset in PROVIDER_PRESETS:
         api_key, env_name = resolve_provider_api_key(preset.id, fallback_key=env_fallback_key)
@@ -175,7 +175,7 @@ def load_saved_provider_config(
     settings: Settings,
     env_fallback_key: str = "",
 ) -> dict[str, Any]:
-    """Carrega provedor/modelo salvos em `app_meta` e aplica em `settings`, se válidos."""
+    """Load the provider/model saved in `app_meta` and apply them to `settings`, if valid."""
     raw = memory.get_meta(_META_KEY_PROVIDER)
     if not raw:
         return build_active_provider_state(settings, env_fallback_key=env_fallback_key)
@@ -183,12 +183,12 @@ def load_saved_provider_config(
     try:
         data = json.loads(raw)
         if not isinstance(data, dict):
-            raise ValueError("formato inválido")
+            raise ValueError("invalid format")
         provider_id = str(data.get("provider_id", "")).strip().lower()
         base_url = validate_base_url(str(data.get("base_url", "")))
         model = str(data.get("model", "")).strip()
         if not model:
-            raise ValueError("modelo vazio")
+            raise ValueError("empty model")
     except (ValueError, json.JSONDecodeError):
         return build_active_provider_state(settings, env_fallback_key=env_fallback_key)
 
@@ -210,20 +210,20 @@ def save_provider_config(
     model: str,
     env_fallback_key: str = "",
 ) -> dict[str, Any]:
-    """Valida, aplica em memória e persiste em SQLite (`app_meta`) o provedor e modelo ativos."""
+    """Validate, apply in memory and persist to SQLite (`app_meta`) the active provider and model."""
     cleaned_id = provider_id.strip().lower()
     preset = get_preset(cleaned_id)
     if preset is None:
-        raise ValueError(f"Provedor desconhecido: '{provider_id}'.")
+        raise ValueError(f"Unknown provider: '{provider_id}'.")
 
     raw_url = (base_url or "").strip() or preset.default_base_url
     if not raw_url:
-        raise ValueError("Informe a URL base do provedor.")
+        raise ValueError("Provide the provider's base URL.")
     validated_url = validate_base_url(raw_url)
 
     cleaned_model = model.strip()
     if not cleaned_model:
-        raise ValueError("Informe o identificador do modelo.")
+        raise ValueError("Provide the model identifier.")
 
     api_key, _ = resolve_provider_api_key(cleaned_id, fallback_key=env_fallback_key)
     settings.llm_base_url = validated_url
@@ -249,7 +249,7 @@ async def fetch_provider_models(
     suggested_models: tuple[str, ...] = (),
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
-    """Consulta `GET {base_url}/models` no provedor com fallback para modelos sugeridos."""
+    """Query `GET {base_url}/models` on the provider, falling back to suggested models."""
     validated_url = validate_base_url(base_url)
     headers: dict[str, str] = {}
     if api_key:
@@ -267,7 +267,7 @@ async def fetch_provider_models(
                 "ok": False,
                 "models": list(suggested_models),
                 "source": "fallback",
-                "error": f"HTTP {resp.status_code} ao consultar /models",
+                "error": f"HTTP {resp.status_code} when querying /models",
             }
         data = resp.json()
         raw_items = data.get("data", []) if isinstance(data, dict) else []
@@ -294,5 +294,5 @@ async def fetch_provider_models(
             "ok": False,
             "models": list(suggested_models),
             "source": "fallback",
-            "error": str(exc) or "Falha ao consultar /models",
+            "error": str(exc) or "Failed to query /models",
         }

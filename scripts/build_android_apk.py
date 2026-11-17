@@ -1,4 +1,4 @@
-"""Compila e assina o APK nativo do Desk Assistant para o Anbernic RG406H."""
+"""Build and sign the native Desk Assistant APK for the Anbernic RG406H."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ DEBUG_KEYSTORE_PATH = BASE_DIR / "certs" / "debug.keystore"
 
 @dataclass(frozen=True)
 class AndroidToolchain:
-    """Caminhos resolvidos do JDK e Android SDK necessários para o build."""
+    """Resolved paths of the JDK and Android SDK required for the build."""
 
     java_home: Path
     javac_bin: Path
@@ -40,18 +40,18 @@ class AndroidToolchain:
 
 
 def _version_sort_key(name: str) -> tuple[int, ...]:
-    """Extrai componentes numéricos para ordenar versões (ex.: 34.0.0 > 33.0.2)."""
+    """Extract numeric components to sort versions (e.g. 34.0.0 > 33.0.2)."""
     nums = re.findall(r"\d+", name)
     return tuple(int(n) for n in nums) if nums else (0,)
 
 
 def _is_valid_java_home(candidate: Path) -> bool:
-    """Verifica se o diretório possui javac e keytool funcionais."""
+    """Check that the directory has a working javac and keytool."""
     return (candidate / "bin" / "javac").is_file() and (candidate / "bin" / "keytool").is_file()
 
 
 def find_java_home() -> Path | None:
-    """Localiza um JDK (preferencialmente OpenJDK 17) instalado no macOS."""
+    """Locate a JDK (preferably OpenJDK 17) installed on macOS."""
     candidates: list[Path] = []
     env_java = os.environ.get("JAVA_HOME")
     if env_java:
@@ -82,7 +82,7 @@ def find_java_home() -> Path | None:
 
 
 def find_android_sdk() -> Path | None:
-    """Localiza o diretório raiz do Android SDK."""
+    """Locate the Android SDK root directory."""
     candidates: list[Path] = []
     for env_key in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
         val = os.environ.get(env_key)
@@ -106,7 +106,7 @@ def find_android_sdk() -> Path | None:
 
 
 def _find_android_platform(sdk_root: Path) -> tuple[str, Path] | None:
-    """Localiza `android.jar`, priorizando `android-34` ou versão mais recente disponível."""
+    """Locate `android.jar`, preferring `android-34` or the newest available version."""
     platforms_dir = sdk_root / "platforms"
     if not platforms_dir.is_dir():
         return None
@@ -126,7 +126,7 @@ def _find_android_platform(sdk_root: Path) -> tuple[str, Path] | None:
 
 
 def _find_build_tools(sdk_root: Path) -> Path | None:
-    """Localiza a pasta mais recente de `build-tools/` com todos os binários do build."""
+    """Locate the newest `build-tools/` folder containing all the build binaries."""
     bt_root = sdk_root / "build-tools"
     if not bt_root.is_dir():
         return None
@@ -144,32 +144,32 @@ def _find_build_tools(sdk_root: Path) -> Path | None:
 
 
 def discover_toolchain() -> AndroidToolchain:
-    """Descobre e valida todo o toolchain JDK + Android SDK antes do build."""
+    """Discover and validate the whole JDK + Android SDK toolchain before the build."""
     java_home = find_java_home()
     if java_home is None:
         raise RuntimeError(
-            "JDK não encontrado. Instale com: brew install openjdk@17"
+            "JDK not found. Install it with: brew install openjdk@17"
         )
 
     sdk_root = find_android_sdk()
     if sdk_root is None:
         raise RuntimeError(
-            "Android SDK não encontrado em /opt/homebrew/share/android-commandlinetools."
+            "Android SDK not found in /opt/homebrew/share/android-commandlinetools."
         )
 
     platform = _find_android_platform(sdk_root)
     if platform is None:
         raise RuntimeError(
-            f"Nenhuma plataforma Android encontrada em {sdk_root / 'platforms'}. "
-            "Instale 'platforms;android-34' via sdkmanager."
+            f"No Android platform found in {sdk_root / 'platforms'}. "
+            "Install 'platforms;android-34' via sdkmanager."
         )
     platform_name, android_jar = platform
 
     build_tools = _find_build_tools(sdk_root)
     if build_tools is None:
         raise RuntimeError(
-            f"Android build-tools completo não encontrado em {sdk_root / 'build-tools'}. "
-            "Instale 'build-tools;34.0.0' via sdkmanager."
+            f"Complete Android build-tools not found in {sdk_root / 'build-tools'}. "
+            "Install 'build-tools;34.0.0' via sdkmanager."
         )
 
     return AndroidToolchain(
@@ -188,7 +188,7 @@ def discover_toolchain() -> AndroidToolchain:
 
 
 def _run_tool(cmd: list[str], toolchain: AndroidToolchain, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    """Executa comando do toolchain via argv (nunca shell=True) com JAVA_HOME configurado."""
+    """Run a toolchain command via argv (never shell=True) with JAVA_HOME set."""
     env = dict(os.environ)
     env["JAVA_HOME"] = str(toolchain.java_home)
     env["ANDROID_HOME"] = str(toolchain.sdk_root)
@@ -203,13 +203,13 @@ def _run_tool(cmd: list[str], toolchain: AndroidToolchain, timeout: int = 120) -
         timeout=timeout,
     )
     if proc.returncode != 0:
-        details = proc.stderr.strip() or proc.stdout.strip() or f"código {proc.returncode}"
-        raise RuntimeError(f"Falha ao executar {Path(cmd[0]).name}: {details}")
+        details = proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
+        raise RuntimeError(f"Failed to run {Path(cmd[0]).name}: {details}")
     return proc
 
 
 def _ensure_debug_keystore(toolchain: AndroidToolchain, keystore_path: Path) -> None:
-    """Gera keystore de debug em `certs/debug.keystore` caso ainda não exista."""
+    """Generate the debug keystore at `certs/debug.keystore` if it does not exist yet."""
     if keystore_path.is_file():
         return
     keystore_path.parent.mkdir(parents=True, exist_ok=True)
@@ -240,9 +240,9 @@ def _ensure_debug_keystore(toolchain: AndroidToolchain, keystore_path: Path) -> 
 
 
 def _append_dex_to_apk(base_apk: Path, dex_file: Path, output_apk: Path) -> None:
-    """Copia o APK gerado pelo aapt2 e adiciona `classes.dex` na raiz do pacote."""
+    """Copy the APK produced by aapt2 and add `classes.dex` at the package root."""
     if not dex_file.is_file():
-        raise RuntimeError(f"classes.dex não encontrado em {dex_file}")
+        raise RuntimeError(f"classes.dex not found in {dex_file}")
     shutil.copyfile(base_apk, output_apk)
     with zipfile.ZipFile(output_apk, "a", compression=zipfile.ZIP_DEFLATED) as apk_zip:
         apk_zip.write(dex_file, arcname="classes.dex")
@@ -252,13 +252,13 @@ def build_apk(
     toolchain: AndroidToolchain | None = None,
     output_apk: Path = FINAL_APK_PATH,
 ) -> Path:
-    """Executa todo o pipeline aapt2 -> javac -> d8 -> zipalign -> apksigner."""
+    """Run the whole pipeline aapt2 -> javac -> d8 -> zipalign -> apksigner."""
     if not MANIFEST_PATH.is_file():
-        raise RuntimeError(f"Manifesto não encontrado: {MANIFEST_PATH}")
+        raise RuntimeError(f"Manifest not found: {MANIFEST_PATH}")
     if not RES_DIR.is_dir():
-        raise RuntimeError(f"Diretório de recursos não encontrado: {RES_DIR}")
+        raise RuntimeError(f"Resources directory not found: {RES_DIR}")
     if not SRC_DIR.is_dir():
-        raise RuntimeError(f"Diretório de fontes Java não encontrado: {SRC_DIR}")
+        raise RuntimeError(f"Java sources directory not found: {SRC_DIR}")
 
     resolved = toolchain or discover_toolchain()
 
@@ -275,7 +275,7 @@ def build_apk(
     apk_with_dex = BUILD_DIR / "unsigned-with-dex.apk"
     aligned_apk = BUILD_DIR / "aligned.apk"
 
-    # 1. Compilar recursos XML/VectorDrawable
+    # 1. Compile XML/VectorDrawable resources
     _run_tool(
         [
             str(resolved.aapt2_bin),
@@ -288,7 +288,7 @@ def build_apk(
         resolved,
     )
 
-    # 2. Linkar manifesto + recursos e gerar R.java
+    # 2. Link manifest + resources and generate R.java
     _run_tool(
         [
             str(resolved.aapt2_bin),
@@ -311,13 +311,13 @@ def build_apk(
         resolved,
     )
 
-    # 3. Compilar fontes Java (SDK puro com --release 11)
+    # 3. Compile Java sources (pure SDK with --release 11)
     java_sources = sorted(
         [str(p) for p in SRC_DIR.rglob("*.java")]
         + [str(p) for p in gen_dir.rglob("*.java")]
     )
     if not java_sources:
-        raise RuntimeError("Nenhum arquivo .java encontrado para compilação.")
+        raise RuntimeError("No .java files found to compile.")
 
     _run_tool(
         [
@@ -333,10 +333,10 @@ def build_apk(
         resolved,
     )
 
-    # 4. Converter bytecode JVM para Dalvik/ART (classes.dex)
+    # 4. Convert JVM bytecode to Dalvik/ART (classes.dex)
     class_files = sorted(str(p) for p in classes_dir.rglob("*.class"))
     if not class_files:
-        raise RuntimeError("Nenhum arquivo .class gerado pelo javac.")
+        raise RuntimeError("No .class files produced by javac.")
 
     _run_tool(
         [
@@ -352,10 +352,10 @@ def build_apk(
         resolved,
     )
 
-    # 5. Empacotar classes.dex no APK
+    # 5. Package classes.dex into the APK
     _append_dex_to_apk(base_apk, dex_dir / "classes.dex", apk_with_dex)
 
-    # 6. Alinhar APK (4 bytes)
+    # 6. Align the APK (4 bytes)
     _run_tool(
         [
             str(resolved.zipalign_bin),
@@ -368,7 +368,7 @@ def build_apk(
         resolved,
     )
 
-    # 7. Garantir keystore de debug e assinar APK
+    # 7. Ensure the debug keystore and sign the APK
     _ensure_debug_keystore(resolved, DEBUG_KEYSTORE_PATH)
     _run_tool(
         [
@@ -389,7 +389,7 @@ def build_apk(
         resolved,
     )
 
-    # 8. Verificar assinatura do APK final
+    # 8. Verify the final APK signature
     _run_tool(
         [str(resolved.apksigner_bin), "verify", "--verbose", str(output_apk)],
         resolved,
@@ -399,18 +399,18 @@ def build_apk(
 
 
 def main() -> int:
-    """Ponto de entrada CLI para compilar o APK do Desk Assistant."""
+    """CLI entry point to build the Desk Assistant APK."""
     try:
         toolchain = discover_toolchain()
-        print(f"Usando JDK:        {toolchain.java_home}")
-        print(f"Usando Plataforma: {toolchain.platform_name} ({toolchain.android_jar})")
-        print(f"Usando BuildTools: {toolchain.build_tools_dir}")
+        print(f"Using JDK:        {toolchain.java_home}")
+        print(f"Using Platform:   {toolchain.platform_name} ({toolchain.android_jar})")
+        print(f"Using BuildTools: {toolchain.build_tools_dir}")
         apk_path = build_apk(toolchain=toolchain)
         size_kb = apk_path.stat().st_size / 1024.0
-        print(f"APK compilado e assinado com sucesso: {apk_path} ({size_kb:.1f} KB)")
+        print(f"APK built and signed successfully: {apk_path} ({size_kb:.1f} KB)")
         return 0
     except Exception as exc:
-        print(f"Erro ao compilar APK Android: {exc}", file=sys.stderr)
+        print(f"Error building the Android APK: {exc}", file=sys.stderr)
         return 1
 
 

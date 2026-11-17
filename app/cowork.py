@@ -1,4 +1,4 @@
-"""Ponte somente leitura com o workspace Cowork (`state/*.yaml`)."""
+"""Read-only bridge to the Cowork workspace (`state/*.yaml`)."""
 
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ _ALLOWED_STATE_FILES = frozenset({"tasks.yaml", "deadlines.yaml", "schedule.yaml
 
 
 class CoworkError(Exception):
-    """Erro controlado nas operações de leitura do Cowork."""
+    """Controlled error in Cowork read operations."""
 
 
 class CoworkStore:
-    """Leitura confinada em `COWORK_WORKSPACE_PATH/state/` (somente leitura)."""
+    """Read access confined to `COWORK_WORKSPACE_PATH/state/` (read-only)."""
 
     def __init__(self, workspace_path: Path) -> None:
         self.workspace_path = Path(workspace_path).expanduser()
@@ -29,11 +29,11 @@ class CoworkStore:
 
     def _resolve_state_file(self, filename: str) -> Path:
         if filename not in _ALLOWED_STATE_FILES:
-            raise CoworkError(f"Arquivo de estado não permitido: {filename}")
+            raise CoworkError(f"State file not allowed: {filename}")
         state_root = self.state_dir.resolve()
         candidate = (self.state_dir / filename).resolve()
         if candidate.parent != state_root:
-            raise CoworkError("Caminho fora de Cowork/state/ bloqueado por segurança.")
+            raise CoworkError("Path outside Cowork/state/ blocked for security.")
         return candidate
 
     def _read_yaml_raw(self, filename: str) -> tuple[str, Any]:
@@ -48,14 +48,14 @@ class CoworkStore:
         return raw_text, parsed
 
     def load_state(self) -> dict[str, Any]:
-        """Carrega `tasks.yaml`, `deadlines.yaml` e `schedule.yaml` com status de saúde."""
+        """Load `tasks.yaml`, `deadlines.yaml` and `schedule.yaml` with a health status."""
         ws_exists = self.workspace_path.exists() and self.state_dir.exists()
         if not ws_exists:
             return {
                 "workspace_exists": False,
                 "workspace_path": str(self.workspace_path),
                 "sync_status": "red",
-                "sync_message": "Workspace Cowork não encontrado.",
+                "sync_message": "Cowork workspace not found.",
                 "tasks": [],
                 "deadlines": [],
                 "schedule": {"week_of": "", "shifts": []},
@@ -72,7 +72,7 @@ class CoworkStore:
                 "workspace_exists": True,
                 "workspace_path": str(self.workspace_path),
                 "sync_status": "red",
-                "sync_message": f"Erro ao ler YAML do Cowork: {exc}",
+                "sync_message": f"Error reading Cowork YAML: {exc}",
                 "tasks": [],
                 "deadlines": [],
                 "schedule": {"week_of": "", "shifts": []},
@@ -90,9 +90,9 @@ class CoworkStore:
         missing_files = [f for f in _ALLOWED_STATE_FILES if not (self.state_dir / f).exists()]
         sync_status = "yellow" if missing_files else "green"
         sync_message = (
-            f"Arquivos ausentes: {', '.join(sorted(missing_files))}"
+            f"Missing files: {', '.join(sorted(missing_files))}"
             if missing_files
-            else "Cowork state sincronizado"
+            else "Cowork state synced"
         )
 
         return {
@@ -108,7 +108,7 @@ class CoworkStore:
         }
 
     def build_prompt_context(self, max_tasks: int = 12, max_deadlines: int = 6) -> str:
-        """Gera um resumo compacto do estado Cowork para injeção no system prompt do chat."""
+        """Build a compact summary of the Cowork state to inject into the chat system prompt."""
         state = self.load_state()
         if not state.get("workspace_exists"):
             return ""
@@ -118,27 +118,27 @@ class CoworkStore:
             t for t in (state.get("tasks") or []) if isinstance(t, dict) and t.get("status") == "open"
         ]
         if open_tasks:
-            lines.append(f"Tarefas abertas ({len(open_tasks)} no total):")
+            lines.append(f"Open tasks ({len(open_tasks)} in total):")
             for t in open_tasks[:max_tasks]:
                 tid = t.get("id", "?")
                 title = str(t.get("title") or "").strip()
                 due = str(t.get("due") or "").strip()
-                due_txt = f" [vence {due}]" if due else ""
+                due_txt = f" [due {due}]" if due else ""
                 lines.append(f"- {tid}: {title}{due_txt}")
 
         deadlines = [d for d in (state.get("deadlines") or []) if isinstance(d, dict)]
         if deadlines:
-            lines.append("Prazos (deadlines):")
+            lines.append("Deadlines:")
             for d in deadlines[:max_deadlines]:
                 did = d.get("id", "?")
                 title = str(d.get("title") or "").strip()
                 d_date = str(d.get("date") or "").strip()
-                hard = " (FIXO)" if d.get("hard") else ""
-                lines.append(f"- {did}: {title} em {d_date}{hard}")
+                hard = " (FIXED)" if d.get("hard") else ""
+                lines.append(f"- {did}: {title} on {d_date}{hard}")
 
         shifts = (state.get("schedule") or {}).get("shifts") or []
         if shifts:
-            lines.append("Turnos da semana:")
+            lines.append("Shifts this week:")
             for s in shifts[:7]:
                 if isinstance(s, dict):
                     lines.append(
@@ -150,7 +150,7 @@ class CoworkStore:
 
 
 def get_git_sync_status(workspace_path: Path) -> dict[str, Any]:
-    """Consulta `git status --porcelain -b` no Cowork para alimentar o LED de Sync."""
+    """Query `git status --porcelain -b` in Cowork to feed the Sync LED."""
     ws = Path(workspace_path).expanduser()
     if not (ws / ".git").exists():
         return {
@@ -158,7 +158,7 @@ def get_git_sync_status(workspace_path: Path) -> dict[str, Any]:
             "sync_status": "red",
             "branch": "",
             "dirty_count": 0,
-            "summary": "Repositório Git não encontrado no Cowork.",
+            "summary": "Git repository not found in Cowork.",
         }
     try:
         proc = subprocess.run(
@@ -175,7 +175,7 @@ def get_git_sync_status(workspace_path: Path) -> dict[str, Any]:
                 "sync_status": "red",
                 "branch": "",
                 "dirty_count": 0,
-                "summary": proc.stderr.strip() or "Falha ao consultar git status.",
+                "summary": proc.stderr.strip() or "Failed to query git status.",
             }
         lines = [line for line in proc.stdout.splitlines() if line.strip()]
         branch_line = lines[0][3:].strip() if lines and lines[0].startswith("## ") else "main"
@@ -188,7 +188,7 @@ def get_git_sync_status(workspace_path: Path) -> dict[str, Any]:
             "branch": branch_line,
             "dirty_count": dirty_count,
             "dirty_files": dirty_lines[:20],
-            "summary": f"{branch_line} ({dirty_count} alterações locais)" if dirty_count else f"{branch_line} limpo",
+            "summary": f"{branch_line} ({dirty_count} local changes)" if dirty_count else f"{branch_line} clean",
         }
     except (OSError, subprocess.SubprocessError) as exc:
         return {

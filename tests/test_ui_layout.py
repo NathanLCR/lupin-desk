@@ -1,4 +1,4 @@
-"""Regressões estruturais de layout e acessibilidade da interface estática."""
+"""Structural layout and accessibility regressions for the static interface."""
 
 from html.parser import HTMLParser
 from pathlib import Path
@@ -40,7 +40,7 @@ def css_block(css, marker):
             depth -= 1
             if depth == 0:
                 return css[opening + 1 : end]
-    raise AssertionError(f"Bloco CSS sem fechamento: {marker}")
+    raise AssertionError(f"Unclosed CSS block: {marker}")
 
 
 MARKUP = MarkupIndex()
@@ -53,7 +53,7 @@ BY_ID = {
 
 
 def test_required_page_landmarks_and_locale_remain():
-    assert '<html lang="pt-BR">' in HTML
+    assert '<html lang="en">' in HTML
     assert '<main id="stage"' in HTML
     assert 'id="hud"' not in HTML
     assert 'content="width=device-width, initial-scale=1.0, viewport-fit=cover"' in HTML
@@ -105,7 +105,7 @@ def test_visible_form_controls_have_programmatic_names():
         control_id = attrs.get("id")
         named = any(attrs.get(key) for key in ("aria-label", "aria-labelledby"))
         named = named or element["inside_label"] or control_id in MARKUP.labels_for
-        assert named, f"Controle de formulário sem rótulo acessível: {control_id}"
+        assert named, f"Form control without an accessible label: {control_id}"
 
 
 def test_fixed_workspace_reserves_space_below_the_settings_button_and_chat():
@@ -132,7 +132,7 @@ def test_keyboard_focus_and_small_viewport_targets_are_present():
     tablet = css_block(CSS, "@media (max-width: 1024px)")
     assert "button," in tablet and "min-height: 44px" in tablet
     assert "min-height: 44px" in tablet[tablet.index(".hud-btn {") :]
-    assert 'role="img" aria-label="Rosto animado de Lupin"' in HTML
+    assert 'role="img" aria-label="Lupin\'s animated face"' in HTML
 
 
 def test_existing_dom_ids_remain_unique():

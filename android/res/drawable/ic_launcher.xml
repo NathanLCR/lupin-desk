@@ -5,12 +5,12 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Fundo OLED preto puro -->
+    <!-- Pure black OLED background -->
     <path
         android:fillColor="#000000"
         android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
 
-    <!-- Halo suave ciano neon atrás dos olhos -->
+    <!-- Soft neon cyan halo behind the eyes -->
     <path
         android:fillColor="#3300F0FF"
         android:pathData="M35,33 A12,12 0 0,1 47,45 L47,63 A12,12 0 0,1 35,75 A12,12 0 0,1 23,63 L23,45 A12,12 0 0,1 35,33 Z" />
@@ -18,7 +18,7 @@
         android:fillColor="#3300F0FF"
         android:pathData="M73,33 A12,12 0 0,1 85,45 L85,63 A12,12 0 0,1 73,75 A12,12 0 0,1 61,63 L61,45 A12,12 0 0,1 73,33 Z" />
 
-    <!-- Olhos arredondados ciano neon estilo EMO -->
+    <!-- Rounded neon cyan EMO-style eyes -->
     <path
         android:fillColor="#00F0FF"
         android:pathData="M35,36 A9,9 0 0,1 44,45 L44,63 A9,9 0 0,1 35,72 A9,9 0 0,1 26,63 L26,45 A9,9 0 0,1 35,36 Z" />
