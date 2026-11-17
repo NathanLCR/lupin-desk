@@ -468,3 +468,94 @@ def test_temporal_context_and_consolidate_facts(tmp_path: Path) -> None:
         assert by_id[new_fact["id"]]["pinned"] is True
     finally:
         store.close()
+
+
+def test_extract_and_store_facts_from_english_heuristics(tmp_path: Path) -> None:
+    """English clauses are stored with English templates, and questions or vague sentences are ignored."""
+    store = MemoryStore(db_path=tmp_path / "memory_en.db")
+    try:
+        store.extract_and_store_facts(
+            user_text=(
+                "Hi! My name is Nathan, and I prefer short answers. I work as a developer "
+                "and I live in Berlin. I like black coffee and I don't like tea. I have a dog."
+            ),
+            assistant_raw_text="Nice to meet you!",
+        )
+        fact_texts = [item["fact"] for item in store.get_facts()]
+        assert "User's name: Nathan" in fact_texts
+        assert "Prefers short answers" in fact_texts
+        assert "Works as a developer" in fact_texts
+        assert "Lives in Berlin" in fact_texts
+        assert "Likes black coffee" in fact_texts
+        assert "Doesn't like tea" in fact_texts
+        assert "Has a dog" in fact_texts
+
+        store.extract_and_store_facts(
+            user_text="I work with Python at night. My favorite color is blue. I work at Acme.",
+            assistant_raw_text="",
+        )
+        fact_texts = [item["fact"] for item in store.get_facts()]
+        assert "Works with Python at night" in fact_texts
+        assert "User's favorite color: blue" in fact_texts
+        assert "Works at Acme" in fact_texts
+
+        before = [item["fact"] for item in store.get_facts()]
+        store.extract_and_store_facts(
+            user_text="Do you like coffee? I have a question about Python. I have an idea.",
+            assistant_raw_text="Sure, what is it?",
+        )
+        assert [item["fact"] for item in store.get_facts()] == before
+    finally:
+        store.close()
+
+
+def test_english_facts_replace_older_facts_in_the_same_slot(tmp_path: Path) -> None:
+    """Exclusive English slots update on add; contradictions are consolidated."""
+    store = MemoryStore(db_path=tmp_path / "slots_en.db")
+    try:
+        first = store.add_fact("User's name: Nathan", category="identity")
+        second = store.add_fact("User's name: Lucas", category="identity")
+        assert first["id"] == second["id"]
+        city = store.add_fact("Lives in Berlin", category="location")
+        moved = store.add_fact("Lives in Paris", category="location")
+        assert city["id"] == moved["id"]
+        color_a = store.add_fact("User's favorite color: blue")
+        color_b = store.add_fact("User's favorite color: green")
+        assert color_a["id"] == color_b["id"]
+        assert len(store.get_facts()) == 3
+    finally:
+        store.close()
+
+
+def test_consolidate_english_contradictions(tmp_path: Path) -> None:
+    store = MemoryStore(db_path=tmp_path / "consolidate_en.db")
+    try:
+        old_like = store.add_fact("Likes coffee", category="preference", pinned=True)
+        new_like = store.add_fact("Doesn't like coffee", category="preference")
+        old_work = store.add_fact("Works as a junior dev", category="work")
+        new_work = store.add_fact("Works as a senior engineer", category="work")
+        old_theme = store.add_fact("Prefers light theme", category="preference")
+        new_theme = store.add_fact("Prefers dark theme", category="preference")
+        # Portuguese facts are never reconciled with English ones.
+        pt_fact = store.add_fact("Gosta de café", category="preference")
+
+        assert store.consolidate_facts() == 3
+
+        by_id = {f["id"]: f for f in store.get_facts(include_superseded=True)}
+        active_ids = {f["id"] for f in store.get_facts()}
+        assert {new_like["id"], new_work["id"], new_theme["id"], pt_fact["id"]} <= active_ids
+        assert not ({old_like["id"], old_work["id"], old_theme["id"]} & active_ids)
+        assert by_id[old_like["id"]]["superseded_by"] == new_like["id"]
+        assert by_id[new_like["id"]]["pinned"] is True
+    finally:
+        store.close()
+
+
+def test_english_clause_splitting_on_connectors() -> None:
+    from app.memory import _split_clauses
+
+    assert _split_clauses("I like tea, and I live in Rome and my name is Ana") == [
+        "I like tea",
+        "I live in Rome",
+        "my name is Ana",
+    ]
