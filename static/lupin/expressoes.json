@@ -1,185 +1,101 @@
 {
-  "versao": 1,
+  "versao": 2,
   "tela": {
     "largura": 480,
     "altura": 320
   },
   "ordemCamadas": [
-    "peito",
-    "colar",
-    "orelhas",
-    "cabeca",
-    "olhos",
-    "sobrancelhas",
-    "boca"
+    "pose",
+    "colar"
   ],
   "grupoCabeca": [
-    "orelhas",
-    "cabeca",
-    "olhos",
-    "sobrancelhas",
-    "boca"
+    "pose"
   ],
   "camadas": {
-    "peito": [
-      "unico"
+    "pose": [
+      "neutro",
+      "feliz",
+      "apaixonado",
+      "surpreso",
+      "sonolento",
+      "bravo",
+      "tonto",
+      "piscando"
     ],
     "colar": [
       "apagado",
       "aceso"
-    ],
-    "orelhas": [
-      "eretas",
-      "atras",
-      "curiosa",
-      "baixas"
-    ],
-    "cabeca": [
-      "unico"
-    ],
-    "olhos": [
-      "aberto",
-      "brilho",
-      "surpreso",
-      "meio",
-      "fechado",
-      "feliz",
-      "coracao",
-      "x",
-      "espiral",
-      "piscada",
-      "bravo",
-      "triste",
-      "cetico"
-    ],
-    "sobrancelhas": [
-      "neutro",
-      "alto",
-      "bravo",
-      "triste",
-      "cetico"
-    ],
-    "boca": [
-      "fechada",
-      "sorriso",
-      "meio-aberta",
-      "aberta",
-      "lingua",
-      "triste",
-      "cetica",
-      "o"
     ]
   },
   "padrao": {
-    "peito": "unico",
-    "colar": "apagado",
-    "orelhas": "eretas",
-    "cabeca": "unico",
-    "olhos": "aberto",
-    "sobrancelhas": "neutro",
-    "boca": "fechada"
+    "pose": "neutro",
+    "colar": "apagado"
+  },
+  "piscada": {},
+  "fala": {
+    "pose": "feliz",
+    "limiar": 0.4
   },
   "expressoes": {
     "neutral": {},
     "happy": {
-      "olhos": "feliz",
-      "boca": "sorriso",
-      "sobrancelhas": "alto"
+      "pose": "feliz"
     },
     "excited": {
-      "olhos": "brilho",
-      "boca": "lingua",
-      "sobrancelhas": "alto",
-      "orelhas": "eretas"
+      "pose": "feliz"
     },
     "curious": {
-      "olhos": "aberto",
-      "boca": "fechada",
-      "sobrancelhas": "cetico",
-      "orelhas": "curiosa",
       "inclinacao": 8
     },
     "skeptical": {
-      "olhos": "cetico",
-      "boca": "cetica",
-      "sobrancelhas": "cetico",
-      "orelhas": "atras"
+      "pose": "sonolento",
+      "inclinacao": -5
     },
     "surprised": {
-      "olhos": "surpreso",
-      "boca": "o",
-      "sobrancelhas": "alto",
-      "orelhas": "eretas"
+      "pose": "surpreso"
     },
     "sad": {
-      "olhos": "triste",
-      "boca": "triste",
-      "sobrancelhas": "triste",
-      "orelhas": "baixas"
+      "pose": "sonolento",
+      "inclinacao": 4
     },
     "wink": {
-      "olhos": "piscada",
-      "boca": "sorriso",
-      "sobrancelhas": "cetico",
-      "inclinacao": -6
+      "pose": "piscando"
     },
     "love": {
-      "olhos": "coracao",
-      "boca": "lingua",
-      "sobrancelhas": "alto"
+      "pose": "apaixonado"
     },
     "sleepy": {
-      "olhos": "meio",
-      "boca": "fechada",
-      "sobrancelhas": "triste",
-      "orelhas": "baixas",
-      "inclinacao": 5
+      "pose": "sonolento"
     },
     "angry": {
-      "olhos": "bravo",
-      "boca": "cetica",
-      "sobrancelhas": "bravo",
-      "orelhas": "atras"
+      "pose": "bravo"
     },
     "dizzy": {
-      "olhos": "espiral",
-      "boca": "o",
-      "sobrancelhas": "cetico",
-      "orelhas": "baixas",
-      "inclinacao": -8
+      "pose": "tonto"
     }
   },
   "estados": {
     "idle": {},
     "listening": {
-      "orelhas": "curiosa",
-      "sobrancelhas": "alto",
-      "olhos": "surpreso"
+      "inclinacao": 6
     },
     "thinking": {
-      "sobrancelhas": "cetico",
-      "olhar": {
-        "x": 0.6,
-        "y": -0.7
-      }
+      "inclinacao": -6
     },
     "speaking": {
       "colar": "aceso",
       "falando": true
     },
     "error": {
-      "olhos": "x",
-      "boca": "triste",
-      "orelhas": "baixas",
-      "sobrancelhas": "triste"
+      "pose": "tonto"
     }
   },
   "truques": {
     "dance": {
       "modo": "corpo",
       "quadros": [
-        "danca-1",
-        "danca-2"
+        "acenar-1",
+        "acenar-2"
       ],
       "intervaloMs": 420,
       "duracaoMs": 3400

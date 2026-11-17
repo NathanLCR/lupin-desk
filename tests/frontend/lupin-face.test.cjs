@@ -129,19 +129,15 @@ test('a tabela cobre as 12 expressões e os 5 estados com variantes que existem'
   }
 });
 
-test('cada camada mostra uma única variante e a expressão troca as camadas', async () => {
+test('cada camada mostra uma única variante e a expressão troca a pose', async () => {
   const h = await iniciar();
   let v = visiveis(h);
-  assert.deepEqual(v.olhos, ['aberto']);
-  assert.deepEqual(v.boca, ['fechada']);
+  assert.deepEqual(v.pose, ['neutro']);
   h.api.setEmotion('love');
-  v = visiveis(h);
-  assert.deepEqual(v.olhos, ['coracao']);
-  assert.deepEqual(v.boca, ['lingua']);
+  assert.deepEqual(visiveis(h).pose, ['apaixonado']);
   h.api.setEmotion('angry');
   v = visiveis(h);
-  assert.deepEqual(v.olhos, ['bravo']);
-  assert.deepEqual(v.orelhas, ['atras']);
+  assert.deepEqual(v.pose, ['bravo']);
   for (const lista of Object.values(v)) assert.equal(lista.length, 1);
 });
 
@@ -151,7 +147,7 @@ test('emoção temporária volta ao neutro depois do tempo', async () => {
   assert.equal(h.api.getEmotion(), 'surprised');
   h.runTimers();
   assert.equal(h.api.getEmotion(), 'neutral');
-  assert.deepEqual(visiveis(h).olhos, ['aberto']);
+  assert.deepEqual(visiveis(h).pose, ['neutro']);
 });
 
 test('valores desconhecidos de estado e emoção são ignorados', async () => {
@@ -168,33 +164,29 @@ test('valores desconhecidos de estado e emoção são ignorados', async () => {
   assert.equal(h.api.getState(), 'idle');
 });
 
-test('falando acende a onda da coleira e a boca acompanha o nível de áudio', async () => {
+test('falando acende a onda da coleira e abre a boca conforme o nível de áudio', async () => {
   const h = await iniciar();
   assert.deepEqual(visiveis(h).colar, ['apagado']);
   h.api.setState('speaking');
   assert.deepEqual(visiveis(h).colar, ['aceso']);
   h.api.setAudioLevel(0.8);
   h.tick(100);
-  assert.deepEqual(visiveis(h).boca, ['aberta']);
-  h.api.setAudioLevel(0.25);
-  h.tick(200);
-  assert.deepEqual(visiveis(h).boca, ['meio-aberta']);
+  assert.deepEqual(visiveis(h).pose, ['feliz']);
   h.api.setAudioLevel(0.02);
   h.tick(300);
-  assert.deepEqual(visiveis(h).boca, ['fechada']);
+  assert.deepEqual(visiveis(h).pose, ['neutro']);
   h.api.setState('idle');
   assert.deepEqual(visiveis(h).colar, ['apagado']);
 });
 
-test('piscar fecha os olhos abertos e reabre depois', async () => {
-  const h = await iniciar();
-  h.api.blink();
-  assert.deepEqual(visiveis(h).olhos, ['fechado']);
-  h.tick(10000);
-  assert.ok(['aberto', 'fechado'].includes(visiveis(h).olhos[0]));
-  h.tick(20000);
-  h.tick(20200);
-  assert.deepEqual(visiveis(h).olhos, ['aberto']);
+test('piscar usa a pose de olhos fechados quando a tabela tiver uma', () => {
+  const { api } = makeHarness();
+  const t = JSON.parse(JSON.stringify(tabela));
+  t.piscada = { neutro: 'sonolento' };
+  const r = api.resolverCamadas(t, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
+  assert.equal(r.camadas.pose, 'sonolento');
+  const sem = api.resolverCamadas(tabela, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
+  assert.equal(sem.camadas.pose, 'neutro');
 });
 
 test('Truque de corpo inteiro troca o busto pelos quadros e volta no fim', async () => {
@@ -206,7 +198,7 @@ test('Truque de corpo inteiro troca o busto pelos quadros e volta no fim', async
   const stage = root.children[0];
   const corpo = stage.children.find((c) => c.className === 'lupin-corpo');
   assert.equal(corpo.hidden, false);
-  assert.match(corpo.getAttribute('src'), /corpo\/danca-1\.svg$/);
+  assert.match(corpo.getAttribute('src'), /corpo\/acenar-1\.svg$/);
   h.runTimers();
   assert.equal(corpo.hidden, true);
   assert.ok(!root.classes.has('lupin-corpo-inteiro'));
@@ -227,7 +219,7 @@ test('movimento reduzido assenta o rosto e pula a coreografia de corpo', async (
   const h = await iniciar({ reducedMotion: true });
   const root = h.container.children[0];
   h.api.blink();
-  assert.deepEqual(visiveis(h).olhos, ['aberto']);
+  assert.deepEqual(visiveis(h).pose, ['neutro']);
   assert.equal(h.api.playTrick('nap'), true);
   assert.ok(!root.classes.has('lupin-corpo-inteiro'));
   assert.equal(h.api.getEmotion(), 'sleepy');
