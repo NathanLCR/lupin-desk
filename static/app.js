@@ -219,7 +219,6 @@
     ttsMode: 'desk_assistant_tts_mode',
     petSoundsEnabled: 'desk_assistant_pet_sounds_enabled',
     captionVisible: 'desk_assistant_caption_visible',
-    vsdLargeKeys: 'desk_assistant_vsd_large_keys',
   };
 
   // WAV silencioso mínimo (~44 bytes) para destravar <audio> no iOS Safari no primeiro toque
@@ -251,12 +250,15 @@
     dockActiveApp: document.getElementById('dock-active-app'),
     btnRefreshApps: document.getElementById('btn-refresh-apps'),
     dockAppsGrid: document.getElementById('dock-apps-grid'),
-    shortcutCategoryTabs: Array.from(document.querySelectorAll('#shortcut-category-tabs .cat-tab')),
-    btnVsdSize: document.getElementById('btn-vsd-size'),
-    btnVsdEditMode: document.getElementById('btn-vsd-edit-mode'),
-    btnNewShortcut: document.getElementById('btn-new-shortcut'),
-    btnConfigShortcuts: document.getElementById('btn-config-shortcuts'),
+    dockAppsPage: document.getElementById('dock-apps-page'),
+    dockPageDots: document.getElementById('dock-page-dots'),
     shortcutsGrid: document.getElementById('shortcuts-grid'),
+    dockSpeechStrip: document.getElementById('dock-speech-strip'),
+    btnDockTalk: document.getElementById('btn-dock-talk'),
+    settingsDockEditor: document.getElementById('settings-dock-editor'),
+    settingsDockNote: document.getElementById('settings-dock-note'),
+    btnSettingsNewShortcut: document.getElementById('btn-settings-new-shortcut'),
+    btnSettingsManageShortcuts: document.getElementById('btn-settings-manage-shortcuts'),
     // Pomodoro e Tocando no Mac (faixa pequena no modo Pet)
     pomodoroPhaseLabel: document.getElementById('pomodoro-phase-label'),
     pomodoroTimer: document.getElementById('pomodoro-timer'),
@@ -382,9 +384,15 @@
     // Dock & Atalhos
     macApps: [],
     shortcuts: [],
-    shortcutCategory: 'all',
-    vsdEditMode: false,
-    vsdLargeKeys: loadBoolPref(PREFS.vsdLargeKeys, false),
+    dockPage: 0,
+    isMac: false,
+    // Fala no Dock: contagem de frases por turno e volta automática do Pet.
+    dockSentenceCount: 0,
+    autoPetFromDock: false,
+    dockReturnTimer: null,
+    dockStripTimer: null,
+    dockTalk: { holdTimer: null, holding: false },
+    yHeldPtt: false,
     gamepadFocusIndex: -1,
     recordingShortcutKeys: false,
     // Smart Display & Pomodoro
@@ -575,11 +583,15 @@
   }
 
   // Alternador dos modos de tela
-  function setMode(nextMode) {
+  function setMode(nextMode, { auto = false } = {}) {
     if (!MODES.includes(nextMode)) return;
     if (nextMode === 'pet' && !state.isLupinBody) return;
+    // Troca feita pelo usuário cancela a volta automática do Pet para o Dock.
+    if (!auto) clearAutoPet();
+    const previousMode = state.mode;
     state.mode = nextMode;
     state.gamepadFocusIndex = -1;
+    if (nextMode === 'dock' && previousMode !== 'dock') state.dockPage = 0;
 
     document.body.classList.remove(
       'mode-pet',
@@ -602,7 +614,10 @@
 
     setSettingsOpen(false);
 
+    if (nextMode !== 'dock') document.body.classList.remove('dock-text-open');
+    syncDockCorner();
     if (nextMode === 'dock') {
+      renderDock();
       fetchMacApps();
       fetchShortcuts();
     }
@@ -646,7 +661,10 @@
       window.DeskSkills.activate();
     }
     if (state.settingsOpen && state.settingsTab === 'brain') fetchBrainInfo();
-    if (state.settingsOpen && state.settingsTab === 'dock') fetchShortcuts();
+    if (state.settingsOpen && state.settingsTab === 'dock') {
+      fetchClientInfo();
+      fetchShortcuts();
+    }
   }
 
   function cycleSettingsTab(delta) {
@@ -670,7 +688,45 @@
     }
   }
 
+  async function fetchClientInfo() {
+    try {
+      const res = await fetch('/api/client-info');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.isMac = Boolean(data && data.is_mac);
+      renderSettingsShortcuts();
+    } catch {
+      // Sem resposta: este aparelho segue como somente leitura
+    }
+  }
+
+  async function toggleShortcutPinned(sc) {
+    const pinned = sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0;
+    try {
+      const res = await fetch(`/api/shortcuts/${encodeURIComponent(sc.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned_on_deck: !pinned }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Erro ao fixar o atalho', { isError: true });
+        return;
+      }
+      await fetchShortcuts();
+    } catch {
+      showToast('Erro de rede ao fixar o atalho', { isError: true });
+    }
+  }
+
+  // Ajustes > Dock: no Mac é o editor completo; nos outros aparelhos, só a lista.
   function renderSettingsShortcuts() {
+    if (els.settingsDockEditor) els.settingsDockEditor.classList.toggle('hidden', !state.isMac);
+    if (els.settingsDockNote) {
+      els.settingsDockNote.textContent = state.isMac
+        ? 'Escolha aqui quais Atalhos ficam fixados no Dock, a ordem e o que cada um faz.'
+        : 'Os Atalhos do Dock são criados e editados no Mac. Aqui você só vê a lista.';
+    }
     if (!els.settingsShortcutsList) return;
     els.settingsShortcutsList.textContent = '';
     if (!state.shortcuts.length) {
@@ -687,9 +743,26 @@
       const title = document.createElement('strong');
       title.textContent = sc.title || sc.slug || 'Atalho';
       const hint = document.createElement('span');
-      hint.textContent = formatShortcutBadge(sc) || '';
-      text.append(title, hint);
+      const pinned = sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0;
+      hint.textContent = [pinned ? 'Fixado' : '', formatShortcutBadge(sc)].filter(Boolean).join(' · ');
+      text.appendChild(title);
+      text.appendChild(hint);
       item.appendChild(text);
+      if (state.isMac) {
+        const pin = document.createElement('button');
+        pin.type = 'button';
+        pin.className = 'hud-btn';
+        pin.setAttribute('aria-pressed', String(pinned));
+        pin.textContent = pinned ? 'Desafixar' : 'Fixar';
+        pin.addEventListener('click', () => toggleShortcutPinned(sc));
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'hud-btn';
+        edit.textContent = 'Editar';
+        edit.addEventListener('click', () => openShortcutModal(sc));
+        item.appendChild(pin);
+        item.appendChild(edit);
+      }
       els.settingsShortcutsList.appendChild(item);
     });
   }
@@ -916,6 +989,7 @@
     if (!item) {
       clearAudioLevelTimer();
       applyFaceState('idle');
+      maybeSpeechEnded();
       return;
     }
 
@@ -1120,11 +1194,9 @@
     if (state.ttsMode !== wasTtsMode) sendHello();
     state.petSoundsEnabled = loadBoolPref(PREFS.petSoundsEnabled, true);
     state.captionVisible = loadBoolPref(PREFS.captionVisible, true);
-    state.vsdLargeKeys = loadBoolPref(PREFS.vsdLargeKeys, false);
     syncTtsUI();
     if (!isMiniPet) {
       if (els.captionBox && els.btnCaption) syncCaptionVisibilityUI();
-      syncVsdToolbarState();
     }
     if (wasTtsEnabled && !state.ttsEnabled) stopSpeaking({ resetState: true });
   }
@@ -1147,8 +1219,9 @@
       state: api && typeof api.getState === 'function' ? api.getState() : 'idle',
       emotion: api && typeof api.getEmotion === 'function' ? api.getEmotion() : 'neutral',
       musicPlaying: Boolean(state.musicPlaying),
+      lupinBody: state.isLupinBody,
     };
-    const signature = `${snapshot.state}|${snapshot.emotion}|${snapshot.musicPlaying}`;
+    const signature = `${snapshot.state}|${snapshot.emotion}|${snapshot.musicPlaying}|${snapshot.lupinBody}`;
     if (signature === lastPublishedPetSnapshot) return;
     lastPublishedPetSnapshot = signature;
     petSyncChannel.postMessage(snapshot);
@@ -1166,6 +1239,8 @@
           if (api && typeof api.setState === 'function') api.setState(message.state);
           if (api && typeof api.setEmotion === 'function') api.setEmotion(message.emotion);
           if (api && typeof api.setMusicPlaying === 'function') api.setMusicPlaying(message.musicPlaying);
+          // Fora do Active Body o mini-pet esconde o desenho e mostra só "Falar com Lupin".
+          document.body.classList.toggle('lupin-em-outro-body', message.lupinBody === false);
           syncFaceBadges();
         } else if (!isMiniPet && message.type === 'request') {
           lastPublishedPetSnapshot = '';
@@ -1184,6 +1259,13 @@
 
   function bindMiniPetEvents() {
     if (els.miniPetMute) els.miniPetMute.addEventListener('click', toggleMiniPetMute);
+    const talk = document.getElementById('mini-pet-talk');
+    if (talk) {
+      talk.addEventListener('click', () => {
+        const api = window.electronAPI;
+        if (api && typeof api.openDashboard === 'function') api.openDashboard();
+      });
+    }
     bindFaceTouchEvents();
   }
 
@@ -1215,6 +1297,119 @@
     stopSpeaking({ resetState: true });
     if (isBusy) {
       sendWs({ type: 'interrupt' });
+    }
+  }
+
+  // Fala no Dock: Lupin pequeno no canto, texto em uma linha e volta automática do Pet.
+  const DOCK_STRIP_HIDE_MS = 4000;
+  const DOCK_RETURN_MS = 5000;
+  const DOCK_TALK_HOLD_MS = 280;
+  const DOCK_MAX_SENTENCES = 2;
+
+  function clearAutoPet() {
+    state.autoPetFromDock = false;
+    if (state.dockReturnTimer !== null) {
+      window.clearTimeout(state.dockReturnTimer);
+      state.dockReturnTimer = null;
+    }
+  }
+
+  // Qualquer toque, tecla, botão do gamepad ou troca de modo cancela a volta automática.
+  function noteUserInput() {
+    clearAutoPet();
+  }
+
+  function syncDockCorner() {
+    const inDock = state.mode === 'dock';
+    document.body.classList.toggle('dock-lupin-corner', inDock && state.isLupinBody);
+    if (els.btnDockTalk) {
+      els.btnDockTalk.classList.toggle('hidden', state.isLupinBody);
+      els.btnDockTalk.textContent = state.ptt.active ? '🔴 Ouvindo...' : 'Falar com Lupin';
+    }
+  }
+
+  function setDockStrip(text) {
+    if (!els.dockSpeechStrip) return;
+    const clean = (text || '').replace(/\s+/g, ' ').trim();
+    els.dockSpeechStrip.textContent = clean;
+    els.dockSpeechStrip.classList.toggle('is-empty', clean.length === 0);
+  }
+
+  function onReplySentence(msg, text) {
+    setDockStrip(text);
+    if (state.dockStripTimer !== null) {
+      window.clearTimeout(state.dockStripTimer);
+      state.dockStripTimer = null;
+    }
+    if (state.dockReturnTimer !== null) {
+      window.clearTimeout(state.dockReturnTimer);
+      state.dockReturnTimer = null;
+    }
+    // Só o Active Body, em Dock Mode, pode subir para o Pet por causa da fala.
+    if (state.mode !== 'dock' || !state.isLupinBody) return;
+    state.dockSentenceCount += 1;
+    if ((msg && msg.first_wake) || state.dockSentenceCount > DOCK_MAX_SENTENCES) {
+      setMode('pet', { auto: true });
+      if (state.mode === 'pet') state.autoPetFromDock = true;
+    }
+  }
+
+  function maybeSpeechEnded() {
+    if (state.backendTurnActive || state.ttsPlaying || state.ttsQueue.length > 0) return;
+    if (state.dockStripTimer !== null) window.clearTimeout(state.dockStripTimer);
+    state.dockStripTimer = window.setTimeout(() => {
+      state.dockStripTimer = null;
+      setDockStrip('');
+    }, DOCK_STRIP_HIDE_MS);
+    if (state.autoPetFromDock && state.mode === 'pet') {
+      if (state.dockReturnTimer !== null) window.clearTimeout(state.dockReturnTimer);
+      state.dockReturnTimer = window.setTimeout(() => {
+        state.dockReturnTimer = null;
+        if (state.autoPetFromDock && state.mode === 'pet') {
+          state.autoPetFromDock = false;
+          setMode('dock', { auto: true });
+        }
+      }, DOCK_RETURN_MS);
+    }
+  }
+
+  // Toque no Lupin pequeno do canto abre o Pet Mode.
+  function handleFaceTap() {
+    if (state.mode === 'dock' && state.isLupinBody) {
+      setMode('pet');
+      return true;
+    }
+    return false;
+  }
+
+  function toggleDockText(open) {
+    const next = open === undefined ? !document.body.classList.contains('dock-text-open') : open;
+    document.body.classList.toggle('dock-text-open', next);
+    if (next && els.chatInput && typeof els.chatInput.focus === 'function') els.chatInput.focus();
+  }
+
+  // "Falar com Lupin": segurar grava o microfone, tocar abre o texto.
+  function dockTalkDown() {
+    unlockAudio();
+    if (state.dockTalk.holdTimer !== null) window.clearTimeout(state.dockTalk.holdTimer);
+    state.dockTalk.holding = false;
+    state.dockTalk.holdTimer = window.setTimeout(() => {
+      state.dockTalk.holdTimer = null;
+      state.dockTalk.holding = true;
+      startPtt();
+    }, DOCK_TALK_HOLD_MS);
+  }
+
+  function dockTalkUp() {
+    if (state.dockTalk.holdTimer !== null) {
+      window.clearTimeout(state.dockTalk.holdTimer);
+      state.dockTalk.holdTimer = null;
+      toggleDockText();
+      return;
+    }
+    if (state.dockTalk.holding) {
+      state.dockTalk.holding = false;
+      stopPttAndSend();
     }
   }
 
@@ -1263,6 +1458,9 @@
     if (ativo === state.isLupinBody) return;
     state.isLupinBody = ativo;
     document.body.classList.toggle('lupin-em-outro-body', !ativo);
+    clearAutoPet();
+    syncDockCorner();
+    publishPetSnapshot();
     if (!ativo) {
       stopSpeaking();
       setMode('dock');
@@ -1390,6 +1588,7 @@
         const sentenceText = typeof msg.text === 'string' ? msg.text.trim() : '';
         if (sentenceText) {
           state.receivedSentenceStream = true;
+          onReplySentence(msg, sentenceText);
           enqueueTtsSentence(sentenceText);
         }
         break;
@@ -1406,16 +1605,21 @@
           applyFaceEmotion(msg.emotion);
         }
         if (!state.receivedSentenceStream) {
+          if (finalText.trim()) onReplySentence(msg, finalText.trim());
           speakText(finalText);
         } else if (!state.ttsPlaying && state.ttsQueue.length === 0) {
           applyFaceState('idle');
         }
         state.receivedSentenceStream = false;
+        state.dockSentenceCount = 0;
+        maybeSpeechEnded();
         break;
       }
       case 'interrupted': {
         state.backendTurnActive = false;
         stopSpeaking({ resetState: true });
+        state.dockSentenceCount = 0;
+        maybeSpeechEnded();
         break;
       }
       case 'action_executed': {
@@ -1437,6 +1641,8 @@
         setCaption(msg.message || 'Ocorreu um erro ao processar sua mensagem.', {
           isError: true,
         });
+        state.dockSentenceCount = 0;
+        maybeSpeechEnded();
         break;
       }
       default:
@@ -1570,6 +1776,7 @@
     els.btnPtt.textContent = '🔴 Ouvindo...';
     els.btnPtt.setAttribute('aria-pressed', 'true');
     applyFaceState('listening');
+    syncDockCorner();
 
     let stream = null;
     try {
@@ -1618,6 +1825,7 @@
     els.btnPtt.classList.remove('is-recording');
     els.btnPtt.textContent = '🎤 Segure para falar';
     els.btnPtt.setAttribute('aria-pressed', 'false');
+    syncDockCorner();
   }
 
   async function stopPttAndSend() {
@@ -1758,6 +1966,7 @@
     if (!text) return;
     submitChatText(text);
     els.chatInput.value = '';
+    document.body.classList.remove('dock-text-open');
     lookAtSafe(0, 0);
   }
 
@@ -1824,6 +2033,10 @@
         aud.purr(false);
       }
 
+      if (!wasMoved && !isMiniPet && handleFaceTap()) {
+        syncFaceBadges();
+        return;
+      }
       if (!wasMoved) {
         const { nx, ny } = computeNormalizedTouch(e.clientX, e.clientY);
         const api = faceApi();
@@ -1921,7 +2134,7 @@
       if (!res.ok) return;
       const data = await res.json();
       state.shortcuts = Array.isArray(data) ? data : data.shortcuts || [];
-      renderShortcutsGrid();
+      renderDock();
       renderSettingsShortcuts();
       if (state.shortcutModalOpen) {
         renderShortcutManageList();
@@ -1940,94 +2153,127 @@
     return '';
   }
 
-  function syncVsdToolbarState() {
-    if (els.shortcutsGrid) {
-      els.shortcutsGrid.classList.toggle('is-edit-mode', state.vsdEditMode);
-      els.shortcutsGrid.classList.toggle('is-large', state.vsdLargeKeys);
-    }
-    if (els.btnVsdEditMode) {
-      els.btnVsdEditMode.classList.toggle('is-active', state.vsdEditMode);
-      els.btnVsdEditMode.setAttribute('aria-pressed', String(state.vsdEditMode));
-      els.btnVsdEditMode.textContent = state.vsdEditMode ? '✅ Concluir' : '✏️ Editar';
-    }
-    if (els.btnVsdSize) {
-      els.btnVsdSize.classList.toggle('is-active', state.vsdLargeKeys);
-      els.btnVsdSize.setAttribute('aria-pressed', String(state.vsdLargeKeys));
-      els.btnVsdSize.textContent = state.vsdLargeKeys ? '🔍 Teclas: Grande' : '🔍 Teclas: Padrão';
+  // Dock: grade 3x3 de Pinned Shortcuts, 9 por página. A última página lista os apps abertos.
+  const DOCK_PAGE_SIZE = 9;
+  const DOCK_EMPTY_TEXT = 'Nenhum atalho fixado. Escolha os atalhos no Mac.';
+
+  function pinnedShortcuts() {
+    return state.shortcuts
+      .filter((sc) => sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0)
+      .map((sc, index) => ({ sc, index }))
+      .sort((x, y) => {
+        const ox = Number.isFinite(x.sc.sort_order) ? x.sc.sort_order : 0;
+        const oy = Number.isFinite(y.sc.sort_order) ? y.sc.sort_order : 0;
+        return ox - oy || x.index - y.index;
+      })
+      .map((item) => item.sc);
+  }
+
+  function shortcutPageCount() {
+    return Math.max(1, Math.ceil(pinnedShortcuts().length / DOCK_PAGE_SIZE));
+  }
+
+  // Páginas de atalhos + 1 página final de "Apps abertos".
+  function dockPageCount() {
+    return shortcutPageCount() + 1;
+  }
+
+  function setDockPage(page) {
+    const last = dockPageCount() - 1;
+    const next = Math.max(0, Math.min(last, Number.isFinite(page) ? Math.trunc(page) : 0));
+    const changed = next !== state.dockPage;
+    state.dockPage = next;
+    state.gamepadFocusIndex = -1;
+    renderDock();
+    if (changed) {
+      const aud = audioApi();
+      if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) aud.click();
     }
   }
 
-  function renderShortcutsGrid() {
-    syncVsdToolbarState();
-    els.shortcutsGrid.textContent = '';
-    const filtered = state.shortcuts.filter((sc) => {
-      if (sc.pinned_on_deck === false || sc.pinned_on_deck === 0) return false;
-      if (state.shortcutCategory === 'all') return true;
-      return sc.category === state.shortcutCategory;
-    });
+  function renderDockDots() {
+    if (!els.dockPageDots) return;
+    els.dockPageDots.textContent = '';
+    const total = dockPageCount();
+    for (let i = 0; i < total; i += 1) {
+      const dot = document.createElement('span');
+      dot.className = 'dock-dot';
+      const isApps = i === total - 1;
+      if (isApps) dot.classList.add('is-apps');
+      if (i === state.dockPage) dot.classList.add('is-active');
+      dot.setAttribute('aria-hidden', 'true');
+      els.dockPageDots.appendChild(dot);
+    }
+    els.dockPageDots.setAttribute(
+      'aria-label',
+      `Página ${state.dockPage + 1} de ${total}${state.dockPage === total - 1 ? ' (Apps abertos)' : ''}`
+    );
+  }
 
-    if (filtered.length === 0) {
+  function renderDock() {
+    const total = dockPageCount();
+    if (state.dockPage > total - 1) state.dockPage = total - 1;
+    const onApps = state.dockPage === total - 1;
+    if (els.shortcutsGrid) els.shortcutsGrid.classList.toggle('hidden', onApps);
+    if (els.dockAppsPage) els.dockAppsPage.classList.toggle('hidden', !onApps);
+    renderDockDots();
+    if (onApps) {
+      if (els.shortcutsGrid) els.shortcutsGrid.textContent = '';
+      return;
+    }
+    if (!els.shortcutsGrid) return;
+    els.shortcutsGrid.textContent = '';
+    const pinned = pinnedShortcuts();
+    if (pinned.length === 0) {
       const empty = document.createElement('p');
-      empty.className = 'memory-hint';
-      empty.textContent = 'Nenhum atalho nesta categoria. Clique em "➕ Novo" para criar.';
+      empty.className = 'dock-empty';
+      empty.textContent = DOCK_EMPTY_TEXT;
       els.shortcutsGrid.appendChild(empty);
       return;
     }
-
-    filtered.forEach((sc) => {
-      const labelText = sc.title || sc.slug || 'Atalho';
-      const hintText = formatShortcutBadge(sc);
-
-      const tile = document.createElement('div');
-      tile.className = `shortcut-tile vsd-key color-${sc.color || 'cyan'}`;
-      tile.tabIndex = 0;
-      tile.setAttribute('role', 'button');
-      tile.setAttribute('aria-label', hintText ? `${labelText} — ${hintText}` : labelText);
-      tile.title = hintText ? `${labelText} (${hintText})` : labelText;
-      tile.dataset.navTile = 'shortcut';
-
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'shortcut-edit-btn';
-      editBtn.title = `Editar ${labelText}`;
-      editBtn.setAttribute('aria-label', `Editar ${labelText}`);
-      editBtn.textContent = '✏️';
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openShortcutModal(sc);
-      });
-
-      const icon = document.createElement('span');
-      icon.className = 'vsd-key-icon';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = sc.icon || '⚡';
-
-      const title = document.createElement('div');
-      title.className = 'vsd-key-label';
-      title.textContent = labelText;
-
-      const hint = document.createElement('div');
-      hint.className = 'vsd-key-hint';
-      hint.textContent = hintText;
-
-      tile.appendChild(editBtn);
-      tile.appendChild(icon);
-      tile.appendChild(title);
-      if (hintText) {
-        tile.appendChild(hint);
-      }
-
-      tile.addEventListener('click', () => runShortcut(sc, tile));
-      tile.addEventListener('keydown', (e) => {
-        if (e.target !== tile) return;
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          runShortcut(sc, tile);
-        }
-      });
-
-      els.shortcutsGrid.appendChild(tile);
+    const start = state.dockPage * DOCK_PAGE_SIZE;
+    pinned.slice(start, start + DOCK_PAGE_SIZE).forEach((sc) => {
+      els.shortcutsGrid.appendChild(buildShortcutTile(sc));
     });
+  }
+
+  function buildShortcutTile(sc) {
+    const labelText = sc.title || sc.slug || 'Atalho';
+    const hintText = formatShortcutBadge(sc);
+
+    const tile = document.createElement('div');
+    tile.className = `shortcut-tile vsd-key color-${sc.color || 'cyan'}`;
+    tile.tabIndex = 0;
+    tile.setAttribute('role', 'button');
+    tile.setAttribute('aria-label', hintText ? `${labelText} — ${hintText}` : labelText);
+    tile.title = hintText ? `${labelText} (${hintText})` : labelText;
+    tile.dataset.navTile = 'shortcut';
+
+    const icon = document.createElement('span');
+    icon.className = 'vsd-key-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = sc.icon || '⚡';
+
+    const title = document.createElement('div');
+    title.className = 'vsd-key-label';
+    title.textContent = labelText;
+
+    tile.appendChild(icon);
+    tile.appendChild(title);
+
+    tile.addEventListener('click', () => runShortcut(sc, tile));
+    tile.addEventListener('keydown', (e) => {
+      if (e.target !== tile) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        runShortcut(sc, tile);
+      }
+    });
+    return tile;
+  }
+
+  function renderShortcutsGrid() {
+    renderDock();
   }
 
   async function runShortcut(sc, tileEl = null) {
@@ -2136,7 +2382,7 @@
     els.scMacCommand.value = 'mission_control';
     els.scAgentPrompt.value = '';
     els.scVoiceTriggers.value = '';
-    els.scPinned.checked = true;
+    els.scPinned.checked = false;
     els.scConfirm.checked = false;
     els.btnScDelete.classList.add('hidden');
     stopRecordingKeys();
@@ -2531,9 +2777,21 @@
     if (items.length === 0) return;
 
     items.forEach((el) => el.classList.remove('gamepad-focused'));
-    const step = direction === 'left' || direction === 'up' ? -1 : 1;
+    const forward = direction === 'right' || direction === 'down';
+    const step = forward ? 1 : -1;
+    const inShortcutGrid =
+      state.mode === 'dock' &&
+      !state.settingsOpen &&
+      !state.pendingApprovalId &&
+      !state.shortcutModalOpen &&
+      !state.memoryOpen &&
+      state.dockPage < dockPageCount() - 1;
     if (state.gamepadFocusIndex < 0) {
       state.gamepadFocusIndex = 0;
+    } else if (inShortcutGrid && (direction === 'up' || direction === 'down')) {
+      // Grade 3x3: cima e baixo andam uma linha; nas bordas o foco fica onde está.
+      const target = state.gamepadFocusIndex + step * 3;
+      if (target >= 0 && target < items.length) state.gamepadFocusIndex = target;
     } else {
       state.gamepadFocusIndex = (state.gamepadFocusIndex + step + items.length) % items.length;
     }
@@ -2819,7 +3077,32 @@
     else cycleMode(delta);
   }
 
-  // Deslize horizontal alterna Pet e Dock (ou as seções dos Ajustes quando abertos).
+  function pageDock(delta) {
+    if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen || state.settingsOpen) return;
+    if (state.mode !== 'dock') return;
+    setDockPage(state.dockPage + delta);
+  }
+
+  const SWIPE_MIN_VERTICAL_PX = 110;
+
+  // Deslize horizontal troca o Modo; vertical, no Dock, troca a página.
+  function applySwipe(dx, dy, elapsedMs) {
+    if (elapsedMs > SWIPE_MAX_MS) return false; // arrastar devagar é carinho no rosto
+    if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dy) <= SWIPE_MAX_OFF_AXIS_PX) {
+      cycleHorizontally(dx < 0 ? 1 : -1);
+      return true;
+    }
+    if (
+      state.mode === 'dock' &&
+      Math.abs(dy) >= SWIPE_MIN_VERTICAL_PX &&
+      Math.abs(dx) <= SWIPE_MAX_OFF_AXIS_PX
+    ) {
+      pageDock(dy < 0 ? 1 : -1);
+      return true;
+    }
+    return false;
+  }
+
   function bindSwipe() {
     let start = null;
     document.addEventListener(
@@ -2843,11 +3126,7 @@
         const origin = start;
         start = null;
         if (!touch) return;
-        const dx = touch.clientX - origin.x;
-        const dy = touch.clientY - origin.y;
-        if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dy) > SWIPE_MAX_OFF_AXIS_PX) return;
-        if (Date.now() - origin.at > SWIPE_MAX_MS) return; // arrastar devagar é carinho no rosto
-        cycleHorizontally(dx < 0 ? 1 : -1);
+        applySwipe(touch.clientX - origin.x, touch.clientY - origin.y, Date.now() - origin.at);
       },
       { passive: true }
     );
@@ -2856,6 +3135,9 @@
   // Registro de eventos
   function bindEvents() {
     bindSwipe();
+    ['pointerdown', 'touchstart', 'keydown'].forEach((evtName) => {
+      document.addEventListener(evtName, noteUserInput, { passive: true, capture: true });
+    });
     ['mousemove', 'pointerdown', 'touchstart'].forEach((evtName) => {
       document.addEventListener(
         evtName,
@@ -3017,32 +3299,24 @@
 
     // Dock & Atalhos
     els.btnRefreshApps.addEventListener('click', fetchMacApps);
-    if (els.btnVsdSize) {
-      els.btnVsdSize.addEventListener('click', () => {
-        state.vsdLargeKeys = !state.vsdLargeKeys;
-        savePref(PREFS.vsdLargeKeys, state.vsdLargeKeys);
-        syncVsdToolbarState();
-      });
+    if (els.btnSettingsNewShortcut) {
+      els.btnSettingsNewShortcut.addEventListener('click', () => openShortcutModal(null));
     }
-    if (els.btnVsdEditMode) {
-      els.btnVsdEditMode.addEventListener('click', () => {
-        state.vsdEditMode = !state.vsdEditMode;
-        syncVsdToolbarState();
-      });
+    if (els.btnSettingsManageShortcuts) {
+      els.btnSettingsManageShortcuts.addEventListener('click', () => openShortcutModal(null));
     }
-    els.shortcutCategoryTabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        state.shortcutCategory = tab.dataset.cat || 'all';
-        els.shortcutCategoryTabs.forEach((t) => {
-          const active = t.dataset.cat === state.shortcutCategory;
-          t.classList.toggle('is-active', active);
-          t.setAttribute('aria-selected', String(active));
+    if (els.btnDockTalk) {
+      els.btnDockTalk.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        dockTalkDown();
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach((evt) => {
+        els.btnDockTalk.addEventListener(evt, () => {
+          if (state.dockTalk.holdTimer !== null || state.dockTalk.holding) dockTalkUp();
         });
-        renderShortcutsGrid();
       });
-    });
-    els.btnNewShortcut.addEventListener('click', () => openShortcutModal(null));
-    els.btnConfigShortcuts.addEventListener('click', () => openShortcutModal(null));
+      els.btnDockTalk.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
     els.btnCloseShortcutModal.addEventListener('click', closeShortcutModal);
     els.shortcutModalBackdrop.addEventListener('click', closeShortcutModal);
     els.scActionType.addEventListener('change', updateShortcutPayloadVisibility);
@@ -3089,8 +3363,26 @@
 
   function initGamepad() {
     if (!window.DeskGamepad || typeof window.DeskGamepad.init !== 'function') return;
-    window.DeskGamepad.init({
+    const overlayOpen = () => state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen;
+    const handlers = {
       onLook: (x, y) => lookAtSafe(x, y),
+      // No Dock, L2/R2 viram "página anterior/próxima"; fora dele seguem como Push-to-Talk.
+      triggersAsPage: () => state.mode === 'dock' && !state.settingsOpen && !overlayOpen(),
+      onPage: (dir) => pageDock(dir),
+      onYPress: () => {
+        if (overlayOpen()) return;
+        if (state.mode === 'dock' && !state.settingsOpen) {
+          state.yHeldPtt = true;
+          startPtt();
+        } else {
+          toggleTtsMode();
+        }
+      },
+      onYRelease: () => {
+        if (!state.yHeldPtt) return;
+        state.yHeldPtt = false;
+        stopPttAndSend();
+      },
       onPttStart: () => {
         if (!state.pendingApprovalId && !state.shortcutModalOpen && !state.memoryOpen) startPtt();
       },
@@ -3139,7 +3431,17 @@
           setSettingsOpen(!state.settingsOpen);
         }
       },
+    };
+    // Qualquer botão do gamepad conta como interação e cancela a volta automática do Pet.
+    Object.keys(handlers).forEach((name) => {
+      if (name === 'onLook' || name === 'triggersAsPage') return;
+      const original = handlers[name];
+      handlers[name] = (...args) => {
+        noteUserInput();
+        return original(...args);
+      };
     });
+    window.DeskGamepad.init(handlers);
   }
 
   function initDiagnostics() {
@@ -3197,6 +3499,9 @@
     connectWebSocket();
     fetchMemory();
     fetchMacStatus();
+    fetchClientInfo();
+    renderDock();
+    syncDockCorner();
     tickClocks();
 
     window.setInterval(tickClocks, 1000);

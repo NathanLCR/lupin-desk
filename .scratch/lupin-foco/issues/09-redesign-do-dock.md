@@ -44,12 +44,29 @@ O Dock é a superfície de controle do Mac. Hoje o RG406H é Body e Dock ao mesm
 
 ## Critérios de aceite
 
-- [ ] A grade é 3x3 fixa, paginada, e mostra só os Pinned Shortcuts na ordem do Mac.
-- [ ] A lista de apps abertos é a última página do Dock.
-- [ ] `L1`/`R1` e swipe lateral trocam Mode; `L2`/`R2` e swipe vertical trocam página.
-- [ ] Não existe edição de Shortcuts fora do Mac, nem pela UI nem pela API (403).
-- [ ] Shortcut novo nasce sem fixar.
-- [ ] O Lupin pequeno aparece no canto só no Active Body; fora dele, aparece o botão "Falar com Lupin".
-- [ ] Falar de qualquer aparelho faz Lupin responder no Active Body, e o aparelho de origem mostra o texto.
-- [ ] Fala curta fica no Dock com o Lupin pequeno; fala longa (3ª frase ou First Wake) vai para o Pet e volta sozinha se a troca foi automática.
-- [ ] O toggle entre Pet e Dock funciona nos dois sentidos.
+- [x] A grade é 3x3 fixa, paginada, e mostra só os Pinned Shortcuts na ordem do Mac.
+- [x] A lista de apps abertos é a última página do Dock.
+- [x] `L1`/`R1` e swipe lateral trocam Mode; `L2`/`R2` e swipe vertical trocam página.
+- [x] Não existe edição de Shortcuts fora do Mac, nem pela UI nem pela API (403).
+- [x] Shortcut novo nasce sem fixar.
+- [x] O Lupin pequeno aparece no canto só no Active Body; fora dele, aparece o botão "Falar com Lupin".
+- [x] Falar de qualquer aparelho faz Lupin responder no Active Body, e o aparelho de origem mostra o texto.
+- [x] Fala curta fica no Dock com o Lupin pequeno; fala longa (3ª frase ou First Wake) vai para o Pet e volta sozinha se a troca foi automática.
+- [x] O toggle entre Pet e Dock funciona nos dois sentidos. (Pet -> Dock por L1/R1/swipe; Dock -> Pet também tocando no Lupin pequeno.)
+
+## Feito em 2026-11-17
+
+- Backend: `GET /api/client-info`; escrita de Shortcuts (incl. `reset-defaults`) só do Mac (403 fora); Shortcut novo nasce sem fixar; resposta a quem não é o Active Body (texto para quem perguntou, `emotion`/`sentence`/`done`/`audio` espelhados no Active Body com `from_body`); `first_wake: true` em cada `sentence` do First Wake. Documentado em `docs/protocolo-cerebro-corpo.md`.
+- Dock: grade 3x3 de Pinned Shortcuts ordenada por `sort_order`, 9 por página, última página "Apps abertos", bolinhas de página, estado vazio "Nenhum atalho fixado. Escolha os atalhos no Mac.". Sem abas, botão de tamanho, Novo/Editar/Gerenciar.
+- Controles: `L1`/`R1` e swipe horizontal trocam Mode; `L2`/`R2` e swipe vertical trocam página (só no Dock; fora dele `L2`/`R2` seguem como Push-to-Talk); D-pad anda na grade (cima/baixo pulam uma linha).
+- Ajustes > Dock: no Mac, editor completo (novo, editar, apagar, fixar/desafixar, reordenar, via modal existente); nos outros aparelhos, lista somente leitura.
+- Canto: Lupin pequeno (mesmo rosto, encolhido por CSS) no Active Body, toque abre o Pet; nos outros, botão "Falar com Lupin" (segurar grava, tocar abre o texto). `Y` segurado também grava no Dock.
+- Fala no Dock: 1-2 frases ficam no Dock com faixa de uma linha (some 4 s depois); 3ª frase ou `first_wake` sobe para o Pet e volta 5 s depois da fala só se a troca foi automática; qualquer entrada do usuário cancela a volta. Aparelho que não é o Active Body só mostra texto.
+- Mini-pet (Electron): fora do Active Body esconde o desenho e mostra só "Falar com Lupin".
+- Testes: Python `tests/test_dock_redesign.py`; frontend `tests/frontend/dock.test.cjs` (harness compartilhado em `harness.cjs`).
+
+Pendente / a conferir à mão:
+- Códigos reais de `L2`/`R2` e `Y` no RG406H (o código assume botões 6/7 e 3 do mapeamento standard).
+- Layout do canto e da grade na tela do RG406H e no iPhone; swipe vertical no toque real.
+- No mini-pet, "Falar com Lupin" só abre o painel (o mini-pet não tem WebSocket próprio).
+- Bancos antigos mantêm `pinned_on_deck` como estava (sem migração).

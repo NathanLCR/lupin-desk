@@ -68,6 +68,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
       <span>Ocultar</span>
     </button>
+    <button id="mini-pet-talk" type="button" class="mini-pet-talk" title="Abrir o painel para falar com o Lupin">Falar com Lupin</button>
   </nav>
   <p id="mini-pet-help" class="sr-only">Arraste o botão Mover ou use as setas. Segure Shift para mover mais rápido. Escape oculta o mini-pet. Command, Shift e L mostram o mini-pet novamente.</p>
 
@@ -101,75 +102,38 @@
   <div id="action-toast" class="action-toast hidden" role="status" aria-live="polite"></div>
 
   <!-- Painel de Modo 2: Dock Viva & Virtual Stream Deck do Mac -->
-  <section id="mode-dock" class="workspace-panel hidden" aria-label="Dock Viva e Virtual Stream Deck do Mac">
-    <div class="dock-layout vsd-layout">
-      <!-- Faixa Compacta: Dock Viva do macOS -->
-      <div class="panel-card dock-live-strip">
-        <div class="dock-live-row">
-          <div class="dock-live-meta">
-            <h2 class="dock-live-title">🖥️ Dock Viva</h2>
-            <span id="dock-active-app" class="panel-pill">Ativo: —</span>
-          </div>
-          <div id="dock-apps-grid" class="dock-apps-grid" role="list" aria-label="Aplicativos do Mac"></div>
-          <div class="dock-live-actions">
-            <button
-              id="btn-refresh-apps"
-              type="button"
-              class="btn-secondary btn-sm"
-              title="Atualizar lista de aplicativos abertos"
-              aria-label="Atualizar aplicativos abertos"
-            >
-              ↻ Apps
-            </button>
-          </div>
+  <section id="mode-dock" class="workspace-panel hidden" aria-label="Dock: Atalhos fixados e apps abertos">
+    <div class="dock-layout dock-pages">
+      <!-- Páginas 1..N: grade 3x3 de Pinned Shortcuts -->
+      <div id="shortcuts-grid" class="dock-grid" role="list" aria-label="Atalhos fixados"></div>
+
+      <!-- Última página: apps abertos no Mac -->
+      <div id="dock-apps-page" class="dock-apps-page hidden" aria-label="Apps abertos">
+        <div class="dock-apps-head">
+          <h2 class="dock-live-title">Apps abertos</h2>
+          <span id="dock-active-app" class="panel-pill">Ativo: —</span>
+          <button
+            id="btn-refresh-apps"
+            type="button"
+            class="btn-secondary btn-sm"
+            title="Atualizar lista de aplicativos abertos"
+            aria-label="Atualizar aplicativos abertos"
+          >
+            ↻ Apps
+          </button>
         </div>
+        <div id="dock-apps-grid" class="dock-apps-grid" role="list" aria-label="Aplicativos do Mac"></div>
       </div>
 
-      <!-- Grade Principal: Virtual Stream Deck -->
-      <div class="panel-card vsd-deck-shell">
-        <div class="vsd-toolbar">
-          <div class="vsd-toolbar-left">
-            <div id="shortcut-category-tabs" class="category-tabs vsd-profile-tabs" role="tablist" aria-label="Categorias do Stream Deck">
-              <button type="button" class="cat-tab is-active" data-cat="all" role="tab" aria-selected="true">Todos</button>
-              <button type="button" class="cat-tab" data-cat="spaces" role="tab" aria-selected="false">Espaços</button>
-              <button type="button" class="cat-tab" data-cat="capture" role="tab" aria-selected="false">Captura</button>
-              <button type="button" class="cat-tab" data-cat="editing" role="tab" aria-selected="false">Edição</button>
-              <button type="button" class="cat-tab" data-cat="media" role="tab" aria-selected="false">Mídia</button>
-              <button type="button" class="cat-tab" data-cat="apps" role="tab" aria-selected="false">Apps</button>
-              <button type="button" class="cat-tab" data-cat="custom" role="tab" aria-selected="false">Custom</button>
-            </div>
-          </div>
-          <div class="panel-head-actions vsd-toolbar-actions">
-            <button
-              id="btn-vsd-size"
-              type="button"
-              class="btn-secondary btn-sm"
-              aria-pressed="false"
-              title="Alternar tamanho das teclas entre Padrão e Grande"
-            >
-              🔍 Teclas: Padrão
-            </button>
-            <button
-              id="btn-vsd-edit-mode"
-              type="button"
-              class="btn-secondary btn-sm"
-              aria-pressed="false"
-              title="Mostrar botões de edição e atalhos técnicos nas teclas"
-            >
-              ✏️ Editar
-            </button>
-            <button id="btn-new-shortcut" type="button" class="btn-primary btn-sm">
-              ➕ Novo
-            </button>
-            <button id="btn-config-shortcuts" type="button" class="btn-secondary btn-sm" aria-label="Gerenciar todos os atalhos" title="Gerenciar todos os atalhos">
-              ⚙️
-            </button>
-          </div>
-        </div>
-        <div id="shortcuts-grid" class="shortcuts-grid vsd-grid" role="list" aria-label="Teclas do Virtual Stream Deck"></div>
-      </div>
+      <div id="dock-page-dots" class="dock-dots" role="img" aria-label="Página 1"></div>
     </div>
   </section>
+
+  <!-- Canto do Dock: Lupin pequeno (Active Body) ou "Falar com Lupin" (outros aparelhos) + fala em uma linha -->
+  <div id="dock-corner" class="dock-corner">
+    <button id="btn-dock-talk" type="button" class="dock-talk-btn hidden" aria-label="Falar com Lupin (segure para falar, toque para digitar)">Falar com Lupin</button>
+    <p id="dock-speech-strip" class="dock-speech-strip is-empty" role="status" aria-live="polite"></p>
+  </div>
 
   <!-- Ajustes: fora dos Modos. L1/R1 trocam de seção, B ou Start fecham. -->
   <section id="settings-panel" class="workspace-panel hidden" aria-label="Ajustes">
@@ -273,7 +237,11 @@
     </div>
 
     <div id="settings-tab-dock" class="settings-subpanel hidden">
-      <p class="muted-note">Os Atalhos do Dock são criados e editados no Mac. Aqui você só vê a lista.</p>
+      <p id="settings-dock-note" class="muted-note">Os Atalhos do Dock são criados e editados no Mac. Aqui você só vê a lista.</p>
+      <div id="settings-dock-editor" class="settings-dock-editor hidden">
+        <button id="btn-settings-new-shortcut" type="button" class="btn-primary btn-sm">Novo atalho</button>
+        <button id="btn-settings-manage-shortcuts" type="button" class="btn-secondary btn-sm">Gerenciar e ordenar</button>
+      </div>
       <ul id="settings-shortcuts-list" class="settings-list"></ul>
     </div>
 
