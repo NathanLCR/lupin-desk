@@ -8,6 +8,8 @@ import binascii
 import hmac
 import json
 import logging
+import socket
+import time
 import uuid
 from contextlib import asynccontextmanager
 from email.parser import BytesParser
@@ -56,6 +58,25 @@ def _is_loopback_host(host: str | None) -> bool:
     """Retorna True quando o cliente conecta a partir de loopback local."""
     normalized = (host or "").strip().lower()
     return normalized in _LOOPBACK_HOSTS
+
+
+def _discover_local_ips() -> frozenset[str]:
+    """Descobre os IPs do próprio Mac (Wi-Fi/Ethernet) sem executar nada externo."""
+    found: set[str] = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            found.add(str(info[4][0]).split("%", 1)[0])
+    except OSError:
+        pass
+    # Truque de UDP: connect não envia pacote, só pergunta qual interface sairia.
+    for family, target in ((socket.AF_INET, "10.255.255.255"), (socket.AF_INET6, "2001:db8::1")):
+        try:
+            with socket.socket(family, socket.SOCK_DGRAM) as sock:
+                sock.connect((target, 1))
+                found.add(str(sock.getsockname()[0]).split("%", 1)[0])
+        except OSError:
+            continue
+    return frozenset(ip for ip in found if ip)
 
 
 def _extract_access_token(headers: Any, query_token: str | None = None) -> str:
@@ -247,6 +268,7 @@ def create_app(
     today_engine: TodayEngine | None = None,
     first_wake: FirstWakeTracker | None = None,
     agenda_reader: Callable[[], list[dict[str, Any]] | None] | None = None,
+    local_ips: Callable[[], frozenset[str]] | None = None,
 ) -> FastAPI:
     """Cria e configura a instância FastAPI com memória, atalhos, Mac, voz e WebSocket."""
     resolved_settings = settings or load_settings()
@@ -324,6 +346,34 @@ def create_app(
     fastapi_app.state.today = resolved_today
     fastapi_app.state.first_wake = resolved_first_wake
     fastapi_app.state.access_token = runtime_access_token
+
+    local_ips_cache: dict[str, Any] = {"at": 0.0, "ips": frozenset()}
+
+    def mac_ip_addresses() -> frozenset[str]:
+        """IPs do próprio Mac, em cache de 60 s (o Wi-Fi pode trocar de endereço)."""
+        if local_ips is not None:
+            return local_ips()
+        now = time.monotonic()
+        if not local_ips_cache["ips"] or now - local_ips_cache["at"] > 60:
+            local_ips_cache["ips"] = _discover_local_ips()
+            local_ips_cache["at"] = now
+        return local_ips_cache["ips"]
+
+    def is_mac_client(host: str | None) -> bool:
+        """O Mac é o cliente em loopback ou conectando pelo próprio IP da rede."""
+        if _is_loopback_host(host):
+            return True
+        normalized = (host or "").strip().split("%", 1)[0]
+        return bool(normalized) and normalized in mac_ip_addresses()
+
+    def require_mac_client(request: Request) -> None:
+        """Shortcuts só são configurados no Mac, mesmo com DESK_DEV_SEM_TOKEN."""
+        host = request.client.host if request.client else None
+        if not is_mac_client(host):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Os atalhos só podem ser configurados no Mac.",
+            )
 
     @fastapi_app.middleware("http")
     async def lan_access_auth_middleware(request: Request, call_next: Any) -> Response:
@@ -473,9 +523,16 @@ def create_app(
         """Lista os atalhos cadastrados no SQLite (opcionalmente filtrados por categoria)."""
         return {"shortcuts": resolved_shortcuts.list_shortcuts(category=category)}
 
+    @fastapi_app.get("/api/client-info")
+    async def client_info(request: Request) -> dict[str, Any]:
+        """Diz se quem pergunta é o próprio Mac (único lugar que edita Shortcuts)."""
+        host = request.client.host if request.client else None
+        return {"is_mac": is_mac_client(host)}
+
     @fastapi_app.post("/api/shortcuts", status_code=status.HTTP_201_CREATED)
-    async def create_shortcut(payload: ShortcutPayloadRequest) -> dict[str, Any]:
-        """Cria um novo atalho configurável no Stream Deck."""
+    async def create_shortcut(request: Request, payload: ShortcutPayloadRequest) -> dict[str, Any]:
+        """Cria um novo atalho (nasce sem fixar no Dock). Só no Mac."""
+        require_mac_client(request)
         data = payload.model_dump(exclude_none=True)
         try:
             return resolved_shortcuts.create_shortcut(data)
@@ -483,22 +540,26 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     @fastapi_app.post("/api/shortcuts/reorder")
-    async def reorder_shortcuts(payload: ShortcutReorderRequest) -> dict[str, Any]:
-        """Reordena os atalhos do Stream Deck conforme lista de IDs/slugs."""
+    async def reorder_shortcuts(request: Request, payload: ShortcutReorderRequest) -> dict[str, Any]:
+        """Reordena os atalhos do Dock conforme lista de IDs/slugs. Só no Mac."""
+        require_mac_client(request)
         order = payload.ordered_ids or payload.ids
         return {"shortcuts": resolved_shortcuts.reorder_shortcuts(order)}
 
     @fastapi_app.post("/api/shortcuts/reset-defaults")
-    async def reset_default_shortcuts() -> dict[str, Any]:
-        """Restaura o catálogo padrão completo de atalhos do Mac."""
+    async def reset_default_shortcuts(request: Request) -> dict[str, Any]:
+        """Restaura o catálogo padrão completo de atalhos do Mac. Só no Mac."""
+        require_mac_client(request)
         return {"shortcuts": resolved_shortcuts.reset_defaults()}
 
     @fastapi_app.put("/api/shortcuts/{shortcut_id}")
     async def update_shortcut(
+        request: Request,
         shortcut_id: str,
         payload: ShortcutPayloadRequest,
     ) -> dict[str, Any]:
-        """Atualiza um atalho existente identificado por `id` ou `slug`."""
+        """Atualiza (inclusive fixa/desafixa) um atalho por `id` ou `slug`. Só no Mac."""
+        require_mac_client(request)
         data = payload.model_dump(exclude_unset=True)
         try:
             updated = resolved_shortcuts.update_shortcut(shortcut_id, data)
@@ -509,8 +570,9 @@ def create_app(
         return updated
 
     @fastapi_app.delete("/api/shortcuts/{shortcut_id}")
-    async def delete_shortcut(shortcut_id: str) -> dict[str, Any]:
-        """Remove um atalho pelo `id` ou `slug`."""
+    async def delete_shortcut(request: Request, shortcut_id: str) -> dict[str, Any]:
+        """Remove um atalho pelo `id` ou `slug`. Só no Mac."""
+        require_mac_client(request)
         deleted = resolved_shortcuts.delete_shortcut(shortcut_id)
         if not deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Atalho não encontrado.")
@@ -819,6 +881,7 @@ def create_app(
     # que vence os outros (navegador do Mac, iPhone); no mesmo tipo, o último hello vence.
     bodies: list[dict[str, Any]] = []
     body_seq = [0]
+    fastapi_app.state.bodies = bodies
 
     def current_active_body() -> dict[str, Any] | None:
         if not bodies:
@@ -1003,8 +1066,33 @@ def create_app(
                     }
                 )
 
-        async def audio_worker(queue: asyncio.Queue[str | None]) -> None:
-            """Sintetiza cada frase da fila e envia `audio` em chunks. Falha de TTS só pula o áudio."""
+        def mirror_target() -> dict[str, Any] | None:
+            """Active Body de outra conexão, quando quem perguntou não é o Active Body."""
+            active = current_active_body()
+            if active is None or active is body_info["entry"]:
+                return None
+            return active
+
+        async def send_to_entry(entry: dict[str, Any], payload: dict[str, Any]) -> bool:
+            """Envia a um Body qualquer; conexão caída não derruba o turno de quem perguntou."""
+            try:
+                await entry["send"](payload)
+                return True
+            except Exception:
+                logger.info("Body %s não recebeu o evento %s (conexão caída).", entry["body"], payload.get("type"))
+                return False
+
+        async def audio_worker(
+            queue: asyncio.Queue[str | None],
+            send: Callable[[dict[str, Any]], Any] | None = None,
+            extra: dict[str, Any] | None = None,
+        ) -> None:
+            """Sintetiza cada frase da fila e envia `audio` em chunks. Falha de TTS só pula o áudio.
+
+            `send`/`extra` permitem entregar a voz a outro Body (resposta espelhada no Active Body);
+            nesse caso, falha de envio só encerra o áudio e não o turno.
+            """
+            deliver = send or safe_send
             index = 0
             while True:
                 sentence_text = await queue.get()
@@ -1022,16 +1110,23 @@ def create_app(
                 total = max(1, -(-len(audio_bytes) // _AUDIO_CHUNK_BYTES))
                 for seq in range(total):
                     chunk = audio_bytes[seq * _AUDIO_CHUNK_BYTES : (seq + 1) * _AUDIO_CHUNK_BYTES]
-                    await safe_send(
-                        {
-                            "type": "audio",
-                            "sentence": sentence_index,
-                            "seq": seq,
-                            "last": seq == total - 1,
-                            "mime": "audio/mp4",
-                            "data": base64.b64encode(chunk).decode("ascii"),
-                        }
-                    )
+                    payload = {
+                        "type": "audio",
+                        "sentence": sentence_index,
+                        "seq": seq,
+                        "last": seq == total - 1,
+                        "mime": "audio/mp4",
+                        "data": base64.b64encode(chunk).decode("ascii"),
+                        **(extra or {}),
+                    }
+                    if extra is None:
+                        await deliver(payload)
+                    else:
+                        try:
+                            await deliver(payload)
+                        except Exception:
+                            logger.info("Body de destino saiu no meio da voz; áudio encerrado.")
+                            return
 
         async def run_first_wake() -> None:
             """First Wake (issue 03): na primeira interação do dia no Active Body, Lupin fala o Today.
@@ -1062,7 +1157,7 @@ def create_app(
             try:
                 await safe_send({"type": "emotion", "emotion": "happy"})
                 for frase in frases:
-                    await safe_send({"type": "sentence", "text": frase})
+                    await safe_send({"type": "sentence", "text": frase, "first_wake": True})
                     if audio_queue is not None:
                         audio_queue.put_nowait(frase)
                 await safe_send(
@@ -1088,9 +1183,26 @@ def create_app(
             emotion = "neutral"
             audio_queue: asyncio.Queue[str | None] | None = None
             audio_task: asyncio.Task[None] | None = None
-            if body_info["wants_audio"] and is_active_body() and resolved_tts.is_available():
-                audio_queue = asyncio.Queue()
-                audio_task = asyncio.create_task(audio_worker(audio_queue))
+            # Resposta no Active Body (ADR 0001, adendo): se quem perguntou não é o Active Body,
+            # a voz, a Expression e as frases também vão para ele, marcadas com `from_body`.
+            asker_name = str(body_info["body"] or "unknown")
+            mirror_entry = mirror_target()
+            mirror_extra = {"from_body": asker_name}
+
+            async def mirror(payload: dict[str, Any]) -> None:
+                target = mirror_target() if mirror_entry is not None else None
+                if target is not None:
+                    await send_to_entry(target, {**payload, **mirror_extra})
+
+            if resolved_tts.is_available():
+                if body_info["wants_audio"] and is_active_body():
+                    audio_queue = asyncio.Queue()
+                    audio_task = asyncio.create_task(audio_worker(audio_queue))
+                elif mirror_entry is not None and mirror_entry.get("wants_audio"):
+                    audio_queue = asyncio.Queue()
+                    audio_task = asyncio.create_task(
+                        audio_worker(audio_queue, mirror_entry["send"], mirror_extra)
+                    )
 
             try:
                 await safe_send({"type": "state", "state": "thinking"})
@@ -1122,6 +1234,7 @@ def create_app(
                     if event_type == "emotion":
                         emotion = str(event.get("emotion") or "neutral")
                         await safe_send({"type": "emotion", "emotion": emotion})
+                        await mirror({"type": "emotion", "emotion": emotion})
                     elif event_type == "delta":
                         delta_text = str(event.get("text") or "")
                         if delta_text:
@@ -1130,6 +1243,7 @@ def create_app(
                         sentence_text = str(event.get("text") or "")
                         if sentence_text:
                             await safe_send({"type": "sentence", "text": sentence_text})
+                            await mirror({"type": "sentence", "text": sentence_text})
                             if audio_queue is not None:
                                 audio_queue.put_nowait(sentence_text)
                     elif event_type == "action":
@@ -1146,15 +1260,15 @@ def create_app(
                 new_facts = resolved_memory.extract_and_store_facts(user_text, raw_text)
                 companion_state = resolved_memory.record_interaction()
 
-                await safe_send(
-                    {
-                        "type": "done",
-                        "text": clean_text,
-                        "emotion": emotion,
-                        "facts": new_facts,
-                        "companion": companion_state,
-                    }
-                )
+                done_payload = {
+                    "type": "done",
+                    "text": clean_text,
+                    "emotion": emotion,
+                    "facts": new_facts,
+                    "companion": companion_state,
+                }
+                await safe_send(done_payload)
+                await mirror(done_payload)
                 await safe_send(
                     {
                         "type": "memory_updated",
@@ -1277,7 +1391,12 @@ def create_app(
                     if body_info["entry"] is not None:
                         bodies.remove(body_info["entry"])
                     body_seq[0] += 1
-                    body_info["entry"] = {"body": body_info["body"], "seq": body_seq[0], "send": safe_send}
+                    body_info["entry"] = {
+                        "body": body_info["body"],
+                        "seq": body_seq[0],
+                        "send": safe_send,
+                        "wants_audio": body_info["wants_audio"],
+                    }
                     bodies.append(body_info["entry"])
                     active = current_active_body()
                     await safe_send(

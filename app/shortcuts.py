@@ -374,7 +374,7 @@ class ShortcutStore:
                         payload TEXT NOT NULL,
                         voice_triggers TEXT NOT NULL DEFAULT '',
                         color TEXT NOT NULL DEFAULT 'cyan',
-                        pinned_on_deck INTEGER NOT NULL DEFAULT 1,
+                        pinned_on_deck INTEGER NOT NULL DEFAULT 0,
                         sort_order INTEGER NOT NULL DEFAULT 0,
                         is_default INTEGER NOT NULL DEFAULT 0,
                         requires_confirmation INTEGER NOT NULL DEFAULT 0,
@@ -599,7 +599,7 @@ class ShortcutStore:
         color = self._normalize_color(data.get("color"))
         icon = str(data.get("icon") or "⚡").strip() or "⚡"
         voice_triggers = str(data.get("voice_triggers") or "").strip()
-        pinned_on_deck = bool(data.get("pinned_on_deck", True))
+        pinned_on_deck = bool(data.get("pinned_on_deck", False))
         is_default = bool(data.get("is_default", False))
         requires_confirmation = bool(data.get("requires_confirmation", False))
         now = _now_iso()
