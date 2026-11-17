@@ -87,3 +87,8 @@ Ainda falta:
 
 - O script do Calendar não expande eventos recorrentes nem eventos que começaram antes de hoje; ver no uso real se isso incomoda.
 - 1 semana de uso real.
+
+## Decisions after delivery (2026-11-17)
+
+- Mail.app latency: with email consent on, every turn reads Mail.app (~6 s), and First Wake waits ~6 s. Left as is on purpose; revisit only if it bothers in daily use.
+- History: the injected calendar/email context is never saved, but Lupin's reply is saved as usual, even when it mentions an event or a sender. Accepted: the reply is what the user asked for.
