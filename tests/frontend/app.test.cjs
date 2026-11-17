@@ -462,7 +462,7 @@ test('gamepad navega e ativa o modal/gaveta antes dos tiles subjacentes', () => 
   assert.equal(hiddenTile.clickCount, 0);
 });
 
-test('Enter no botão de editar não executa o atalho pai; agent_prompt usa WebSocket', async () => {
+test('Enter num filho da tecla não executa o atalho pai; agent_prompt usa WebSocket', async () => {
   const harness = makeHarness();
   const { app, elements, wsMessages } = harness;
   app.state.shortcuts = [{
@@ -475,9 +475,8 @@ test('Enter no botão de editar não executa o atalho pai; agent_prompt usa WebS
   }];
   app.renderShortcutsGrid();
   const tile = elements.get('shortcuts-grid').children[0];
-  const editButton = tile.children[0];
-  const editKey = event('Enter', { target: editButton });
-  tile.dispatch('keydown', editKey);
+  const innerKey = event('Enter', { target: tile.children[0] });
+  tile.dispatch('keydown', innerKey);
   assert.equal(wsMessages.length, 0);
 
   tile.dispatch('keydown', event('Enter', { target: tile }));
