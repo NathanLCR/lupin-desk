@@ -1,4 +1,4 @@
-"""Testes de segurança LAN/SSRF, confirmações WS e factory lazy de `app.main`."""
+"""Tests for LAN/SSRF security, WS confirmations and the lazy factory of `app.main`."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.main import create_app
 
 
 class _FakeMac:
-    """Mock de MacController para testar confirmações e resize sem tocar no macOS."""
+    """MacController mock to test confirmations and resize without touching macOS."""
 
     def __init__(self) -> None:
         self.activated_apps: list[str] = []
@@ -31,7 +31,7 @@ class _FakeMac:
 
 
 class _FakeLLM:
-    """Mock de LLMClient que emite tags de ação configuradas por turno."""
+    """LLMClient mock that emits the configured action tags per turn."""
 
     async def stream_chat(self, **kwargs: Any):
         yield {"type": "emotion", "emotion": "curious"}
@@ -46,8 +46,8 @@ def _make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "db_path": tmp_path / "test.db",
         "cowork_workspace_path": tmp_path / "missing-cowork",
         "host": "0.0.0.0",
-        "desk_access_token": "segredo-lan-123",
-        "llm_api_key": "sk-super-secreto-1234",
+        "desk_access_token": "lan-secret-123",
+        "llm_api_key": "sk-super-secret-1234",
     }
     defaults.update(overrides)
     return Settings(**defaults)
@@ -64,14 +64,14 @@ def test_resolve_runtime_access_token_behavior(tmp_path: Path) -> None:
     assert len(tok_lan) >= 12
     assert gen_lan is True
 
-    s_fixed = _make_settings(tmp_path, host="0.0.0.0", desk_access_token="meu-pin")
+    s_fixed = _make_settings(tmp_path, host="0.0.0.0", desk_access_token="my-pin")
     tok_fixed, gen_fixed = resolve_runtime_access_token(s_fixed)
-    assert tok_fixed == "meu-pin"
+    assert tok_fixed == "my-pin"
     assert gen_fixed is False
 
 
-def test_modo_dev_sem_token_libera_lan_mesmo_com_token_configurado(tmp_path: Path) -> None:
-    s_dev = _make_settings(tmp_path, desk_access_token="meu-pin", desk_dev_sem_token=True)
+def test_dev_no_token_mode_opens_lan_even_with_configured_token(tmp_path: Path) -> None:
+    s_dev = _make_settings(tmp_path, desk_access_token="my-pin", desk_dev_no_token=True)
     assert resolve_runtime_access_token(s_dev) == ("", False)
 
     app = create_app(settings=s_dev)
@@ -88,38 +88,54 @@ def test_modo_dev_sem_token_libera_lan_mesmo_com_token_configurado(tmp_path: Pat
             assert ws.receive_json()["type"] == "interrupted"
 
 
-def test_modo_dev_sem_token_so_liga_com_valor_explicito(
+def test_dev_no_token_mode_only_turns_on_with_explicit_value(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.config import load_settings
 
-    env_vazio = tmp_path / ".env"
-    env_vazio.write_text("", encoding="utf-8")
-    for valor, esperado in (("1", True), ("true", True), ("sim", True), ("0", False), ("", False)):
-        monkeypatch.setenv("DESK_DEV_SEM_TOKEN", valor)
-        assert load_settings(env_vazio).desk_dev_sem_token is esperado, valor
-    monkeypatch.delenv("DESK_DEV_SEM_TOKEN")
-    assert load_settings(env_vazio).desk_dev_sem_token is False
+    empty_env = tmp_path / ".env"
+    empty_env.write_text("", encoding="utf-8")
+    monkeypatch.delenv("DESK_DEV_SEM_TOKEN", raising=False)
+    for value, expected in (("1", True), ("true", True), ("sim", True), ("0", False), ("", False)):
+        monkeypatch.setenv("DESK_DEV_NO_TOKEN", value)
+        assert load_settings(empty_env).desk_dev_no_token is expected, value
+    monkeypatch.delenv("DESK_DEV_NO_TOKEN")
+    assert load_settings(empty_env).desk_dev_no_token is False
+
+
+def test_dev_no_token_mode_honours_legacy_env_var_as_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.config import load_settings
+
+    empty_env = tmp_path / ".env"
+    empty_env.write_text("", encoding="utf-8")
+    monkeypatch.delenv("DESK_DEV_NO_TOKEN", raising=False)
+    monkeypatch.setenv("DESK_DEV_SEM_TOKEN", "1")
+    assert load_settings(empty_env).desk_dev_no_token is True
+    # The new name wins whenever it is set, even against the legacy one.
+    monkeypatch.setenv("DESK_DEV_NO_TOKEN", "0")
+    assert load_settings(empty_env).desk_dev_no_token is False
 
 
 def test_import_app_main_has_no_db_side_effect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "nao_deve_existir.db"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "must_not_exist.db"))
     sys.modules.pop("app.main", None)
     importlib.import_module("app.main")
-    assert not (tmp_path / "nao_deve_existir.db").exists()
+    assert not (tmp_path / "must_not_exist.db").exists()
 
 
 def test_lan_auth_http_and_ws(tmp_path: Path) -> None:
     app = create_app(settings=_make_settings(tmp_path))
 
-    # Loopback (padrão TestClient) passa sem token
+    # Loopback (TestClient default) passes without a token
     with TestClient(app) as local_client:
         assert local_client.get("/api/skills").status_code == 200
-        # Degradação graciosa sem Cowork
+        # Graceful degradation without Cowork
         st = local_client.get("/api/cowork/state").json()
         assert st["cowork_available"] is False
 
-    # Cliente não-loopback (via wrapper ASGI simulando IP da LAN) exige Bearer token em /api/* e /ws
+    # A non-loopback client (via an ASGI wrapper simulating a LAN IP) needs a Bearer token on /api/* and /ws
     async def lan_asgi(scope: dict[str, Any], receive: Any, send: Any) -> None:
         patched = dict(scope)
         patched["client"] = ("192.168.1.50", 54321)
@@ -130,7 +146,7 @@ def test_lan_auth_http_and_ws(tmp_path: Path) -> None:
         assert lan_client.get("/api/skills").status_code == 401
         ok_resp = lan_client.get(
             "/api/skills",
-            headers={"Authorization": "Bearer segredo-lan-123"},
+            headers={"Authorization": "Bearer lan-secret-123"},
         )
         assert ok_resp.status_code == 200
 
@@ -139,7 +155,7 @@ def test_lan_auth_http_and_ws(tmp_path: Path) -> None:
                 pass
         assert exc_info.value.code == 4401
 
-        with lan_client.websocket_connect("/ws?token=segredo-lan-123") as ws:
+        with lan_client.websocket_connect("/ws?token=lan-secret-123") as ws:
             ws.send_json({"type": "interrupt"})
             assert ws.receive_json()["type"] == "interrupted"
 
@@ -184,9 +200,9 @@ def test_ws_app_requires_confirmation(tmp_path: Path) -> None:
                     m = ws.receive_json()
                     if m.get("type") == "action_executed":
                         return m
-                raise AssertionError("action_executed não recebido")
+                raise AssertionError("action_executed not received")
 
-            # Recusa mac_app -> não abre o aplicativo
+            # Declining mac_app -> does not open the app
             ws.send_json({"type": "confirm_action", "approval_id": app_req["approval_id"], "approved": False})
             app_cancelled = recv_action_executed()
             assert app_cancelled["type"] == "action_executed"

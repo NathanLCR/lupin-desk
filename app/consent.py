@@ -1,8 +1,8 @@
-"""Data Consent (issue 03): o que o provedor de LLM pode ver da agenda e dos e-mails.
+"""Data Consent (issue 03): what the LLM provider may see of the calendar and e-mail.
 
-O consentimento vale só para o provedor e o host que estavam ativos quando foi dado.
-Trocar de provedor ou de base_url desliga os dois interruptores sozinho (sem exceção,
-nem para Ollama). Sem consentimento, nada de agenda ou e-mail entra na chamada ao LLM.
+Consent only holds for the provider and host that were active when it was given.
+Switching provider or base_url turns both switches off on its own (no exception,
+not even for Ollama). Without consent, no calendar or e-mail data enters the LLM call.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
+from app import speech_pt_br as speech
 from app.memory import MemoryStore
 from app.providers import get_preset
 
@@ -23,7 +24,7 @@ def _host_of(base_url: str) -> str:
 
 
 class DataConsent:
-    """Guarda os dois consentimentos em `app_meta`, presos à assinatura do provedor ativo."""
+    """Stores the two consents in `app_meta`, bound to the active provider's signature."""
 
     def __init__(self, memory: MemoryStore, signature: Callable[[], tuple[str, str]]) -> None:
         self._memory = memory
@@ -33,100 +34,92 @@ class DataConsent:
         provider_id, base_url = self._signature()
         return {"provider_id": provider_id, "host": _host_of(base_url)}
 
-    def _write(self, agenda: bool, email: bool) -> None:
-        payload = {"agenda": agenda, "email": email, **self._current()}
+    def _write(self, calendar: bool, email: bool) -> None:
+        payload = {"calendar": calendar, "email": email, **self._current()}
         self._memory.set_meta(_META_KEY, json.dumps(payload, ensure_ascii=False))
 
     def get(self) -> dict[str, bool]:
-        """Lê os consentimentos; se o provedor ou o host mudou, zera e regrava desligado."""
+        """Read the consents; if the provider or host changed, reset and rewrite them as off."""
         raw = self._memory.get_meta(_META_KEY)
         if not raw:
-            return {"agenda": False, "email": False}
+            return {"calendar": False, "email": False}
         try:
             data = json.loads(raw)
             if not isinstance(data, dict):
-                raise ValueError("formato inválido")
+                raise ValueError("invalid format")
         except (ValueError, json.JSONDecodeError):
             self._write(False, False)
-            return {"agenda": False, "email": False}
-        agenda = data.get("agenda") is True
+            return {"calendar": False, "email": False}
+        # Older versions stored the calendar switch under the key "agenda".
+        calendar_raw = data["calendar"] if "calendar" in data else data.get("agenda")
+        calendar = calendar_raw is True
         email = data.get("email") is True
         sig = self._current()
         if data.get("provider_id") != sig["provider_id"] or data.get("host") != sig["host"]:
-            if agenda or email or data.get("provider_id") != sig["provider_id"]:
+            if calendar or email or data.get("provider_id") != sig["provider_id"]:
                 self._write(False, False)
-            return {"agenda": False, "email": False}
-        return {"agenda": agenda, "email": email}
+            return {"calendar": False, "email": False}
+        if "calendar" not in data and "agenda" in data:
+            # Migrate the old-format value to the new key.
+            self._write(calendar, email)
+        return {"calendar": calendar, "email": email}
 
-    def update(self, agenda: bool | None = None, email: bool | None = None) -> dict[str, bool]:
-        """Altera um ou os dois interruptores para o provedor ativo agora."""
-        atual = self.get()
-        novo_agenda = atual["agenda"] if agenda is None else bool(agenda)
-        novo_email = atual["email"] if email is None else bool(email)
-        self._write(novo_agenda, novo_email)
-        return {"agenda": novo_agenda, "email": novo_email}
+    def update(self, calendar: bool | None = None, email: bool | None = None) -> dict[str, bool]:
+        """Change one or both switches for the provider that is active right now."""
+        current = self.get()
+        new_calendar = current["calendar"] if calendar is None else bool(calendar)
+        new_email = current["email"] if email is None else bool(email)
+        self._write(new_calendar, new_email)
+        return {"calendar": new_calendar, "email": new_email}
 
     def receiver_name(self) -> str:
-        """Nome de quem recebe os dados, ex.: 'Proxy Local (127.0.0.1:31415)'."""
+        """Name of who receives the data, e.g. 'Proxy Local (127.0.0.1:31415)'."""
         provider_id, base_url = self._signature()
         preset = get_preset(provider_id)
-        nome = preset.name if preset is not None else "Provedor personalizado"
+        name = preset.name if preset is not None else speech.CUSTOM_PROVIDER_NAME
         host = _host_of(base_url)
-        return f"{nome} ({host})" if host else nome
+        return f"{name} ({host})" if host else name
 
 
 def build_personal_context(
     consent: dict[str, bool],
-    agenda: list[dict[str, Any]] | None,
+    calendar: list[dict[str, Any]] | None,
     inbox: dict[str, Any] | None,
 ) -> str:
-    """Contexto efêmero do turno com agenda e e-mails, só do que tem consentimento.
+    """Ephemeral per-turn context with the calendar and e-mail, only what has consent.
 
-    `agenda`/`inbox` só devem ser lidos quando há consentimento; None significa que a leitura
-    falhou. Nunca inclui o corpo dos e-mails. Não é salvo no histórico.
+    `calendar`/`inbox` must only be read when consent exists; None means the read
+    failed. Never includes the e-mail body. It is not saved to the history.
     """
-    partes: list[str] = []
+    parts: list[str] = []
 
-    if not consent.get("agenda"):
-        partes.append(
-            "Você NÃO tem acesso à agenda do usuário. Se ele perguntar sobre compromissos ou agenda, "
-            "diga que não pode ver a agenda dele; não adivinhe nem invente."
-        )
-    elif agenda is None:
-        partes.append(
-            "Você não conseguiu ler a agenda agora. Se o usuário perguntar sobre ela, diga isso."
-        )
-    elif not agenda:
-        partes.append("Agenda de hoje (leitura permitida pelo usuário): sem eventos.")
+    if not consent.get("calendar"):
+        parts.append(speech.CALENDAR_NO_ACCESS)
+    elif calendar is None:
+        parts.append(speech.CALENDAR_READ_FAILED)
+    elif not calendar:
+        parts.append(speech.CALENDAR_EMPTY)
     else:
-        linhas = []
-        for ev in agenda:
-            titulo = str(ev.get("titulo") or "").strip()
-            hora = "dia todo" if ev.get("dia_todo") else str(ev.get("inicio") or "")
-            linhas.append(f"- {hora} {titulo}".rstrip())
-        partes.append("Agenda de hoje (leitura permitida pelo usuário):\n" + "\n".join(linhas))
+        lines = []
+        for ev in calendar:
+            title = str(ev.get("title") or "").strip()
+            when = speech.ALL_DAY if ev.get("all_day") else str(ev.get("start") or "")
+            lines.append(f"- {when} {title}".rstrip())
+        parts.append(speech.CALENDAR_HEADER + "\n".join(lines))
 
     if not consent.get("email"):
-        partes.append(
-            "Você NÃO tem acesso aos e-mails do usuário. Se ele perguntar sobre e-mails, diga que não "
-            "pode ver os e-mails dele; não adivinhe nem invente."
-        )
+        parts.append(speech.EMAIL_NO_ACCESS)
     elif inbox is None:
-        partes.append(
-            "Você não conseguiu ler os e-mails agora. Se o usuário perguntar sobre eles, diga isso."
-        )
+        parts.append(speech.EMAIL_READ_FAILED)
     else:
-        recentes = inbox.get("recentes") or []
-        if not recentes:
-            partes.append("E-mails não lidos das últimas 24h (leitura permitida pelo usuário): nenhum.")
+        recent = inbox.get("recent") or []
+        if not recent:
+            parts.append(speech.EMAIL_NONE)
         else:
-            linhas = [
-                f"- de {str(m.get('remetente') or '').strip()}: {str(m.get('assunto') or '').strip()}"
-                for m in recentes[:10]
+            lines = [
+                speech.email_line(str(m.get("sender") or "").strip(), str(m.get("subject") or "").strip())
+                for m in recent[:10]
             ]
-            partes.append(
-                "E-mails não lidos das últimas 24h (leitura permitida pelo usuário; você só vê remetente "
-                "e assunto, nunca o corpo):\n" + "\n".join(linhas)
-            )
+            parts.append(speech.EMAIL_HEADER + "\n".join(lines))
 
-    return "\n\n".join(partes)
+    return "\n\n".join(parts)

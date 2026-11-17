@@ -1,4 +1,4 @@
-"""Armazenamento persistente e catálogo padrão de atalhos configuráveis no SQLite."""
+"""Persistent storage and default catalog of configurable shortcuts in SQLite."""
 
 from __future__ import annotations
 
@@ -29,35 +29,35 @@ _SLUG_CLEAN_RE = re.compile(r"[^a-z0-9_]+")
 
 
 def _now_iso() -> str:
-    """Retorna timestamp UTC atual em formato ISO-8601."""
+    """Return the current UTC timestamp in ISO-8601 format."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _strip_accents(text: str) -> str:
-    """Remove acentos mantendo apenas caracteres ASCII base para comparação."""
+    """Strip accents, keeping only base ASCII characters for comparison."""
     normalized = unicodedata.normalize("NFKD", text)
     return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
 
 def _slugify(text: str) -> str:
-    """Converte texto livre em slug seguro com letras minúsculas e underscore."""
+    """Convert free text into a safe slug with lowercase letters and underscores."""
     ascii_text = _strip_accents(text).lower().strip()
     replaced = re.sub(r"[\s\-/]+", "_", ascii_text)
     cleaned = _SLUG_CLEAN_RE.sub("", replaced).strip("_")
     cleaned = re.sub(r"_+", "_", cleaned)
-    return cleaned or "atalho"
+    return cleaned or "shortcut"
 
 
 def _normalize_trigger(text: str) -> str:
-    """Normaliza frase ou gatilho de voz para busca tolerante a acentos e pontuação."""
+    """Normalize a phrase or voice trigger for accent- and punctuation-tolerant matching."""
     plain = _strip_accents(text).lower().strip()
     plain = re.sub(r"[^\w\s]", " ", plain)
     return re.sub(r"\s+", " ", plain).strip()
 
 
-# Catálogo padrão pré-mapeado para resolver tela externa e Dock escondida no macOS
+# Default catalog pre-mapped to cope with an external display and a hidden Dock on macOS
 DEFAULT_SHORTCUTS: tuple[dict[str, Any], ...] = (
-    # Espaços & Janelas
+    # Spaces & Windows
     {
         "slug": "mission_control",
         "title": "Mission Control",
@@ -146,7 +146,7 @@ DEFAULT_SHORTCUTS: tuple[dict[str, Any], ...] = (
         "color": "cyan",
         "pinned_on_deck": True,
     },
-    # Captura / Prints
+    # Capture / Screenshots
     {
         "slug": "screenshot_clipboard",
         "title": "Print Seleção → Clipboard",
@@ -180,7 +180,7 @@ DEFAULT_SHORTCUTS: tuple[dict[str, Any], ...] = (
         "color": "amber",
         "pinned_on_deck": False,
     },
-    # Edição & Busca ("Sem Decorar")
+    # Editing & Search ("No Memorizing")
     {
         "slug": "find",
         "title": "Pesquisar",
@@ -236,7 +236,7 @@ DEFAULT_SHORTCUTS: tuple[dict[str, Any], ...] = (
         "color": "emerald",
         "pinned_on_deck": False,
     },
-    # Mídia & Sistema & Foco
+    # Media & System & Focus
     {
         "slug": "play_pause",
         "title": "Play / Pause",
@@ -329,7 +329,7 @@ DEFAULT_SHORTCUTS: tuple[dict[str, Any], ...] = (
 
 
 class ShortcutStore:
-    """CRUD persistente de atalhos configuráveis e catálogo padrão no SQLite."""
+    """Persistent CRUD of configurable shortcuts and the default catalog in SQLite."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         self._is_in_memory = str(db_path) == ":memory:"
@@ -354,7 +354,7 @@ class ShortcutStore:
         self._initialize_db()
 
     def _initialize_db(self) -> None:
-        """Cria a tabela `shortcuts`, aplica pragmas e popula seed inicial se vazia."""
+        """Create the `shortcuts` table, apply pragmas and seed the defaults if empty."""
         with self._lock:
             if not self._is_in_memory:
                 self._conn.execute("PRAGMA journal_mode=WAL;")
@@ -384,7 +384,7 @@ class ShortcutStore:
                     """
                 )
 
-                # Migração defensiva caso outra instância tenha criado tabela parcial
+                # Defensive migration in case another instance created a partial table
                 existing_cols = {
                     row["name"]
                     for row in self._conn.execute("PRAGMA table_info(shortcuts)").fetchall()
@@ -412,7 +412,7 @@ class ShortcutStore:
                     self._seed_defaults_locked()
 
     def _seed_defaults_locked(self) -> None:
-        """Popula os atalhos padrão na tabela (requer lock e transação ativos)."""
+        """Populate the default shortcuts in the table (requires the lock and an active transaction)."""
         now = _now_iso()
         for idx, item in enumerate(DEFAULT_SHORTCUTS):
             self._conn.execute(
@@ -443,7 +443,7 @@ class ShortcutStore:
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-        """Converte uma linha SQLite em dicionário tipado com `payload` desserializado."""
+        """Convert a SQLite row into a typed dict with the `payload` deserialized."""
         raw_payload = row["payload"]
         try:
             payload = json.loads(raw_payload) if isinstance(raw_payload, str) else {}
@@ -472,32 +472,32 @@ class ShortcutStore:
 
     @staticmethod
     def _validate_payload(payload: Any) -> dict[str, Any]:
-        """Valida e normaliza `payload` como dicionário JSON."""
+        """Validate and normalize `payload` as a JSON dict."""
         if payload is None:
             return {}
         if isinstance(payload, str):
             try:
                 parsed = json.loads(payload)
             except json.JSONDecodeError as exc:
-                raise ValueError("Payload JSON inválido.") from exc
+                raise ValueError("Invalid JSON payload.") from exc
             payload = parsed
         if not isinstance(payload, dict):
-            raise ValueError("Payload do atalho deve ser um objeto JSON.")
+            raise ValueError("The shortcut payload must be a JSON object.")
         return dict(payload)
 
     @staticmethod
     def _validate_action_type(action_type: Any) -> str:
-        """Valida se `action_type` pertence ao conjunto suportado."""
+        """Validate that `action_type` belongs to the supported set."""
         cleaned = str(action_type or "").strip()
         if cleaned not in VALID_ACTION_TYPES:
             raise ValueError(
-                f"action_type inválido: '{cleaned}'. Permitidos: {sorted(VALID_ACTION_TYPES)}"
+                f"Invalid action_type: '{cleaned}'. Allowed: {sorted(VALID_ACTION_TYPES)}"
             )
         return cleaned
 
     @staticmethod
     def _normalize_category(category: Any) -> str:
-        """Normaliza categoria com fallback seguro para `custom`."""
+        """Normalize the category with a safe fallback to `custom`."""
         cleaned = str(category or "").strip().lower()
         if not cleaned:
             return "custom"
@@ -505,18 +505,18 @@ class ShortcutStore:
             return "custom"
         if cleaned not in VALID_CATEGORIES:
             raise ValueError(
-                f"Categoria inválida: '{cleaned}'. Permitidas: {sorted(VALID_CATEGORIES)}"
+                f"Invalid category: '{cleaned}'. Allowed: {sorted(VALID_CATEGORIES)}"
             )
         return cleaned
 
     @staticmethod
     def _normalize_color(color: Any) -> str:
-        """Normaliza cor do tile com fallback para `cyan`."""
+        """Normalize the tile color with a fallback to `cyan`."""
         cleaned = str(color or "cyan").strip().lower()
         return cleaned if cleaned in VALID_COLORS else "cyan"
 
     def _generate_unique_slug_locked(self, base_text: str) -> str:
-        """Gera slug único evitando colisões na tabela `shortcuts`."""
+        """Generate a unique slug avoiding collisions in the `shortcuts` table."""
         base_slug = _slugify(base_text)
         candidate = base_slug
         suffix = 2
@@ -531,7 +531,7 @@ class ShortcutStore:
             suffix += 1
 
     def _get_row_locked(self, identifier: int | str) -> sqlite3.Row | None:
-        """Busca linha por `id` inteiro ou `slug` textual."""
+        """Look up a row by integer `id` or text `slug`."""
         if isinstance(identifier, int) and not isinstance(identifier, bool):
             return self._conn.execute(
                 "SELECT * FROM shortcuts WHERE id = ? LIMIT 1",
@@ -557,7 +557,7 @@ class ShortcutStore:
         return None
 
     def list_shortcuts(self, category: str | None = None) -> list[dict[str, Any]]:
-        """Lista todos os atalhos ordenados por `sort_order` e `id`, opcionalmente filtrados."""
+        """List all shortcuts ordered by `sort_order` and `id`, optionally filtered."""
         with self._lock:
             cleaned_cat = (category or "").strip().lower()
             if cleaned_cat and cleaned_cat not in {"all", "todos"}:
@@ -579,19 +579,19 @@ class ShortcutStore:
             return [self._row_to_dict(row) for row in rows]
 
     def get_shortcut(self, identifier: int | str) -> dict[str, Any] | None:
-        """Obtém um atalho por `id` numérico ou `slug`."""
+        """Get a shortcut by numeric `id` or `slug`."""
         with self._lock:
             row = self._get_row_locked(identifier)
             return self._row_to_dict(row) if row is not None else None
 
     def create_shortcut(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Cria um novo atalho validando `action_type` e gerando `slug` único se omitido."""
+        """Create a new shortcut, validating `action_type` and generating a unique `slug` if omitted."""
         if not isinstance(data, dict):
-            raise ValueError("Dados do atalho devem ser um dicionário.")
+            raise ValueError("Shortcut data must be a dict.")
 
         title = str(data.get("title") or "").strip()
         if not title:
-            raise ValueError("O título do atalho é obrigatório.")
+            raise ValueError("The shortcut title is required.")
 
         action_type = self._validate_action_type(data.get("action_type"))
         payload = self._validate_payload(data.get("payload"))
@@ -615,7 +615,7 @@ class ShortcutStore:
                     (slug,),
                 ).fetchone()
                 if exists is not None:
-                    raise ValueError(f"Já existe um atalho com o slug '{slug}'.")
+                    raise ValueError(f"A shortcut with slug '{slug}' already exists.")
             else:
                 slug = self._generate_unique_slug_locked(title)
 
@@ -663,9 +663,9 @@ class ShortcutStore:
     def update_shortcut(
         self, identifier: int | str, data: dict[str, Any]
     ) -> dict[str, Any] | None:
-        """Atualiza campos de um atalho existente identificado por `id` ou `slug`."""
+        """Update fields of an existing shortcut identified by `id` or `slug`."""
         if not isinstance(data, dict):
-            raise ValueError("Dados de atualização devem ser um dicionário.")
+            raise ValueError("Update data must be a dict.")
 
         with self._lock, self._conn:
             existing_row = self._get_row_locked(identifier)
@@ -681,7 +681,7 @@ class ShortcutStore:
                 else current["title"]
             )
             if not title:
-                raise ValueError("O título do atalho não pode ficar vazio.")
+                raise ValueError("The shortcut title cannot be empty.")
 
             slug = current["slug"]
             if "slug" in data and data["slug"] is not None and str(data["slug"]).strip():
@@ -691,7 +691,7 @@ class ShortcutStore:
                     (candidate_slug, shortcut_id),
                 ).fetchone()
                 if conflict is not None:
-                    raise ValueError(f"Já existe um atalho com o slug '{candidate_slug}'.")
+                    raise ValueError(f"A shortcut with slug '{candidate_slug}' already exists.")
                 slug = candidate_slug
 
             icon = (
@@ -774,7 +774,7 @@ class ShortcutStore:
             return self._row_to_dict(updated_row)
 
     def delete_shortcut(self, identifier: int | str) -> bool:
-        """Remove um atalho por `id` ou `slug` e retorna `True` se removido."""
+        """Remove a shortcut by `id` or `slug` and return `True` if removed."""
         with self._lock, self._conn:
             row = self._get_row_locked(identifier)
             if row is None:
@@ -783,7 +783,7 @@ class ShortcutStore:
             return True
 
     def reorder_shortcuts(self, ordered_ids: list[int | str]) -> list[dict[str, Any]]:
-        """Reordena os atalhos conforme a sequência de `id` ou `slug` fornecida."""
+        """Reorder the shortcuts following the given sequence of `id` or `slug`."""
         with self._lock, self._conn:
             all_rows = self._conn.execute(
                 "SELECT id, slug FROM shortcuts ORDER BY sort_order ASC, id ASC"
@@ -815,14 +815,14 @@ class ShortcutStore:
             return self.list_shortcuts()
 
     def reset_defaults(self) -> list[dict[str, Any]]:
-        """Restaura o catálogo padrão completo de atalhos no SQLite."""
+        """Restore the full default shortcut catalog in SQLite."""
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM shortcuts")
             self._seed_defaults_locked()
         return self.list_shortcuts()
 
     def find_by_trigger(self, text: str) -> dict[str, Any] | None:
-        """Encontra o melhor atalho correspondente a uma frase ou gatilho de voz."""
+        """Find the best shortcut matching a phrase or voice trigger."""
         query = _normalize_trigger(text)
         if not query:
             return None
@@ -846,7 +846,7 @@ class ShortcutStore:
                 if not cand:
                     continue
                 if query == cand:
-                    # Match exato tem prioridade máxima; desempata pelo tamanho do gatilho
+                    # An exact match has top priority; ties are broken by trigger length
                     score = 10_000 + len(cand)
                 elif cand in query:
                     score = 1_000 + len(cand)
@@ -866,7 +866,7 @@ class ShortcutStore:
         running_apps: list[dict[str, Any]] | None = None,
         max_chars: int = 1800,
     ) -> str:
-        """Monta resumo compacto de atalhos e apps abertos para o system prompt do LLM."""
+        """Build a compact summary of shortcuts and open apps for the LLM system prompt."""
         if max_chars <= 0:
             return ""
 
@@ -890,7 +890,7 @@ class ShortcutStore:
         for item in shortcuts:
             triggers = (item.get("voice_triggers") or "").strip()
             if triggers:
-                # Mantém até 2 gatilhos curtos para caber todo o catálogo e apps em <= 1800 chars
+                # Keep up to 2 short triggers so the whole catalog and apps fit in <= 1800 chars
                 short_triggers = ", ".join(
                     part.strip() for part in triggers.split(",")[:2] if part.strip()
                 )
@@ -899,7 +899,7 @@ class ShortcutStore:
                 entry = f"- [{item['slug']}] {item['title']}"
             shortcut_lines.append(entry)
 
-        # Reserva espaço para a linha de apps abertos quando ela couber com folga
+        # Reserve room for the open-apps line when it fits comfortably
         reserved_for_apps = len(apps_line) + 1 if apps_line and len(apps_line) + len(header) + 2 < max_chars else 0
         shortcut_budget = max_chars - reserved_for_apps
 
@@ -923,6 +923,6 @@ class ShortcutStore:
         return "\n".join(result_lines)
 
     def close(self) -> None:
-        """Fecha a conexão SQLite com segurança."""
+        """Close the SQLite connection safely."""
         with self._lock:
             self._conn.close()

@@ -1,4 +1,4 @@
-"""Motor do resumo Today com validação anti-alucinação e rastreamento de First Wake."""
+"""Today summary engine with anti-hallucination validation and First Wake tracking."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 import httpx
 
+from app import speech_pt_br as speech
 from app.config import Settings
 from app.cowork import CoworkStore
 from app.memory import MemoryStore
@@ -41,7 +42,7 @@ _NUMBER_RE = re.compile(r"(?<![A-Za-z0-9-])\d+(?:\.\d+)?(?![A-Za-z0-9-])")
 
 @dataclass
 class ValidationContext:
-    """Conjunto de fatos permitidos extraídos do estado real do Cowork."""
+    """Set of allowed facts extracted from the real Cowork state."""
 
     allowed_ids: set[str] = field(default_factory=set)
     allowed_iso_dates: set[str] = field(default_factory=set)
@@ -50,7 +51,7 @@ class ValidationContext:
 
 
 def is_valid_calendar_date(date_str: str) -> bool:
-    """Valida se `YYYY-MM-DD` é uma data real no calendário."""
+    """Check that `YYYY-MM-DD` is a real calendar date."""
     try:
         date.fromisoformat(date_str)
         return True
@@ -59,7 +60,7 @@ def is_valid_calendar_date(date_str: str) -> bool:
 
 
 def find_unverifiable_date_pattern(text: str) -> str | None:
-    """Detecta formatos de data não-ISO que podem mascarar alucinação."""
+    """Detect non-ISO date formats that may mask a hallucination."""
     for regex in (
         _DAY_MONTH_RE,
         _MONTH_DAY_RE,
@@ -74,7 +75,7 @@ def find_unverifiable_date_pattern(text: str) -> str | None:
 
 
 def scrub_quoted_date_phrases(text: str, input_text: str | None) -> tuple[str, str | None]:
-    """Remove frases de data não-ISO apenas quando aparecem literalmente no texto-fonte."""
+    """Remove non-ISO date phrases only when they appear verbatim in the source text."""
     scrubbed = text
     for _ in range(100):
         found = find_unverifiable_date_pattern(scrubbed)
@@ -84,11 +85,11 @@ def scrub_quoted_date_phrases(text: str, input_text: str | None) -> tuple[str, s
         if not input_text or not phrase_re.search(input_text):
             return scrubbed, found
         scrubbed = phrase_re.sub(" ", scrubbed)
-    return scrubbed, "muitas expressões de data"
+    return scrubbed, "too many date expressions"
 
 
 def validate_today_summary(raw_output: str, ctx: ValidationContext) -> dict[str, Any]:
-    """Porta Python da validação anti-alucinação (`validate.ts`) para resumos Today."""
+    """Python port of the anti-hallucination validation (`validate.ts`) for Today summaries."""
     cleaned = raw_output.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.DOTALL).strip()
@@ -96,46 +97,46 @@ def validate_today_summary(raw_output: str, ctx: ValidationContext) -> dict[str,
     try:
         obj = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        return {"is_valid": False, "reason": f"JSON inválido: {exc}", "raw_output": raw_output}
+        return {"is_valid": False, "reason": f"Invalid JSON: {exc}", "raw_output": raw_output}
 
     if not isinstance(obj, dict):
-        return {"is_valid": False, "reason": "Resumo deve ser um objeto JSON.", "raw_output": raw_output}
+        return {"is_valid": False, "reason": "Summary must be a JSON object.", "raw_output": raw_output}
 
     allowed_top_keys = {"headline", "top", "warnings"}
     for key in obj:
         if key not in allowed_top_keys:
-            return {"is_valid": False, "reason": f"Chave desconhecida '{key}'.", "raw_output": raw_output}
+            return {"is_valid": False, "reason": f"Unknown key '{key}'.", "raw_output": raw_output}
 
     headline = obj.get("headline")
     top = obj.get("top")
     warnings = obj.get("warnings")
 
     if not isinstance(headline, str) or not headline.strip() or len(headline) > 220:
-        return {"is_valid": False, "reason": "Campo 'headline' inválido.", "raw_output": raw_output}
+        return {"is_valid": False, "reason": "Invalid 'headline' field.", "raw_output": raw_output}
 
     if not isinstance(top, list) or len(top) > 5:
-        return {"is_valid": False, "reason": "Campo 'top' deve ser lista com até 5 itens.", "raw_output": raw_output}
+        return {"is_valid": False, "reason": "Field 'top' must be a list of up to 5 items.", "raw_output": raw_output}
 
     if not isinstance(warnings, list) or len(warnings) > 5:
-        return {"is_valid": False, "reason": "Campo 'warnings' deve ser lista com até 5 itens.", "raw_output": raw_output}
+        return {"is_valid": False, "reason": "Field 'warnings' must be a list of up to 5 items.", "raw_output": raw_output}
 
     seen_ids: set[str] = set()
     validated_top: list[dict[str, str]] = []
     for idx, item in enumerate(top):
         if not isinstance(item, dict) or set(item.keys()) - {"id", "why"}:
-            return {"is_valid": False, "reason": f"Item top[{idx}] inválido.", "raw_output": raw_output}
+            return {"is_valid": False, "reason": f"Invalid item top[{idx}].", "raw_output": raw_output}
         item_id = item.get("id")
         why = item.get("why")
         if not isinstance(item_id, str) or not item_id.strip():
-            return {"is_valid": False, "reason": f"Item top[{idx}] sem 'id'.", "raw_output": raw_output}
+            return {"is_valid": False, "reason": f"Item top[{idx}] has no 'id'.", "raw_output": raw_output}
         if not isinstance(why, str) or not why.strip() or len(why) > 200:
-            return {"is_valid": False, "reason": f"Item top[{idx}] com 'why' inválido.", "raw_output": raw_output}
+            return {"is_valid": False, "reason": f"Item top[{idx}] has an invalid 'why'.", "raw_output": raw_output}
         if item_id in seen_ids:
-            return {"is_valid": False, "reason": f"ID duplicado '{item_id}'.", "raw_output": raw_output}
+            return {"is_valid": False, "reason": f"Duplicate ID '{item_id}'.", "raw_output": raw_output}
         if item_id not in ctx.allowed_ids:
             return {
                 "is_valid": False,
-                "reason": f"ID desconhecido ou não permitido '{item_id}'.",
+                "reason": f"Unknown or disallowed ID '{item_id}'.",
                 "raw_output": raw_output,
             }
         seen_ids.add(item_id)
@@ -144,7 +145,7 @@ def validate_today_summary(raw_output: str, ctx: ValidationContext) -> dict[str,
     validated_warnings: list[str] = []
     for idx, w in enumerate(warnings):
         if not isinstance(w, str) or len(w) > 200:
-            return {"is_valid": False, "reason": f"Warning[{idx}] inválido.", "raw_output": raw_output}
+            return {"is_valid": False, "reason": f"Invalid warning[{idx}].", "raw_output": raw_output}
         validated_warnings.append(w)
 
     for text in [t["why"] for t in validated_top] + validated_warnings:
@@ -152,7 +153,7 @@ def validate_today_summary(raw_output: str, ctx: ValidationContext) -> dict[str,
         if word_match:
             return {
                 "is_valid": False,
-                "reason": f"Número por extenso '{word_match.group(0)}' proibido.",
+                "reason": f"Spelled-out number '{word_match.group(0)}' is forbidden.",
                 "raw_output": raw_output,
             }
 
@@ -161,18 +162,18 @@ def validate_today_summary(raw_output: str, ctx: ValidationContext) -> dict[str,
         if unverifiable:
             return {
                 "is_valid": False,
-                "reason": f"Formato de data não verificável ('{unverifiable}'). Use YYYY-MM-DD.",
+                "reason": f"Unverifiable date format ('{unverifiable}'). Use YYYY-MM-DD.",
                 "raw_output": raw_output,
             }
 
         for date_match in _ISO_DATE_RE.finditer(scrubbed):
             date_str = date_match.group(1)
             if not is_valid_calendar_date(date_str):
-                return {"is_valid": False, "reason": f"Data inválida '{date_str}'.", "raw_output": raw_output}
+                return {"is_valid": False, "reason": f"Invalid date '{date_str}'.", "raw_output": raw_output}
             if date_str not in ctx.allowed_iso_dates:
                 return {
                     "is_valid": False,
-                    "reason": f"Data '{date_str}' ausente dos dados de entrada.",
+                    "reason": f"Date '{date_str}' is missing from the input data.",
                     "raw_output": raw_output,
                 }
 
@@ -186,7 +187,7 @@ def validate_today_summary(raw_output: str, ctx: ValidationContext) -> dict[str,
             if num_val not in ctx.allowed_numbers:
                 return {
                     "is_valid": False,
-                    "reason": f"Número '{raw_num}' não encontrado nos dados de entrada.",
+                    "reason": f"Number '{raw_num}' not found in the input data.",
                     "raw_output": raw_output,
                 }
 
@@ -201,7 +202,7 @@ def validate_today_summary(raw_output: str, ctx: ValidationContext) -> dict[str,
 
 
 def build_validation_context(state: dict[str, Any], today_iso: str) -> tuple[ValidationContext, str]:
-    """Constrói o texto-fonte e o `ValidationContext` estrito a partir do estado Cowork."""
+    """Build the source text and the strict `ValidationContext` from the Cowork state."""
     allowed_ids: set[str] = set()
     allowed_iso_dates: set[str] = {today_iso}
     allowed_numbers: set[int] = set()
@@ -272,7 +273,7 @@ def build_validation_context(state: dict[str, Any], today_iso: str) -> tuple[Val
 
 
 def build_deterministic_fallback(state: dict[str, Any], today_iso: str) -> dict[str, Any]:
-    """Gera resumo Today 100% determinístico quando o roteador LLM estiver offline ou inválido."""
+    """Build a fully deterministic Today summary when the LLM router is offline or invalid."""
     tasks = [t for t in (state.get("tasks") or []) if isinstance(t, dict) and t.get("status") == "open"]
     due_today = [t for t in tasks if str(t.get("due") or "") == today_iso]
     prioritized = due_today + [t for t in tasks if t not in due_today]
@@ -287,17 +288,17 @@ def build_deterministic_fallback(state: dict[str, Any], today_iso: str) -> dict[
     ]
     warnings: list[str] = []
     if due_today:
-        warnings.append(f"{len(due_today)} tarefa(s) vencem hoje ({today_iso}).")
+        warnings.append(speech.today_fallback_due_warning(len(due_today), today_iso))
 
     return {
-        "headline": f"Hoje ({today_iso}): {len(tasks)} tarefas abertas no Cowork.",
+        "headline": speech.today_fallback_headline(today_iso, len(tasks)),
         "top": top,
         "warnings": warnings,
     }
 
 
 class TodayEngine:
-    """Gera e valida o resumo Today usando o roteador HTTP unificado (`127.0.0.1:31415/v1`)."""
+    """Generate and validate the Today summary through the unified HTTP router (`127.0.0.1:31415/v1`)."""
 
     def __init__(self, settings: Settings, cowork_store: CoworkStore) -> None:
         self._settings = settings
@@ -313,21 +314,14 @@ class TodayEngine:
                 "today": today_str,
                 "sync_status": state.get("sync_status", "red"),
                 "summary": {
-                    "headline": "Workspace Cowork não encontrado.",
+                    "headline": speech.TODAY_WORKSPACE_MISSING_HEADLINE,
                     "top": [],
-                    "warnings": ["Verifique COWORK_WORKSPACE_PATH."],
+                    "warnings": [speech.TODAY_WORKSPACE_MISSING_WARNING],
                 },
             }
 
         ctx, input_text = build_validation_context(state, today_str)
-        prompt = (
-            "Gere um resumo JSON estrito para o painel Today em PT-BR com as chaves exatas "
-            "`headline` (string <= 200 chars), `top` (lista de até 3 objetos `{id, why}`) e "
-            "`warnings` (lista de até 3 strings). "
-            "REGRA CRÍTICA: use APENAS IDs, datas YYYY-MM-DD e números presentes nos dados abaixo. "
-            "Nunca use números por extenso em inglês nem invente datas.\n\n"
-            f"{input_text}"
-        )
+        prompt = speech.today_llm_prompt(input_text)
 
         headers = {"Content-Type": "application/json"}
         if self._settings.llm_api_key:
@@ -338,7 +332,7 @@ class TodayEngine:
             "stream": False,
             "temperature": 0.1,
             "messages": [
-                {"role": "system", "content": "Responda apenas JSON válido sem markdown."},
+                {"role": "system", "content": speech.TODAY_LLM_SYSTEM_MESSAGE},
                 {"role": "user", "content": prompt},
             ],
         }
@@ -361,9 +355,9 @@ class TodayEngine:
                         "sync_status": state.get("sync_status", "green"),
                         "summary": validation["summary"],
                     }
-                logger.warning("Resumo Today rejeitado pelo validador: %s", validation["reason"])
+                logger.warning("Today summary rejected by the validator: %s", validation["reason"])
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-            logger.warning("Falha ao consultar roteador LLM para Today: %s", exc)
+            logger.warning("Failed to query the LLM router for Today: %s", exc)
 
         return {
             "ok": True,
@@ -375,10 +369,10 @@ class TodayEngine:
 
 
 class FirstWakeTracker:
-    """Marca o First Wake: a primeira interação depois das 5h, uma vez por dia."""
+    """Tracks the First Wake: the first interaction after 5 a.m., once per day."""
 
     _META_KEY = "last_first_wake_date"
-    HORA_INICIO = 5
+    START_HOUR = 5
 
     def __init__(self, memory_store: MemoryStore, clock: Callable[[], datetime] | None = None) -> None:
         self._memory = memory_store
@@ -392,8 +386,8 @@ class FirstWakeTracker:
         return self._memory.get_meta(self._META_KEY) != today_str
 
     def is_due(self) -> bool:
-        """Já passou das 5h e o First Wake de hoje ainda não aconteceu."""
-        return self._clock().hour >= self.HORA_INICIO and self.should_trigger_today()
+        """It is past 5 a.m. and today's First Wake has not happened yet."""
+        return self._clock().hour >= self.START_HOUR and self.should_trigger_today()
 
     def mark_triggered(self, today_iso: str | None = None) -> str:
         today_str = today_iso or self.today_iso()
@@ -401,94 +395,55 @@ class FirstWakeTracker:
         return today_str
 
 
-def _hora_falada(inicio: str) -> str:
-    """'09:00' -> '9h00'."""
-    hora, _, minuto = str(inicio).partition(":")
-    try:
-        return f"{int(hora)}h{minuto or '00'}"
-    except ValueError:
-        return str(inicio)
-
-
-def _juntar(itens: list[str]) -> str:
-    if len(itens) <= 1:
-        return "".join(itens)
-    return ", ".join(itens[:-1]) + " e " + itens[-1]
-
-
-def _frase_abertura(
-    state: dict[str, Any], abertas: list[dict[str, Any]], nao_lidos: int | None
-) -> str:
-    """Frase 1: tarefas abertas do Cowork e, se lida, a contagem de e-mails não lidos."""
-    if nao_lidos is None:
-        if not state.get("workspace_exists"):
-            return "Bom dia! Não consegui ler o Cowork agora."
-        if not abertas:
-            return "Bom dia! Nenhuma tarefa aberta no Cowork."
-        if len(abertas) == 1:
-            return "Bom dia! Você tem 1 tarefa aberta no Cowork."
-        return f"Bom dia! Você tem {len(abertas)} tarefas abertas no Cowork."
-
-    if nao_lidos == 0:
-        emails = "nenhum e-mail não lido"
-    elif nao_lidos == 1:
-        emails = "1 e-mail não lido"
-    else:
-        emails = f"{nao_lidos} e-mails não lidos"
+def _open_tasks(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Open Cowork tasks with a non-empty title (empty when the workspace is missing)."""
     if not state.get("workspace_exists"):
-        return f"Bom dia! Não consegui ler o Cowork agora, mas você tem {emails}."
-    if not abertas:
-        return f"Bom dia! Nenhuma tarefa aberta e {emails}."
-    tarefas = "1 tarefa aberta" if len(abertas) == 1 else f"{len(abertas)} tarefas abertas"
-    return f"Bom dia! Você tem {tarefas} e {emails}."
+        return []
+    return [
+        t for t in (state.get("tasks") or [])
+        if isinstance(t, dict) and t.get("status") == "open" and str(t.get("title") or "").strip()
+    ]
 
 
-def compor_fala_first_wake(
+def compose_first_wake_speech(
     state: dict[str, Any],
-    agenda: list[dict[str, Any]] | None,
+    calendar: list[dict[str, Any]] | None,
     today_iso: str,
-    nao_lidos: int | None = None,
+    unread: int | None = None,
 ) -> list[str]:
-    """Monta as 2-3 frases do First Wake só com o que existe no Cowork, na agenda e no Mail.
+    """Build the 2-3 First Wake sentences using only what exists in Cowork, the calendar and Mail.
 
-    `agenda` é None quando a agenda não pôde ser lida; `nao_lidos` é None quando o Mail.app
-    não pôde ser lido (nada é dito sobre eles). Nunca fala remetente nem assunto.
-    Não usa LLM: nenhum dado de agenda ou e-mail sai da máquina.
+    `calendar` is None when the calendar could not be read; `unread` is None when Mail.app
+    could not be read (nothing is said about them). Never speaks sender or subject.
+    Does not use the LLM: no calendar or e-mail data leaves the machine.
+    The wording comes from `app.speech_pt_br`.
     """
-    frases: list[str] = []
-    abertas: list[dict[str, Any]] = []
-    if state.get("workspace_exists"):
-        abertas = [
-            t for t in (state.get("tasks") or [])
-            if isinstance(t, dict) and t.get("status") == "open" and str(t.get("title") or "").strip()
-        ]
-    frases.append(_frase_abertura(state, abertas, nao_lidos))
+    sentences: list[str] = []
+    open_tasks = _open_tasks(state)
+    sentences.append(
+        speech.first_wake_opening(bool(state.get("workspace_exists")), len(open_tasks), unread)
+    )
 
-    if agenda is not None:
-        if not agenda:
-            frases.append("Sua agenda está livre hoje.")
+    if calendar is not None:
+        if not calendar:
+            sentences.append(speech.FIRST_WAKE_CALENDAR_FREE)
         else:
-            itens = []
-            for ev in agenda[:3]:
-                titulo = str(ev.get("titulo") or "").strip()
-                if ev.get("dia_todo"):
-                    itens.append(f"{titulo} (dia todo)")
+            items = []
+            for ev in calendar[:3]:
+                title = str(ev.get("title") or "").strip()
+                if ev.get("all_day"):
+                    items.append(speech.all_day_item(title))
                 else:
-                    itens.append(f"{_hora_falada(ev.get('inicio', ''))} {titulo}")
-            resto = len(agenda) - 3
-            if resto > 0:
-                texto = ", ".join(itens) + f" e mais {resto}"
-            else:
-                texto = _juntar(itens)
-            frases.append(f"Na agenda de hoje: {texto}.")
+                    items.append(speech.timed_item(ev.get("start", ""), title))
+            sentences.append(speech.first_wake_calendar_line(items, len(calendar) - 3))
 
-    if abertas:
-        vence_hoje = [t for t in abertas if str(t.get("due") or "") == today_iso]
-        if vence_hoje:
-            frases.append(f"Prioridade: {str(vence_hoje[0]['title']).strip()}, que vence hoje.")
+    if open_tasks:
+        due_today = [t for t in open_tasks if str(t.get("due") or "") == today_iso]
+        if due_today:
+            sentences.append(speech.first_wake_priority_due_today(str(due_today[0]["title"]).strip()))
         else:
-            frases.append(f"Para começar: {str(abertas[0]['title']).strip()}.")
+            sentences.append(speech.first_wake_priority_start_with(str(open_tasks[0]["title"]).strip()))
 
-    if len(frases) < 2:
-        frases.append("Estou por aqui se precisar.")
-    return frases[:3]
+    if len(sentences) < 2:
+        sentences.append(speech.FIRST_WAKE_FALLBACK)
+    return sentences[:3]

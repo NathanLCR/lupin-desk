@@ -1,4 +1,4 @@
-"""Testes do protocolo Brain<->Body v1 (docs/protocolo-cerebro-corpo.md)."""
+"""Tests for the Brain<->Body v1 protocol (docs/brain-body-protocol.md)."""
 
 from __future__ import annotations
 
@@ -48,13 +48,13 @@ def _app(tmp_path: Path, synth: Any) -> Any:
         memory_store=memory,
         llm_client=LLMClient(settings=settings, stream_fn=fake_stream),
         tts_engine=ServerTTS(synth_fn=synth),
-        # Antes das 5h: o First Wake não entra nos turnos destes testes.
+        # Before 5am: First Wake does not enter the turns of these tests.
         first_wake=FirstWakeTracker(memory, clock=lambda: datetime(2026, 11, 17, 3, 0)),
     )
 
 
 def _turn(ws: Any) -> list[dict[str, Any]]:
-    """Envia um texto e coleta eventos até `done` e o último `audio` esperado."""
+    """Send a text and collect events up to `done` and the last expected `audio`."""
     ws.send_json({"type": "text", "text": "oi"})
     events: list[dict[str, Any]] = []
     while True:
@@ -64,7 +64,7 @@ def _turn(ws: Any) -> list[dict[str, Any]]:
             return events
 
 
-def test_hello_recebe_welcome(tmp_path: Path) -> None:
+def test_hello_receives_welcome(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
         return b"x"
 
@@ -78,7 +78,7 @@ def test_hello_recebe_welcome(tmp_path: Path) -> None:
         }
 
 
-def test_touch_devolve_mood(tmp_path: Path) -> None:
+def test_touch_returns_mood(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
         return b"x"
 
@@ -90,7 +90,7 @@ def test_touch_devolve_mood(tmp_path: Path) -> None:
         assert "affinity" in ev and "energy" in ev
 
 
-def test_audio_em_chunks_apos_sentence(tmp_path: Path) -> None:
+def test_audio_in_chunks_after_sentence(tmp_path: Path) -> None:
     payloads = {"Oi!": b"a" * (24 * 1024 + 10), "Tudo bem?": b"b" * 5}
 
     async def synth(text: str, voice: str, fmt: str) -> bytes:
@@ -101,7 +101,7 @@ def test_audio_em_chunks_apos_sentence(tmp_path: Path) -> None:
         ws.send_json({"type": "hello", "body": "rg406h-web", "protocol": 1, "audio": ["m4a"]})
         ws.receive_json()
         events = _turn(ws)
-        # Drena os chunks que chegam após memory_updated.
+        # Drain the chunks that arrive after memory_updated.
         audio = [e for e in events if e["type"] == "audio"]
         while not audio or not (audio[-1]["sentence"] == 1 and audio[-1]["last"]):
             audio.append(ws.receive_json())
@@ -118,9 +118,9 @@ def test_audio_em_chunks_apos_sentence(tmp_path: Path) -> None:
     assert base64.b64decode(by_sentence[1][0]["data"]) == payloads["Tudo bem?"]
 
 
-def test_sem_audio_quando_hello_nao_pede(tmp_path: Path) -> None:
+def test_no_audio_when_hello_does_not_ask(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
-        raise AssertionError("TTS não deveria ser chamado")
+        raise AssertionError("TTS should not be called")
 
     with TestClient(_app(tmp_path, synth)) as client, client.websocket_connect("/ws") as ws:
         ws.send_json({"type": "hello", "body": "rg406h-web", "protocol": 1})
@@ -129,15 +129,15 @@ def test_sem_audio_quando_hello_nao_pede(tmp_path: Path) -> None:
     assert not [e for e in events if e["type"] == "audio"]
 
 
-def test_falha_de_tts_nao_quebra_turno(tmp_path: Path) -> None:
+def test_tts_failure_does_not_break_turn(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
-        raise RuntimeError("say indisponível")
+        raise RuntimeError("say unavailable")
 
     with TestClient(_app(tmp_path, synth)) as client, client.websocket_connect("/ws") as ws:
         ws.send_json({"type": "hello", "body": "esp32", "protocol": 1, "audio": ["m4a"]})
         ws.receive_json()
         events = _turn(ws)
-        # Conexão segue saudável depois da falha.
+        # The connection stays healthy after the failure.
         ws.send_json({"type": "touch", "kind": "poke"})
         assert ws.receive_json()["type"] == "mood"
     types = [e["type"] for e in events]
@@ -150,7 +150,7 @@ def _hello(ws: Any, body: str, audio: bool = False) -> dict[str, Any]:
     return ws.receive_json()
 
 
-def test_esp32_tira_o_lupin_do_rg406h_e_devolve_ao_sair(tmp_path: Path) -> None:
+def test_esp32_takes_lupin_from_rg406h_and_gives_it_back_on_exit(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
         return b"x"
 
@@ -160,13 +160,13 @@ def test_esp32_tira_o_lupin_do_rg406h_e_devolve_ao_sair(tmp_path: Path) -> None:
             with client.websocket_connect("/ws") as esp:
                 welcome = _hello(esp, "esp32")
                 assert welcome["active"] is True
-                aviso = rg.receive_json()
-                assert aviso == {"type": "active_body", "active_body": "esp32", "active": False}
-            # ESP32 saiu: o RG406H volta a ser o Active Body.
+                notice = rg.receive_json()
+                assert notice == {"type": "active_body", "active_body": "esp32", "active": False}
+            # ESP32 left: the RG406H is the Active Body again.
             assert rg.receive_json() == {"type": "active_body", "active_body": "rg406h-web", "active": True}
 
 
-def test_navegador_comum_nao_rouba_o_lupin_do_rg406h(tmp_path: Path) -> None:
+def test_plain_browser_does_not_steal_lupin_from_rg406h(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
         return b"x"
 
@@ -177,7 +177,7 @@ def test_navegador_comum_nao_rouba_o_lupin_do_rg406h(tmp_path: Path) -> None:
             assert welcome["active"] is False and welcome["active_body"] == "rg406h-web"
 
 
-def test_mesmo_tipo_o_ultimo_a_chegar_fica_com_o_lupin(tmp_path: Path) -> None:
+def test_same_type_the_last_to_arrive_keeps_lupin(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
         return b"x"
 
@@ -188,7 +188,7 @@ def test_mesmo_tipo_o_ultimo_a_chegar_fica_com_o_lupin(tmp_path: Path) -> None:
             assert a.receive_json()["active"] is False
 
 
-def test_body_inativo_nao_recebe_a_voz(tmp_path: Path) -> None:
+def test_inactive_body_does_not_receive_the_voice(tmp_path: Path) -> None:
     async def synth(text: str, voice: str, fmt: str) -> bytes:
         return b"x"
 

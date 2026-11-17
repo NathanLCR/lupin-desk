@@ -1,4 +1,4 @@
-"""Contratos REST/WS para atalhos sensíveis e interrupção de STT."""
+"""REST/WS contracts for sensitive shortcuts and STT interruption."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def test_sensitive_shortcut_rest_conflicts_and_ws_requires_approval(tmp_path: Pa
         assert response.status_code == 409
         assert response.json()["detail"] == {
             "code": "approval_required",
-            "message": "Este atalho exige confirmação. Execute-o pelo WebSocket para aprová-lo.",
+            "message": "This shortcut requires confirmation. Run it over the WebSocket to approve it.",
         }
         assert mac.shortcuts_run == []
 

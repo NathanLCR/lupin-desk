@@ -1,63 +1,62 @@
-"""Garante que a tabela expressões -> camadas do Lupin só aponta para SVGs que existem."""
+"""Ensures Lupin's expressions -> layers table only points to SVGs that exist."""
 import json
-import re
 from pathlib import Path
 
 LUPIN = Path(__file__).resolve().parent.parent / "static" / "lupin"
-TABELA = json.loads((LUPIN / "expressoes.json").read_text(encoding="utf-8"))
-EMOCOES = [
+TABLE = json.loads((LUPIN / "expressions.json").read_text(encoding="utf-8"))
+EMOTIONS = [
     "neutral", "happy", "excited", "curious", "skeptical", "surprised",
     "sad", "wink", "love", "sleepy", "angry", "dizzy",
 ]
 
 
-def test_toda_variante_da_tabela_tem_svg_480x320():
-    for camada, variantes in TABELA["camadas"].items():
-        for variante in variantes:
-            svg = LUPIN / "camadas" / camada / f"{variante}.svg"
-            assert svg.is_file(), f"falta {svg}"
+def test_every_table_variant_has_a_480x320_svg():
+    for layer, variants in TABLE["layers"].items():
+        for variant in variants:
+            svg = LUPIN / "layers" / layer / f"{variant}.svg"
+            assert svg.is_file(), f"missing {svg}"
             assert 'width="480" height="320"' in svg.read_text(encoding="utf-8"), svg
 
 
-def test_nenhum_svg_orfao_fora_da_tabela():
-    previstos = {
-        LUPIN / "camadas" / camada / f"{v}.svg"
-        for camada, variantes in TABELA["camadas"].items()
-        for v in variantes
+def test_no_orphan_svg_outside_the_table():
+    expected = {
+        LUPIN / "layers" / layer / f"{v}.svg"
+        for layer, variants in TABLE["layers"].items()
+        for v in variants
     }
-    for truque in TABELA["truques"].values():
-        for quadro in truque.get("quadros", []):
-            previstos.add(LUPIN / "corpo" / f"{quadro}.svg")
-    assert set(LUPIN.rglob("*.svg")) == previstos
+    for trick in TABLE["tricks"].values():
+        for frame in trick.get("frames", []):
+            expected.add(LUPIN / "body" / f"{frame}.svg")
+    assert set(LUPIN.rglob("*.svg")) == expected
 
 
-def test_doze_expressoes_e_cinco_estados_usam_variantes_validas():
-    assert set(TABELA["expressoes"]) == set(EMOCOES)
-    assert set(TABELA["estados"]) == {"idle", "listening", "thinking", "speaking", "error"}
-    for origem in (*TABELA["expressoes"].values(), *TABELA["estados"].values()):
-        for camada, variante in origem.items():
-            if camada in TABELA["camadas"]:
-                assert variante in TABELA["camadas"][camada], (camada, variante)
+def test_twelve_expressions_and_five_states_use_valid_variants():
+    assert set(TABLE["expressions"]) == set(EMOTIONS)
+    assert set(TABLE["states"]) == {"idle", "listening", "thinking", "speaking", "error"}
+    for source in (*TABLE["expressions"].values(), *TABLE["states"].values()):
+        for layer, variant in source.items():
+            if layer in TABLE["layers"]:
+                assert variant in TABLE["layers"][layer], (layer, variant)
 
 
-def test_truques_de_corpo_inteiro_sao_so_dance_stretch_e_nap():
-    corpo = {nome for nome, t in TABELA["truques"].items() if t["modo"] == "corpo"}
-    assert corpo == {"dance", "stretch", "nap"}
-    assert {"sing", "meditate", "celebrate"} <= set(TABELA["truques"])
+def test_full_body_tricks_are_only_dance_stretch_and_nap():
+    body = {name for name, t in TABLE["tricks"].items() if t["mode"] == "body"}
+    assert body == {"dance", "stretch", "nap"}
+    assert {"sing", "meditate", "celebrate"} <= set(TABLE["tricks"])
 
 
-def test_arte_nao_traz_codigo_nem_imagens_externas():
+def test_art_carries_no_code_or_external_images():
     for svg in LUPIN.rglob("*.svg"):
-        texto = svg.read_text(encoding="utf-8").lower()
-        for proibido in ("<script", "<image", "<foreignobject", "http://", "href="):
-            if proibido == "http://":
-                texto = texto.replace("http://www.w3.org/2000/svg", "")
-            assert proibido not in texto, f"{svg}: {proibido}"
+        text = svg.read_text(encoding="utf-8").lower()
+        for forbidden in ("<script", "<image", "<foreignobject", "http://", "href="):
+            if forbidden == "http://":
+                text = text.replace("http://www.w3.org/2000/svg", "")
+            assert forbidden not in text, f"{svg}: {forbidden}"
 
 
-def test_piscada_e_fala_apontam_para_poses_que_existem():
-    poses = set(TABELA["camadas"]["pose"])
-    for origem, destino in TABELA["piscada"].items():
-        assert origem in poses and destino in poses, (origem, destino)
-    assert TABELA["piscada"], "o Lupin precisa piscar a partir da pose neutra"
-    assert TABELA["fala"]["pose"] in poses
+def test_blink_and_speech_point_to_poses_that_exist():
+    poses = set(TABLE["layers"]["pose"])
+    for source, target in TABLE["blink"].items():
+        assert source in poses and target in poses, (source, target)
+    assert TABLE["blink"], "Lupin must blink from the neutral pose"
+    assert TABLE["speech"]["pose"] in poses

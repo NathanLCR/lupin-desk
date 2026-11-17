@@ -1,4 +1,4 @@
-"""Testes para seleção de provedor e modelo LLM, persistência em SQLite e segurança de chaves."""
+"""Tests for LLM provider and model selection, SQLite persistence and key security."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def test_update_provider_updates_runtime_and_persists_across_restarts(
         assert payload["active"]["model"] == "google/gemini-2.5-flash"
         assert "sk-or-test-key" not in res.text
 
-        # Runtime compartilhado reflete imediatamente no LLMClient, /health e /api/diagnostics
+        # The shared runtime is reflected immediately in LLMClient, /health and /api/diagnostics
         assert llm_client._endpoint_url() == "https://openrouter.ai/api/v1/chat/completions"
         assert llm_client._build_payload("oi", [])["model"] == "google/gemini-2.5-flash"
         assert client.get("/health").json()["model"] == "google/gemini-2.5-flash"
@@ -87,7 +87,7 @@ def test_update_provider_updates_runtime_and_persists_across_restarts(
         assert diag["llm_provider_id"] == "openrouter"
         assert diag["llm_base_url"] == "https://openrouter.ai/api/v1"
 
-    # Nova instância apontando para o mesmo SQLite restaura o provedor e modelo salvos
+    # A new instance pointing at the same SQLite restores the saved provider and model
     settings2 = _build_settings(tmp_path)
     app2 = create_app(settings=settings2)
     with TestClient(app2) as client2:
@@ -102,7 +102,7 @@ def test_update_provider_validation_errors(tmp_path: Path) -> None:
     with TestClient(app) as client:
         bad_provider = client.put(
             "/api/llm/provider",
-            json={"provider_id": "invalido", "model": "gpt-4o"},
+            json={"provider_id": "invalid", "model": "gpt-4o"},
         )
         assert bad_provider.status_code == 400
 

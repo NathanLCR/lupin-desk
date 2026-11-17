@@ -1,4 +1,4 @@
-"""Transcrição local de áudio (STT) com lazy-load e fallback seguro."""
+"""Local audio transcription (STT) with lazy loading and a safe fallback."""
 
 from __future__ import annotations
 
@@ -40,13 +40,13 @@ _AFCONVERT_COMPATIBLE_EXTS: frozenset[str] = frozenset(
 
 
 def _extension_for_mime(mime_type: str) -> str:
-    """Resolve extensão de arquivo temporário a partir do MIME type informado."""
+    """Resolve the temporary file extension from the given MIME type."""
     cleaned = (mime_type or "").split(";", 1)[0].strip().lower()
     return _MIME_EXTENSION_MAP.get(cleaned, ".webm")
 
 
 class LocalSTT:
-    """Motor de transcrição local (Speech-to-Text) com suporte a faster-whisper e mlx-whisper."""
+    """Local transcription engine (Speech-to-Text) supporting faster-whisper and mlx-whisper."""
 
     def __init__(
         self,
@@ -62,7 +62,7 @@ class LocalSTT:
         self._mlx_module: Any = None
 
     def _detect_engine(self) -> str:
-        """Identifica o backend disponível sem carregar pesos na inicialização."""
+        """Detect the available backend without loading weights at startup."""
         if self._transcribe_fn is not None:
             return "custom"
         if importlib.util.find_spec("mlx_whisper") is not None:
@@ -72,11 +72,11 @@ class LocalSTT:
         return "unavailable"
 
     def is_available(self) -> bool:
-        """Informa se há pelo menos um motor de transcrição disponível."""
+        """Report whether at least one transcription engine is available."""
         return self._detect_engine() != "unavailable"
 
     def status(self) -> dict[str, Any]:
-        """Retorna estado atual do motor STT para diagnóstico."""
+        """Return the current STT engine state for diagnostics."""
         engine = self._detect_engine()
         return {
             "available": engine != "unavailable",
@@ -87,7 +87,7 @@ class LocalSTT:
         }
 
     def _get_faster_whisper_model(self) -> Any:
-        """Carrega o modelo faster-whisper sob demanda (lazy-load)."""
+        """Load the faster-whisper model on demand (lazy load)."""
         with self._model_lock:
             if self._fw_model is None:
                 from faster_whisper import WhisperModel  # type: ignore[import-not-found]
@@ -100,7 +100,7 @@ class LocalSTT:
             return self._fw_model
 
     def _get_mlx_whisper_module(self) -> Any:
-        """Importa mlx_whisper sob demanda."""
+        """Import mlx_whisper on demand."""
         with self._model_lock:
             if self._mlx_module is None:
                 import mlx_whisper  # type: ignore[import-not-found]
@@ -109,11 +109,11 @@ class LocalSTT:
             return self._mlx_module
 
     def _convert_to_wav(self, src_path: Path, dst_wav_path: Path) -> Path:
-        """Converte áudio de entrada para WAV 16kHz mono usando PyAV ou afconvert."""
+        """Convert input audio to 16 kHz mono WAV using PyAV or afconvert."""
         if src_path.suffix.lower() == ".wav":
             return src_path
 
-        # 1) Tenta decodificar em memória via PyAV (`av`) para suportar WebM/Opus sem ffmpeg.
+        # 1) Try decoding via PyAV (`av`) to support WebM/Opus without ffmpeg.
         if importlib.util.find_spec("av") is not None:
             try:
                 import av  # type: ignore[import-not-found]
@@ -141,9 +141,9 @@ class LocalSTT:
                         if dst_wav_path.exists() and dst_wav_path.stat().st_size > 44:
                             return dst_wav_path
             except Exception as exc:
-                logger.warning("Conversão via PyAV falhou (%s); tentando afconvert.", type(exc).__name__)
+                logger.warning("PyAV conversion failed (%s); trying afconvert.", type(exc).__name__)
 
-        # 2) Fallback nativo do macOS via /usr/bin/afconvert (nunca usa shell=True).
+        # 2) Native macOS fallback via /usr/bin/afconvert (never uses shell=True).
         if (
             src_path.suffix.lower() in _AFCONVERT_COMPATIBLE_EXTS
             and Path(_AFCONVERT_BIN).exists()
@@ -176,7 +176,7 @@ class LocalSTT:
         mime_type: str,
         language: str,
     ) -> dict[str, Any]:
-        """Executa transcrição local em thread dedicada."""
+        """Run local transcription in a dedicated thread."""
         engine = self._detect_engine()
         if engine == "unavailable":
             return {
@@ -184,8 +184,8 @@ class LocalSTT:
                 "available": False,
                 "engine": "unavailable",
                 "error": (
-                    "Transcrição local indisponível: instale faster-whisper ou mlx-whisper "
-                    "no ambiente virtual."
+                    "Local transcription unavailable: install faster-whisper or mlx-whisper "
+                    "in the virtual environment."
                 ),
             }
 
@@ -233,7 +233,7 @@ class LocalSTT:
         mime_type: str = "audio/webm",
         language: str = "pt",
     ) -> dict[str, Any]:
-        """Transcreve bytes de áudio de forma assíncrona retornando payload padronizado."""
+        """Transcribe audio bytes asynchronously, returning a standardized payload."""
         lang = (language or self.language or "pt").strip() or "pt"
         engine = self._detect_engine()
 
@@ -242,7 +242,7 @@ class LocalSTT:
                 "text": "",
                 "available": engine != "unavailable",
                 "engine": engine,
-                "error": "Nenhum áudio recebido para transcrição.",
+                "error": "No audio received for transcription.",
             }
 
         if self._transcribe_fn is not None:
@@ -264,21 +264,21 @@ class LocalSTT:
                     "error": None,
                 }
             except Exception as exc:
-                logger.error("Erro na função customizada de STT: %s", type(exc).__name__)
+                logger.error("Error in custom STT function: %s", type(exc).__name__)
                 return {
                     "text": "",
                     "available": True,
                     "engine": "custom",
-                    "error": "Falha ao transcrever áudio recebido.",
+                    "error": "Failed to transcribe the received audio.",
                 }
 
         try:
             return await asyncio.to_thread(self._transcribe_sync, audio_bytes, mime_type, lang)
         except Exception as exc:
-            logger.error("Erro na transcrição local (%s)", type(exc).__name__)
+            logger.error("Local transcription error (%s)", type(exc).__name__)
             return {
                 "text": "",
                 "available": engine != "unavailable",
                 "engine": engine,
-                "error": f"Falha na transcrição local ({type(exc).__name__}).",
+                "error": f"Local transcription failed ({type(exc).__name__}).",
             }

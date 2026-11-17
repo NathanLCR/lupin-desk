@@ -1,4 +1,4 @@
-"""Testes unitários para configuração, redação de segredos e memória em 2 camadas."""
+"""Unit tests for configuration, secret redaction and two-layer memory."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from app.memory import MemoryStore
 
 
 def test_load_settings_defaults_and_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verifica valores padrão do `Settings` e carregamento via `.env`/ambiente."""
+    """Check the `Settings` defaults and loading via `.env`/environment."""
     for key in (
         "LLM_BASE_URL",
         "LLM_API_KEY",
@@ -32,7 +32,7 @@ def test_load_settings_defaults_and_env_override(tmp_path: Path, monkeypatch: py
     ):
         monkeypatch.delenv(key, raising=False)
 
-    defaults = load_settings(env_path=tmp_path / "inexistente.env")
+    defaults = load_settings(env_path=tmp_path / "nonexistent.env")
     assert isinstance(defaults, Settings)
     assert defaults.llm_base_url == "http://127.0.0.1:31415/v1"
     assert defaults.llm_api_key == ""
@@ -74,14 +74,14 @@ def test_load_settings_defaults_and_env_override(tmp_path: Path, monkeypatch: py
 def test_logging_redacts_api_key_and_known_secret_patterns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Garante que `LLM_API_KEY` e tokens `freellmapi-*`/`sk-*` nunca vazam nos logs."""
-    custom_secret = "segredo-customizado-xyz-987"
+    """Ensure `LLM_API_KEY` and `freellmapi-*`/`sk-*` tokens never leak into the logs."""
+    custom_secret = "custom-secret-xyz-987"
     configure_logging(secret=custom_secret, level=logging.INFO)
     logger = logging.getLogger("desk_assistant.test_logger")
 
     with caplog.at_level(logging.INFO):
-        logger.info("Falha com chave=%s", custom_secret)
-        logger.warning("Token detectado: freellmapi-abc123_XYZ e sk-proj_999888")
+        logger.info("Failure with key=%s", custom_secret)
+        logger.warning("Token detected: freellmapi-abc123_XYZ and sk-proj_999888")
         logger.error("Header Authorization: Bearer meu_token_secreto_42 model=claude-haiku-4-5")
 
     joined = caplog.text
@@ -94,30 +94,30 @@ def test_logging_redacts_api_key_and_known_secret_patterns(
 
 
 def test_short_term_sliding_window_returns_last_messages_in_order(tmp_path: Path) -> None:
-    """Confirma criação automática de diretórios e janela deslizante cronológica."""
+    """Confirm automatic directory creation and the chronological sliding window."""
     db_file = tmp_path / "nested" / "sub" / "memory.db"
     store = MemoryStore(db_path=db_file, max_short_term_messages=10)
     try:
         assert db_file.exists()
         for idx in range(15):
             role = "user" if idx % 2 == 0 else "assistant"
-            store.add_message(role, f"mensagem-{idx}", emotion="neutral" if role == "assistant" else None)
+            store.add_message(role, f"message-{idx}", emotion="neutral" if role == "assistant" else None)
 
         assert store.get_recent_messages_count() == 15
 
         recent = store.get_recent_messages()
         assert len(recent) == 10
-        assert [m["content"] for m in recent] == [f"mensagem-{i}" for i in range(5, 15)]
+        assert [m["content"] for m in recent] == [f"message-{i}" for i in range(5, 15)]
         assert all(set(m.keys()) == {"role", "content"} for m in recent)
 
         last_three = store.get_recent_messages(limit=3)
-        assert [m["content"] for m in last_three] == ["mensagem-12", "mensagem-13", "mensagem-14"]
+        assert [m["content"] for m in last_three] == ["message-12", "message-13", "message-14"]
     finally:
         store.close()
 
 
 def test_extract_and_store_facts_from_tags_and_ptbr_heuristics(tmp_path: Path) -> None:
-    """Extrai tags `[fact: ...]` do LLM e fatos heurísticos em PT-BR sem inventar dados."""
+    """Extract the LLM `[fact: ...]` tags and pt-BR heuristic facts without inventing data."""
     store = MemoryStore(db_path=tmp_path / "memory.db")
     try:
         stored = store.extract_and_store_facts(
@@ -137,7 +137,7 @@ def test_extract_and_store_facts_from_tags_and_ptbr_heuristics(tmp_path: Path) -
         assert "Gosta de café preto" in fact_texts
         assert "Usa macOS no dia a dia" in fact_texts
 
-        # Perguntas e frases vagas não devem gerar fatos espúrios.
+        # Questions and vague sentences must not produce spurious facts.
         store.extract_and_store_facts(
             user_text="Você gosta de café? Tenho uma dúvida sobre Python.",
             assistant_raw_text="[emotion:curious] Claro, qual é a dúvida?",
@@ -149,7 +149,7 @@ def test_extract_and_store_facts_from_tags_and_ptbr_heuristics(tmp_path: Path) -
 
 
 def test_fact_deduplication_and_max_user_facts_eviction(tmp_path: Path) -> None:
-    """Garante atualização em vez de duplicação e remoção dos mais antigos acima do limite."""
+    """Ensure updating instead of duplicating, and removal of the oldest above the limit."""
     store = MemoryStore(db_path=tmp_path / "memory.db", max_user_facts=4)
     try:
         first_name = store.add_fact("Nome do usuário: Nathan", category="identity")
@@ -162,7 +162,7 @@ def test_fact_deduplication_and_max_user_facts_eviction(tmp_path: Path) -> None:
         store.add_fact("Idioma: inglês", category="preference")
         assert len(store.get_facts()) == 2
 
-        # Adiciona mais fatos para exceder max_user_facts=4 e verificar remoção dos mais antigos.
+        # Add more facts to exceed max_user_facts=4 and verify the oldest are removed.
         store.add_fact("Gosta de café")
         store.add_fact("Prefere tema escuro")
         store.add_fact("Usa atalhos de teclado")
@@ -181,7 +181,7 @@ def test_fact_deduplication_and_max_user_facts_eviction(tmp_path: Path) -> None:
 
 
 def test_build_memory_context_respects_hard_char_budget(tmp_path: Path) -> None:
-    """Garante retorno vazio sem fatos e orçamento rígido de `max_chars`."""
+    """Ensure an empty result without facts and a hard `max_chars` budget."""
     store = MemoryStore(db_path=tmp_path / "memory.db")
     try:
         assert store.build_memory_context() == ""
@@ -204,7 +204,7 @@ def test_build_memory_context_respects_hard_char_budget(tmp_path: Path) -> None:
 
 
 def test_clear_short_term_preserves_facts_and_clear_all_wipes_both(tmp_path: Path) -> None:
-    """Verifica que `clear_short_term` mantém fatos e `clear_all` limpa ambas as camadas."""
+    """Check that `clear_short_term` keeps facts and `clear_all` clears both layers."""
     store = MemoryStore(db_path=tmp_path / "memory.db")
     try:
         store.add_message("user", "Olá")
@@ -224,7 +224,7 @@ def test_clear_short_term_preserves_facts_and_clear_all_wipes_both(tmp_path: Pat
 
 
 def test_load_settings_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Valida defaults e overrides das novas configurações opcionais em `Settings`."""
+    """Validate the defaults and overrides of the new optional `Settings` fields."""
     for key in (
         "HTTPS_PORT",
         "CERT_FILE",
@@ -238,7 +238,7 @@ def test_load_settings_extended_fields(tmp_path: Path, monkeypatch: pytest.Monke
     ):
         monkeypatch.delenv(key, raising=False)
 
-    defaults = load_settings(env_path=tmp_path / "inexistente.env")
+    defaults = load_settings(env_path=tmp_path / "nonexistent.env")
     assert defaults.https_port == 8443
     assert defaults.cert_file == BASE_DIR / "certs" / "cert.pem"
     assert defaults.key_file == BASE_DIR / "certs" / "key.pem"
@@ -279,7 +279,7 @@ def test_load_settings_extended_fields(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_idempotent_sqlite_migration_from_phase1_schema(tmp_path: Path) -> None:
-    """Garante migração segura e idempotente de um banco SQLite legado da Fase 1."""
+    """Ensure a safe, idempotent migration of a legacy Phase 1 SQLite database."""
     db_file = tmp_path / "legacy.db"
     conn = sqlite3.connect(str(db_file))
     with conn:
@@ -313,7 +313,7 @@ def test_idempotent_sqlite_migration_from_phase1_schema(tmp_path: Path) -> None:
         )
     conn.close()
 
-    # Primeira abertura migra colunas, tabelas novas e FTS5.
+    # First open migrates columns, new tables and FTS5.
     store = MemoryStore(db_path=db_file)
     try:
         facts = store.get_facts()
@@ -330,7 +330,7 @@ def test_idempotent_sqlite_migration_from_phase1_schema(tmp_path: Path) -> None:
     finally:
         store.close()
 
-    # Segunda abertura deve ser 100% idempotente.
+    # The second open must be 100% idempotent.
     store_again = MemoryStore(db_path=db_file)
     try:
         assert len(store_again.get_facts()) == 1
@@ -341,7 +341,7 @@ def test_idempotent_sqlite_migration_from_phase1_schema(tmp_path: Path) -> None:
 
 
 def test_pinned_facts_protected_from_eviction_and_importance_update(tmp_path: Path) -> None:
-    """Fatos marcados como `pinned=True` nunca são removidos quando `max_user_facts` é excedido."""
+    """Facts marked `pinned=True` are never removed when `max_user_facts` is exceeded."""
     store = MemoryStore(db_path=tmp_path / "pinned.db", max_user_facts=3)
     try:
         core = store.add_fact("Nome do usuário: Nathan", category="identity", pinned=True, importance=10)
@@ -364,7 +364,7 @@ def test_pinned_facts_protected_from_eviction_and_importance_update(tmp_path: Pa
         assert "Nome do usuário: Nathan" in texts
         assert len(facts) == 3
 
-        # Também testa `set_fact_pinned` após criação.
+        # Also tests `set_fact_pinned` after creation.
         dark_fact = next(f for f in facts if f["fact"] == "Prefere tema escuro")
         pinned_dark = store.set_fact_pinned(dark_fact["id"], True)
         assert pinned_dark is not None and pinned_dark["pinned"] is True
@@ -377,7 +377,7 @@ def test_pinned_facts_protected_from_eviction_and_importance_update(tmp_path: Pa
 
 
 def test_rolling_summary_query_ranking_and_budget(tmp_path: Path) -> None:
-    """Valida `rolling_state`, priorização por relevância/`pinned` e respeito a `max_chars`."""
+    """Validate `rolling_state`, relevance/`pinned` ranking and respect for `max_chars`."""
     store = MemoryStore(db_path=tmp_path / "context.db")
     try:
         assert store.get_rolling_summary() == ""
@@ -402,7 +402,7 @@ def test_rolling_summary_query_ranking_and_budget(tmp_path: Path) -> None:
 
 
 def test_companion_state_interactions_pet_and_decay(tmp_path: Path) -> None:
-    """Valida evolução emocional (`record_interaction`, `record_pet`), decaimento e prompt line."""
+    """Validate emotional evolution (`record_interaction`, `record_pet`), decay and the prompt line."""
     store = MemoryStore(db_path=tmp_path / "companion.db")
     try:
         initial = store.get_companion_state()
@@ -423,7 +423,7 @@ def test_companion_state_interactions_pet_and_decay(tmp_path: Path) -> None:
         assert "energia" in prompt_line
         assert "afinidade" in prompt_line
 
-        # Simula 10 horas sem interação diretamente no SQLite para verificar decaimento.
+        # Simulate 10 hours without interaction directly in SQLite to check the decay.
         ten_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=10)).isoformat()
         with store._conn:
             store._conn.execute(
@@ -438,7 +438,7 @@ def test_companion_state_interactions_pet_and_decay(tmp_path: Path) -> None:
 
 
 def test_temporal_context_and_consolidate_facts(tmp_path: Path) -> None:
-    """Valida contexto temporal em PT-BR e consolidação de fatos duplicados/contraditórios."""
+    """Validate the pt-BR temporal context and consolidation of duplicate/contradictory facts."""
     store = MemoryStore(db_path=tmp_path / "consolidate.db")
     try:
         temporal = store.get_temporal_context()
@@ -460,7 +460,7 @@ def test_temporal_context_and_consolidate_facts(tmp_path: Path) -> None:
         assert old_fact["id"] not in active_ids
         assert old_work["id"] not in active_ids
 
-        # Verifica transferência do `pinned=True` para o vencedor e `superseded_by` preenchido.
+        # Verify `pinned=True` is transferred to the winner and `superseded_by` is set.
         all_rows = store.get_facts(include_superseded=True)
         by_id = {f["id"]: f for f in all_rows}
         assert by_id[old_fact["id"]]["superseded_by"] == new_fact["id"]

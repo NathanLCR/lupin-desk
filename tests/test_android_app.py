@@ -1,4 +1,4 @@
-"""Testes para o projeto Android nativo do Desk Assistant e script de build do APK."""
+"""Tests for the native Android project of the Desk Assistant and the APK build script."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ GITIGNORE_PATH = ROOT / ".gitignore"
 
 
 def test_gitignore_preserves_rules_and_ignores_android_artifacts() -> None:
-    """Garante que `.gitignore` mantém as regras base e ignora `dist/` e `android/build/`."""
+    """Ensure `.gitignore` keeps the base rules and ignores `dist/` and `android/build/`."""
     lines = {line.strip() for line in GITIGNORE_PATH.read_text(encoding="utf-8").splitlines()}
     expected = {
         ".env",
@@ -47,7 +47,7 @@ def test_gitignore_preserves_rules_and_ignores_android_artifacts() -> None:
 
 
 def test_android_manifest_structure() -> None:
-    """Valida pacote, SDK, permissões, features e activity do AndroidManifest.xml."""
+    """Validate the package, SDK, permissions, features and activity of AndroidManifest.xml."""
     tree = ET.parse(MANIFEST_PATH)
     root = tree.getroot()
 
@@ -111,7 +111,7 @@ def test_android_manifest_structure() -> None:
 
 
 def test_android_resources_xml() -> None:
-    """Valida strings.xml, styles.xml e ícone vetorial ic_launcher.xml."""
+    """Validate strings.xml, styles.xml and the vector icon ic_launcher.xml."""
     strings_root = ET.parse(STRINGS_PATH).getroot()
     strings_map = {el.attrib["name"]: el.text for el in strings_root.findall("string")}
     assert strings_map["app_name"] == "Desk Assistant"
@@ -135,13 +135,13 @@ def test_android_resources_xml() -> None:
 
 
 def test_main_activity_requirements_and_ssl_guard() -> None:
-    """Valida API pura Android SDK, WebView, ponte JS e checagem estrita de SSL local."""
+    """Validate the pure Android SDK API, WebView, the JS bridge and the strict local SSL check."""
     source = MAIN_ACTIVITY_PATH.read_text(encoding="utf-8")
 
     imports = re.findall(r"^\s*import\s+([^;]+);", source, flags=re.MULTILINE)
-    assert imports, "MainActivity.java precisa declarar imports"
+    assert imports, "MainActivity.java must declare imports"
     for imp in imports:
-        assert imp.startswith(("android.", "java.")), f"Import não permitido fora do SDK: {imp}"
+        assert imp.startswith(("android.", "java.")), f"Import not allowed outside the SDK: {imp}"
 
     required_tokens = [
         "FLAG_KEEP_SCREEN_ON",
@@ -163,7 +163,7 @@ def test_main_activity_requirements_and_ssl_guard() -> None:
         "dispatchKeyEvent",
     ]
     for token in required_tokens:
-        assert token in source, f"Elemento obrigatório ausente em MainActivity.java: {token}"
+        assert token in source, f"Required element missing in MainActivity.java: {token}"
 
     for method in (
         "isNativeApp()",
@@ -173,26 +173,26 @@ def test_main_activity_requirements_and_ssl_guard() -> None:
         "reloadApp()",
         "openServerMenu()",
     ):
-        assert method in source, f"Método ausente no AndroidBridge: {method}"
+        assert method in source, f"Method missing in AndroidBridge: {method}"
 
     ssl_block_match = re.search(
         r"public void onReceivedSslError\s*\([^)]*\)\s*\{(.*?)\n\s{8}\}",
         source,
         flags=re.DOTALL,
     )
-    assert ssl_block_match is not None, "onReceivedSslError não encontrado"
+    assert ssl_block_match is not None, "onReceivedSslError not found"
     ssl_block = ssl_block_match.group(1)
     assert "isPrivateOrLocalHost(" in ssl_block
     assert "handler.proceed();" in ssl_block
     assert "handler.cancel();" in ssl_block
-    # Nunca permite `handler.proceed()` fora de condicional estrita
+    # Never allows `handler.proceed()` outside a strict conditional
     assert source.count("handler.proceed()") == 1
 
 
 def test_build_script_uses_no_shell_true_and_discovers_mocked_toolchain(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Garante que o script de build nunca usa shell=True e descobre o toolchain."""
+    """Ensure the build script never uses shell=True and discovers the toolchain."""
     build_src = BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
     tree = ast.parse(build_src)
     for node in ast.walk(tree):
@@ -223,11 +223,11 @@ def test_build_script_uses_no_shell_true_and_discovers_mocked_toolchain(
 
 
 def test_real_apk_build_when_toolchain_installed() -> None:
-    """Compila e valida `dist/desk-assistant-rg406h.apk` quando JDK e SDK 34 estão prontos."""
+    """Build and validate `dist/desk-assistant-rg406h.apk` when the JDK and SDK 34 are ready."""
     try:
         toolchain = build_android_apk.discover_toolchain()
     except RuntimeError as exc:
-        pytest.skip(f"Toolchain Android ainda não disponível neste host: {exc}")
+        pytest.skip(f"Android toolchain not yet available on this host: {exc}")
 
     apk_path = build_android_apk.build_apk(toolchain=toolchain)
     assert apk_path.is_file()

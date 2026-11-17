@@ -1,4 +1,4 @@
-"""Fixtures comuns: os testes nunca leem o Mail.app nem o Calendar reais do Mac."""
+"""Shared fixtures: tests never read the Mac's real Mail.app or Calendar."""
 
 from __future__ import annotations
 
@@ -8,6 +8,6 @@ from app.mac_control import MacController
 
 
 @pytest.fixture(autouse=True)
-def _sem_leitura_real_de_mail_e_agenda(monkeypatch: pytest.MonkeyPatch) -> None:
+def _no_real_mail_or_calendar_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(MacController, "read_inbox", lambda self: None)
-    monkeypatch.setattr(MacController, "read_today_agenda", lambda self: None)
+    monkeypatch.setattr(MacController, "read_today_calendar", lambda self: None)
