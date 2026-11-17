@@ -236,36 +236,6 @@
     });
   }
 
-  async function loadFirstWake() {
-    if (isMiniPet) return;
-    try {
-      const resp = await fetch('/api/first-wake');
-      if (!resp.ok) return;
-      const data = await resp.json();
-      if (!data.should_brief || !data.today || !data.today.summary) return;
-
-      const card = el('first-wake-card');
-      const headline = el('first-wake-headline');
-      const list = el('first-wake-list');
-      if (!card || !headline || !list) return;
-
-      headline.textContent = data.today.summary.headline || 'Bom dia! Resumo do Cowork pronto.';
-      list.innerHTML = '';
-      (data.today.summary.top || []).forEach((item) => {
-        const li = document.createElement('li');
-        li.textContent = `${item.id}: ${item.why}`;
-        list.appendChild(li);
-      });
-      card.classList.remove('hidden');
-
-      if (window.EmoAudio && typeof window.EmoAudio.chirp === 'function') {
-        window.EmoAudio.chirp('curious');
-      }
-    } catch (_) {
-      // Silencioso em caso de offline
-    }
-  }
-
   async function loadToday() {
     try {
       const resp = await fetch('/api/cowork/today');
@@ -461,26 +431,6 @@
   }
 
   function bindUiEvents() {
-    const btnDismissWake = el('btn-first-wake-close');
-    if (btnDismissWake) {
-      btnDismissWake.addEventListener('click', () => {
-        const card = el('first-wake-card');
-        if (card) card.classList.add('hidden');
-      });
-    }
-
-    const btnSpeakWake = el('btn-first-wake-speak');
-    if (btnSpeakWake) {
-      btnSpeakWake.addEventListener('click', () => {
-        const headline = el('first-wake-headline')?.textContent || '';
-        if (headline && window.speechSynthesis) {
-          const u = new SpeechSynthesisUtterance(headline);
-          u.lang = 'pt-BR';
-          window.speechSynthesis.speak(u);
-        }
-      });
-    }
-
     const btnVad = el('btn-vad-toggle');
     if (btnVad) btnVad.addEventListener('click', toggleVad);
   }
@@ -492,7 +442,6 @@
     }
     initElectronTabs();
     bindUiEvents();
-    loadFirstWake();
     loadSync();
     loadToday();
     window.setInterval(loadSync, 30000);

@@ -12,7 +12,7 @@ import uuid
 from contextlib import asynccontextmanager
 from email.parser import BytesParser
 from email.policy import default as email_default_policy
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -42,7 +42,7 @@ from app.skills import (
     set_skill_enabled,
 )
 from app.stt import LocalSTT
-from app.today import FirstWakeTracker, TodayEngine
+from app.today import FirstWakeTracker, TodayEngine, compor_fala_first_wake
 from app.tts import ServerTTS
 
 logger = logging.getLogger(__name__)
@@ -245,6 +245,8 @@ def create_app(
     tts_engine: ServerTTS | None = None,
     cowork_store: CoworkStore | None = None,
     today_engine: TodayEngine | None = None,
+    first_wake: FirstWakeTracker | None = None,
+    agenda_reader: Callable[[], list[dict[str, Any]] | None] | None = None,
 ) -> FastAPI:
     """Cria e configura a instância FastAPI com memória, atalhos, Mac, voz e WebSocket."""
     resolved_settings = settings or load_settings()
@@ -287,7 +289,13 @@ def create_app(
     resolved_tts = tts_engine or ServerTTS(default_voice=resolved_settings.tts_voice)
     resolved_cowork = cowork_store or CoworkStore(resolved_settings.cowork_workspace_path)
     resolved_today = today_engine or TodayEngine(resolved_settings, resolved_cowork)
-    resolved_first_wake = FirstWakeTracker(resolved_memory)
+    resolved_first_wake = first_wake or FirstWakeTracker(resolved_memory)
+
+    def resolved_agenda_reader() -> list[dict[str, Any]] | None:
+        if agenda_reader is not None:
+            return agenda_reader()
+        reader = getattr(resolved_mac, "read_today_agenda", None)
+        return reader() if callable(reader) else None
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -803,20 +811,6 @@ def create_app(
             "git": git_info,
         }
 
-    @fastapi_app.get("/api/first-wake")
-    async def check_first_wake(mark: bool = Query(default=True)) -> dict[str, Any]:
-        """Verifica se é a primeira interação do dia e retorna o card silencioso do Today."""
-        should_brief = resolved_first_wake.should_trigger_today()
-        if not should_brief:
-            return {"should_brief": False}
-        today_res = await resolved_today.generate_today()
-        if mark:
-            resolved_first_wake.mark_triggered()
-        return {
-            "should_brief": True,
-            "today": today_res,
-        }
-
     # ------------------------------------------------------------------
     # WebSocket Bidirecional (Streaming LLM, Barge-in, Ações, Voz e Pet)
     # ------------------------------------------------------------------
@@ -1039,6 +1033,55 @@ def create_app(
                         }
                     )
 
+        async def run_first_wake() -> None:
+            """First Wake (issue 03): na primeira interação do dia no Active Body, Lupin fala o Today.
+
+            A fala é montada sem LLM e não entra no histórico, então agenda e Cowork
+            não saem da máquina.
+            """
+            if not is_active_body() or not resolved_first_wake.is_due():
+                return
+            today_iso = resolved_first_wake.mark_triggered()
+            try:
+                state = await asyncio.to_thread(resolved_cowork.load_state)
+            except Exception as exc:
+                logger.warning("First Wake sem Cowork (%s).", type(exc).__name__)
+                state = {"workspace_exists": False}
+            try:
+                agenda = await asyncio.to_thread(resolved_agenda_reader)
+            except Exception as exc:
+                logger.warning("First Wake sem agenda (%s).", type(exc).__name__)
+                agenda = None
+            frases = compor_fala_first_wake(state, agenda, today_iso)
+
+            audio_queue: asyncio.Queue[str | None] | None = None
+            audio_task: asyncio.Task[None] | None = None
+            if body_info["wants_audio"] and resolved_tts.is_available():
+                audio_queue = asyncio.Queue()
+                audio_task = asyncio.create_task(audio_worker(audio_queue))
+            try:
+                await safe_send({"type": "emotion", "emotion": "happy"})
+                for frase in frases:
+                    await safe_send({"type": "sentence", "text": frase})
+                    if audio_queue is not None:
+                        audio_queue.put_nowait(frase)
+                await safe_send(
+                    {
+                        "type": "done",
+                        "text": " ".join(frases),
+                        "emotion": "happy",
+                        "facts": [],
+                        "companion": resolved_memory.get_companion_state(),
+                        "first_wake": True,
+                    }
+                )
+                if audio_queue is not None and audio_task is not None:
+                    audio_queue.put_nowait(None)
+                    await audio_task
+            finally:
+                if audio_task is not None and not audio_task.done():
+                    audio_task.cancel()
+
         async def run_llm_turn(user_text: str) -> None:
             clean_text = ""
             raw_text = ""
@@ -1195,13 +1238,19 @@ def create_app(
                 await safe_send({"type": "interrupted"})
                 await safe_send({"type": "state", "state": "idle"})
 
+        async def with_first_wake(turn: Callable[[], Any]) -> None:
+            await run_first_wake()
+            await turn()
+
         def start_llm_turn(user_text: str) -> None:
             nonlocal active_turn_task
-            active_turn_task = asyncio.create_task(run_llm_turn(user_text))
+            active_turn_task = asyncio.create_task(with_first_wake(lambda: run_llm_turn(user_text)))
 
         def start_audio_turn(audio_bytes: bytes, mime_type: str, language: str) -> None:
             nonlocal active_turn_task
-            active_turn_task = asyncio.create_task(run_audio_turn(audio_bytes, mime_type, language))
+            active_turn_task = asyncio.create_task(
+                with_first_wake(lambda: run_audio_turn(audio_bytes, mime_type, language))
+            )
 
         try:
             while True:
@@ -1279,6 +1328,8 @@ def create_app(
                             **companion,
                         }
                     )
+                    if active_turn_task is None or active_turn_task.done():
+                        active_turn_task = asyncio.create_task(run_first_wake())
                     continue
 
                 if msg_type == "run_shortcut":
