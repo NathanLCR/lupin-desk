@@ -1,6 +1,6 @@
 # 15 - Lupin's language setting
 
-Status: ready-for-agent (after 14)
+Status: done (RG406H test pending)
 
 ## Context
 

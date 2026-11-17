@@ -1,6 +1,6 @@
 # 14 - Translate the project to English
 
-Status: ready-for-agent
+Status: done
 
 ## Context
 

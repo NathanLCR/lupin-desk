@@ -1,6 +1,6 @@
 # 01 - Cuts
 
-Status: ready-for-agent
+Status: done
 
 ## Context
 
@@ -18,12 +18,12 @@ Desk Assistant grew too wide (ADR 0001). Before any new feature, we cut whatever
 
 ## Acceptance criteria
 
-- [ ] The RG406H has only two Modes: Pet and Dock.
-- [ ] Clock, Pomodoro and Now Playing appear in Pet Mode, around Lupin.
-- [ ] Skills and Diagnostics are reached through Settings, not through a Mode.
-- [ ] No write or external Cowork Task exists; no diff preview or approval runner; the prompt doesn't mention them.
-- [ ] Today keeps working by reading Cowork.
-- [ ] `grep -ri jarvis` finds nothing in the active code.
-- [ ] Screen Look and Clipboard Read no longer exist.
-- [ ] Electron mini-pet intact and marked as frozen.
-- [ ] Existing tests pass; the `snapshot/swarm-2026-11-16` branch still has the cut code.
+- [x] The RG406H has only two Modes: Pet and Dock.
+- [x] Clock, Pomodoro and Now Playing appear in Pet Mode, around Lupin.
+- [x] Skills and Diagnostics are reached through Settings, not through a Mode.
+- [x] No write or external Cowork Task exists; no diff preview or approval runner; the prompt doesn't mention them.
+- [x] Today keeps working by reading Cowork.
+- [x] `grep -ri jarvis` finds nothing in the active code.
+- [x] Screen Look and Clipboard Read no longer exist.
+- [x] Electron mini-pet intact and marked as frozen.
+- [x] Existing tests pass; the `snapshot/swarm-2026-11-16` branch still has the cut code.

@@ -1,6 +1,6 @@
 # 09 - Dock redesign
 
-Status: ready-for-agent
+Status: done (RG406H test pending)
 
 ## Context
 
