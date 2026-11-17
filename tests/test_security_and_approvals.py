@@ -70,6 +70,34 @@ def test_resolve_runtime_access_token_behavior(tmp_path: Path) -> None:
     assert gen_fixed is False
 
 
+def test_modo_dev_sem_token_libera_lan_mesmo_com_token_configurado(tmp_path: Path) -> None:
+    s_dev = _make_settings(tmp_path, desk_access_token="meu-pin", desk_dev_sem_token=True)
+    assert resolve_runtime_access_token(s_dev) == ("", False)
+
+    app = create_app(settings=s_dev)
+
+    async def lan_asgi(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        patched = dict(scope)
+        patched["client"] = ("192.168.1.50", 54321)
+        await app(patched, receive, send)
+
+    with TestClient(lan_asgi) as lan_client:
+        assert lan_client.get("/api/skills").status_code == 200
+        with lan_client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "interrupt"})
+            assert ws.receive_json()["type"] == "interrupted"
+
+
+def test_modo_dev_sem_token_so_liga_com_valor_explicito(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import load_settings
+
+    for valor, esperado in (("1", True), ("true", True), ("sim", True), ("0", False), ("", False)):
+        monkeypatch.setenv("DESK_DEV_SEM_TOKEN", valor)
+        assert load_settings().desk_dev_sem_token is esperado, valor
+    monkeypatch.delenv("DESK_DEV_SEM_TOKEN")
+    assert load_settings().desk_dev_sem_token is False
+
+
 def test_import_app_main_has_no_db_side_effect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DB_PATH", str(tmp_path / "nao_deve_existir.db"))
     sys.modules.pop("app.main", None)

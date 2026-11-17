@@ -249,6 +249,11 @@ def create_app(
     env_llm_api_key = resolved_settings.llm_api_key
     configure_logging(secret=env_llm_api_key)
     runtime_access_token, token_generated = resolve_runtime_access_token(resolved_settings)
+    if resolved_settings.desk_dev_sem_token:
+        logger.warning(
+            "DESK_DEV_SEM_TOKEN ligado: qualquer aparelho da rede acessa /api e /ws sem token. "
+            "Use só em desenvolvimento."
+        )
     if token_generated:
         logger.warning(
             "DESK_ACCESS_TOKEN não definido no .env; token efêmero gerado para clientes não-loopback: %s",

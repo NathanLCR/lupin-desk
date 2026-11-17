@@ -143,7 +143,12 @@ TTS_VOICE=Luciana
 WEATHER_CITY=São Paulo
 WEATHER_LATITUDE=-23.5505
 WEATHER_LONGITUDE=-46.6333
+
+DESK_ACCESS_TOKEN=
+DESK_DEV_SEM_TOKEN=0
 ```
+
+Aparelhos na rede (RG406H/iPhone via Wi-Fi) precisam do token de acesso em `/api` e `/ws`; pelo Mac (`localhost`) e pelo túnel ADB nunca. Sem `DESK_ACCESS_TOKEN`, o servidor gera um token a cada início e mostra no terminal. Durante o desenvolvimento, `DESK_DEV_SEM_TOKEN=1` desliga o token (o servidor avisa no log ao subir); deixe em `0` fora disso, porque com ele ligado qualquer aparelho da mesma rede controla o assistente e o Mac.
 
 ---
 
