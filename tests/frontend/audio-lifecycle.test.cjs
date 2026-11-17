@@ -176,7 +176,7 @@ function makeCoworkHarness({ fetchImpl, getUserMedia, AudioContext, MediaRecorde
   return { elements, fetchCalls, intervals, window, get submitCount() { return submitCount; } };
 }
 
-test('VAD desligado invalida e aborta a transcrição já iniciada', async () => {
+test('turning VAD off invalidates and aborts an already started transcription', async () => {
   const sttRequest = deferred();
   const vadStream = makeStream();
   const mediaRecorders = [];
@@ -228,14 +228,14 @@ test('VAD desligado invalida e aborta a transcrição já iniciada', async () =>
 
   await toggle.dispatch('click');
   assert.equal(harnessSttSignal.aborted, true);
-  sttRequest.resolve({ ok: true, status: 200, json: async () => ({ text: 'transcrição tardia' }) });
+  sttRequest.resolve({ ok: true, status: 200, json: async () => ({ text: 'late transcription' }) });
   await flush();
 
   assert.equal(harness.submitCount, 0);
   assert.equal(vadStream.track.stopped, true);
 });
 
-test('Diagnóstico encerra o stream retornado por getUserMedia após desativação', async () => {
+test('Diagnostics stops the stream returned by getUserMedia after deactivation', async () => {
   const pending = deferred();
   const stream = makeStream();
   const harness = makeDiagnosticsHarness(() => pending.promise);
@@ -247,10 +247,10 @@ test('Diagnóstico encerra o stream retornado por getUserMedia após desativaç�
 
   assert.equal(stream.track.stopped, true);
   assert.equal(harness.elements['diag-btn-mic-toggle'].disabled, false);
-  assert.equal(harness.elements['diag-mic-badge'].textContent, 'Parado');
+  assert.equal(harness.elements['diag-mic-badge'].textContent, 'Stopped');
 });
 
-test('Diagnóstico encerra o stream temporário de permissão após desativação', async () => {
+test('Diagnostics stops the temporary permission stream after deactivation', async () => {
   const pending = deferred();
   const stream = makeStream();
   const harness = makeDiagnosticsHarness(() => pending.promise);
@@ -263,7 +263,7 @@ test('Diagnóstico encerra o stream temporário de permissão após desativaçã
   assert.equal(stream.track.stopped, true);
 });
 
-test('Diagnóstico reinicia o monitor com o microfone selecionado', async () => {
+test('Diagnostics restarts the monitor with the selected microphone', async () => {
   const streams = [makeStream(), makeStream()];
   const constraints = [];
   const harness = makeDiagnosticsHarness(async (constraint) => {

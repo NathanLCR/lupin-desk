@@ -312,7 +312,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       promptForPairingToken, fetchMacStatus, enqueueServerAudio,
     };\n})();`
   );
-  assert.notEqual(instrumentedSource, appSource, 'o IIFE do app deve aceitar instrumentação apenas no teste');
+  assert.notEqual(instrumentedSource, appSource, 'the app IIFE must accept instrumentation only in the test');
   vm.runInNewContext(instrumentedSource, context, { filename: sourcePath });
   const app = context.__appTest;
   app.state.ws = ws;
@@ -330,7 +330,7 @@ function event(key, options = {}) {
   };
 }
 
-test('cada gravação PTT mantém seus próprios chunks mesmo após o gravador anterior emitir dados', async () => {
+test('each PTT recording keeps its own chunks even after the previous recorder emits data', async () => {
   const harness = makeHarness();
   const { app, wsMessages, mediaRecorders } = harness;
   const data = (text) => new Blob([text.repeat(500)], { type: 'audio/webm' });
@@ -351,7 +351,7 @@ test('cada gravação PTT mantém seus próprios chunks mesmo após o gravador a
   assert.equal(Buffer.from(audioMessages[1].data, 'base64').toString(), 'B'.repeat(500));
 });
 
-test('interromper TTS descarta áudio enfileirado e ignora reprodução antiga', async () => {
+test('interrupting TTS discards queued audio and ignores stale playback', async () => {
   const harness = makeHarness();
   const { app, elements } = harness;
   app.state.ttsMode = 'server';
@@ -364,7 +364,7 @@ test('interromper TTS descarta áudio enfileirado e ignora reprodução antiga',
   assert.equal(app.state.ttsQueue.length, 0);
 });
 
-test('callback de reprodução cancelada não altera uma fala TTS posterior', async () => {
+test('a cancelled playback callback does not affect a later TTS utterance', async () => {
   const harness = makeHarness();
   const { app, elements } = harness;
   const audio = elements.get('server-tts-audio');
@@ -384,7 +384,7 @@ test('callback de reprodução cancelada não altera uma fala TTS posterior', as
   assert.equal(app.state.ttsPlaying, false);
 });
 
-test('barge-in envia interrupt mesmo quando a fala está entre sentenças', () => {
+test('barge-in sends interrupt even when the speech is between sentences', () => {
   const { app, wsMessages } = makeHarness();
   app.handleWsMessage({ type: 'delta', text: 'primeira frase' });
   app.state.ttsPlaying = false;
@@ -394,7 +394,7 @@ test('barge-in envia interrupt mesmo quando a fala está entre sentenças', () =
   assert.equal(app.state.backendTurnActive, false);
 });
 
-test('aprovações enfileiradas são resolvidas pelo ID original no callback nativo', async () => {
+test('queued approvals are resolved by their original ID in the native callback', async () => {
   const pending = [];
   const harness = makeHarness();
   const { app, window, wsMessages } = harness;
@@ -422,7 +422,7 @@ test('aprovações enfileiradas são resolvidas pelo ID original no callback nat
   assert.equal(app.state.pendingApprovalId, null);
 });
 
-test('gamepad navega e ativa o modal/gaveta antes dos tiles subjacentes', () => {
+test('gamepad navigates and activates the modal/drawer before the underlying tiles', () => {
   const harness = makeHarness();
   const { app, elements } = harness;
   const modal = elements.get('shortcut-modal');
@@ -462,7 +462,7 @@ test('gamepad navega e ativa o modal/gaveta antes dos tiles subjacentes', () => 
   assert.equal(hiddenTile.clickCount, 0);
 });
 
-test('Enter num filho da tecla não executa o atalho pai; agent_prompt usa WebSocket', async () => {
+test('Enter on a child of the key does not run the parent shortcut; agent_prompt uses WebSocket', async () => {
   const harness = makeHarness();
   const { app, elements, wsMessages } = harness;
   app.state.shortcuts = [{
@@ -484,11 +484,11 @@ test('Enter num filho da tecla não executa o atalho pai; agent_prompt usa WebSo
   assert.deepEqual(wsMessages, [{ type: 'run_shortcut', id: 'prompt-1' }]);
 });
 
-test('atalho sensível e fallback HTTP 409 solicitam aprovação via WebSocket', async () => {
+test('a sensitive shortcut and the HTTP 409 fallback request approval via WebSocket', async () => {
   let restCalls = 0;
   const harness = makeHarness({ fetch: async () => { restCalls += 1; return { ok: true, status: 200, json: async () => ({}) }; } });
   const { app, wsMessages } = harness;
-  await app.runShortcut({ id: 41, title: 'Atalho sensível', action_type: 'keystroke', requires_confirmation: true });
+  await app.runShortcut({ id: 41, title: 'Sensitive shortcut', action_type: 'keystroke', requires_confirmation: true });
   assert.equal(restCalls, 0);
   assert.deepEqual(wsMessages, [{ type: 'run_shortcut', id: 41 }]);
 
@@ -509,7 +509,7 @@ test('atalho sensível e fallback HTTP 409 solicitam aprovação via WebSocket',
   assert.deepEqual(fallback.wsMessages, [{ type: 'run_shortcut', id: 42 }]);
 });
 
-test('modal mantém o foco preso e o devolve ao elemento que o abriu', () => {
+test('modal traps focus and returns it to the element that opened it', () => {
   const harness = makeHarness();
   const { app, elements, document } = harness;
   const modal = elements.get('shortcut-modal');
@@ -535,7 +535,7 @@ test('modal mantém o foco preso e o devolve ao elemento que o abriu', () => {
   assert.equal(document.activeElement, opener);
 });
 
-test('gaveta mantém o foco preso e o devolve ao elemento que a abriu', () => {
+test('drawer traps focus and returns it to the element that opened it', () => {
   const harness = makeHarness();
   const { app, elements, document } = harness;
   const drawer = elements.get('memory-drawer');
@@ -561,7 +561,7 @@ test('gaveta mantém o foco preso e o devolve ao elemento que a abriu', () => {
   assert.equal(document.activeElement, opener);
 });
 
-test('Pet não tem barra: Ajustes abre e L1/R1 trocam de seção, fora deles de Modo', () => {
+test('Pet has no bar: Settings opens and L1/R1 switch section, outside it Mode', () => {
   const harness = makeHarness();
   const { app, document } = harness;
   document.getElementById('btn-mode-nathan').classList.add('hidden');
@@ -583,7 +583,7 @@ test('Pet não tem barra: Ajustes abre e L1/R1 trocam de seção, fora deles de 
   assert.equal(app.state.mode, 'pet');
 });
 
-test('fetchMacStatus usa faceApi sem depender de getFace', async () => {
+test('fetchMacStatus uses faceApi without depending on getFace', async () => {
   const harness = makeHarness({
     fetch: async () => ({
       ok: true,
@@ -600,7 +600,7 @@ test('fetchMacStatus usa faceApi sem depender de getFace', async () => {
   assert.equal(harness.elements.get('now-playing-title').textContent, 'Faixa');
 });
 
-test('pareamento limita Tab ao diálogo e restaura o foco ao fechar', () => {
+test('pairing limits Tab to the dialog and restores focus on close', () => {
   const harness = makeHarness();
   const { app, document, elements } = harness;
   const input = document.getElementById('desk-pairing-input');

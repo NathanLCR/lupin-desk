@@ -1,4 +1,4 @@
-/* Módulo Cowork somente leitura (Today, Sync, First Wake), VAD e mini-pet Electron. */
+/* Read-only Cowork module (Today, Sync, First Wake), VAD and the Electron mini-pet. */
 (function () {
   'use strict';
 
@@ -122,7 +122,7 @@
     };
 
     if (stage) {
-      stage.title = 'Duplo clique para abrir o painel do Lupin';
+      stage.title = 'Double-click to open the Lupin panel';
       stage.addEventListener('dblclick', () => {
         if (api && typeof api.openDashboard === 'function') api.openDashboard();
       });
@@ -264,7 +264,7 @@
         });
       }
     } catch (_) {
-      // Ignora erro de rede temporário
+      // Ignore transient network error
     }
   }
 
@@ -291,7 +291,7 @@
         detail.textContent = `${data.state_message || ''} | Git: ${data.git.summary || '—'}`;
       }
     } catch (_) {
-      // Ignora
+      // Ignore
     }
   }
 
@@ -323,13 +323,13 @@
     }
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      if (output) output.textContent = 'Microfone indisponível. Use HTTPS ou localhost e confira a permissão do navegador antes de tentar novamente.';
+      if (output) output.textContent = 'Microphone unavailable. Use HTTPS or localhost and check the browser permission before trying again.';
       return;
     }
 
     const sessionId = ++state.vadSessionId;
     state.vadStarting = true;
-    if (btn) btn.textContent = '⏳ Abrindo microfone…';
+    if (btn) btn.textContent = '⏳ Opening microphone…';
     let stream;
     let ctx;
     try {
@@ -398,7 +398,7 @@
                 }
               } catch (err) {
                 if (sessionId === state.vadSessionId && state.vadEnabled && output) {
-                  output.textContent = `Falha na transcrição VAD: ${err.message || err}. Verifique o STT e tente novamente.`;
+                  output.textContent = `VAD transcription failed: ${err.message || err}. Check the STT and try again.`;
                 }
               } finally {
                 state.vadSttControllers.delete(controller);
@@ -425,7 +425,7 @@
           btn.setAttribute('aria-pressed', 'false');
           btn.textContent = '🎙️ VAD';
         }
-        if (output) output.textContent = `Falha ao abrir o microfone: ${err.message || err}. Verifique a permissão e tente novamente.`;
+        if (output) output.textContent = `Failed to open the microphone: ${err.message || err}. Check the permission and try again.`;
       }
     }
   }

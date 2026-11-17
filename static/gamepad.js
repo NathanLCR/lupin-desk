@@ -1,8 +1,8 @@
 /**
- * Controlador de Gamepad para Anbernic RG406H (/static/gamepad.js)
- * Mapeia analógico esquerdo, gatilhos L2/R2 (Push-to-Talk, ou página anterior/próxima
- * quando `triggersAsPage()` devolve true, como no Dock), L1/R1 (modos),
- * D-Pad + A/B/X/Y (Y segurado = falar, se `onYPress` existir)/Start/Select e expõe snapshot ao vivo para Diagnóstico.
+ * Gamepad controller for the Anbernic RG406H (/static/gamepad.js)
+ * Maps the left analog stick, L2/R2 triggers (Push-to-Talk, or previous/next page
+ * when `triggersAsPage()` returns true, as in the Dock), L1/R1 (modes),
+ * D-Pad + A/B/X/Y (Y held = talk, if `onYPress` exists)/Start/Select and exposes a live snapshot for Diagnostics.
  */
 (function (global) {
   'use strict';
@@ -58,7 +58,7 @@
         navigator.vibrate(durationMs);
       }
     } catch {
-      // Ignora caso o navegador bloqueie vibração antes de gesto
+      // Ignore if the browser blocks vibration before a user gesture
     }
   }
 
@@ -169,7 +169,7 @@
       return;
     }
 
-    // 1. Analógico esquerdo -> olhar do rosto
+    // 1. Left analog stick -> face gaze
     const lx = applyDeadzone(pad.axes[0] || 0, ANALOG_DEADZONE);
     const ly = applyDeadzone(pad.axes[1] || 0, ANALOG_DEADZONE);
     if (lx !== 0 || ly !== 0) {
@@ -193,31 +193,31 @@
     const pageMode = typeof handlers.triggersAsPage === 'function' && handlers.triggersAsPage();
 
     if (pageMode) {
-      // Nesse contexto os gatilhos não gravam: L2 volta uma página, R2 avança uma.
+      // In this context the triggers do not record: L2 goes back one page, R2 advances one.
       if (pttActive) {
         pttActive = false;
         if (typeof handlers.onPttEnd === 'function') handlers.onPttEnd();
       }
       if (l2Down && !triggerWasDown.l2) {
-        emitLastAction('L2 (Página anterior)');
+        emitLastAction('L2 (Previous page)');
         safeVibrate(10);
         if (typeof handlers.onPage === 'function') handlers.onPage(-1);
       }
       if (r2Down && !triggerWasDown.r2) {
-        emitLastAction('R2 (Próxima página)');
+        emitLastAction('R2 (Next page)');
         safeVibrate(10);
         if (typeof handlers.onPage === 'function') handlers.onPage(1);
       }
     } else if (triggerPressed && !pttActive) {
       pttActive = true;
-      emitLastAction('L2/R2 Push-to-Talk (início)');
+      emitLastAction('L2/R2 Push-to-Talk (start)');
       safeVibrate(18);
       if (typeof handlers.onPttStart === 'function') {
         handlers.onPttStart();
       }
     } else if (!triggerPressed && pttActive) {
       pttActive = false;
-      emitLastAction('L2/R2 Push-to-Talk (enviar)');
+      emitLastAction('L2/R2 Push-to-Talk (send)');
       safeVibrate(12);
       if (typeof handlers.onPttEnd === 'function') {
         handlers.onPttEnd();
@@ -226,11 +226,11 @@
     triggerWasDown.l2 = l2Down;
     triggerWasDown.r2 = r2Down;
 
-    // 3. L1 (4) / R1 (5) -> alternar entre os 4 modos de tela
-    handleEdgeButton(pad, 4, 'L1 (Modo anterior)', () => {
+    // 3. L1 (4) / R1 (5) -> cycle through the 4 screen modes
+    handleEdgeButton(pad, 4, 'L1 (Previous mode)', () => {
       if (typeof handlers.onModeCycle === 'function') handlers.onModeCycle(-1);
     });
-    handleEdgeButton(pad, 5, 'R1 (Próximo modo)', () => {
+    handleEdgeButton(pad, 5, 'R1 (Next mode)', () => {
       if (typeof handlers.onModeCycle === 'function') handlers.onModeCycle(1);
     });
 
@@ -240,16 +240,16 @@
     handleDpadDirection(pad, 14, 'left', now);
     handleDpadDirection(pad, 15, 'right', now);
 
-    // 5. Botões A (0), B (1), X (2), Y (3), Select (8), Start (9)
-    handleEdgeButton(pad, 0, 'A (Confirmar/Executar)', handlers.onConfirm);
-    handleEdgeButton(pad, 1, 'B (Barge-in/Voltar)', handlers.onBackOrInterrupt);
-    handleEdgeButton(pad, 2, 'X (Legenda)', handlers.onToggleCaption);
+    // 5. Buttons A (0), B (1), X (2), Y (3), Select (8), Start (9)
+    handleEdgeButton(pad, 0, 'A (Confirm/Run)', handlers.onConfirm);
+    handleEdgeButton(pad, 1, 'B (Barge-in/Back)', handlers.onBackOrInterrupt);
+    handleEdgeButton(pad, 2, 'X (Caption)', handlers.onToggleCaption);
     if (typeof handlers.onYPress === 'function') {
-      // Y segurado: onYPress ao apertar e onYRelease ao soltar (ex.: falar no Dock).
+      // Y held: onYPress on press and onYRelease on release (e.g. talk in the Dock).
       const yDown = isButtonPressed(pad, 3);
       const yWas = Boolean(prevButtons[3]);
       if (yDown && !yWas) {
-        emitLastAction('Y (Falar)');
+        emitLastAction('Y (Talk)');
         safeVibrate(12);
         handlers.onYPress();
       } else if (!yDown && yWas && typeof handlers.onYRelease === 'function') {
@@ -257,12 +257,12 @@
       }
       prevButtons[3] = yDown;
     } else {
-      handleEdgeButton(pad, 3, 'Y (Modo TTS)', handlers.onToggleTtsMode);
+      handleEdgeButton(pad, 3, 'Y (TTS mode)', handlers.onToggleTtsMode);
     }
-    handleEdgeButton(pad, 8, 'Select (Tela Cheia)', handlers.onSelect);
-    handleEdgeButton(pad, 9, 'Start (Memória / Config)', handlers.onStart);
+    handleEdgeButton(pad, 8, 'Select (Fullscreen)', handlers.onSelect);
+    handleEdgeButton(pad, 9, 'Start (Memory / Settings)', handlers.onStart);
 
-    // 6. Snapshot ao vivo para Diagnóstico
+    // 6. Live snapshot for Diagnostics
     const buttonsList = [];
     for (let i = 0; i < Math.min(pad.buttons.length, 17); i += 1) {
       const b = pad.buttons[i];
@@ -276,7 +276,7 @@
 
     lastSnapshot = {
       connected: true,
-      id: pad.id || 'Gamepad genérico',
+      id: pad.id || 'Generic gamepad',
       index: pad.index,
       mapping: pad.mapping || 'standard',
       axes: Array.from(pad.axes || []).slice(0, 6).map((v) => Number((v || 0).toFixed(2))),
@@ -292,7 +292,7 @@
   function onGamepadConnected(event) {
     const pad = event && event.gamepad;
     if (pad) {
-      emitLastAction(`Conectado: ${pad.id}`);
+      emitLastAction(`Connected: ${pad.id}`);
       if (typeof handlers.onConnectionChange === 'function') {
         handlers.onConnectionChange(true, pad);
       }

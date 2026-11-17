@@ -1,144 +1,144 @@
 {
-  "versao": 2,
-  "tela": {
-    "largura": 480,
-    "altura": 320
+  "version": 2,
+  "screen": {
+    "width": 480,
+    "height": 320
   },
-  "ordemCamadas": [
+  "layerOrder": [
     "pose",
-    "colar"
+    "collar"
   ],
-  "grupoCabeca": [
+  "headGroup": [
     "pose"
   ],
-  "camadas": {
+  "layers": {
     "pose": [
-      "neutro",
-      "feliz",
-      "apaixonado",
-      "surpreso",
-      "sonolento",
-      "bravo",
-      "tonto",
-      "piscando",
-      "piscar",
-      "curioso",
-      "cetico",
-      "triste"
+      "neutral",
+      "happy",
+      "in-love",
+      "surprised",
+      "sleepy",
+      "angry",
+      "dizzy",
+      "winking",
+      "blink",
+      "curious",
+      "skeptical",
+      "sad"
     ],
-    "colar": [
-      "apagado",
-      "aceso"
+    "collar": [
+      "off",
+      "lit"
     ]
   },
-  "padrao": {
-    "pose": "neutro",
-    "colar": "apagado"
+  "default": {
+    "pose": "neutral",
+    "collar": "off"
   },
-  "piscada": {
-    "neutro": "piscar"
+  "blink": {
+    "neutral": "blink"
   },
-  "fala": {
-    "pose": "feliz",
-    "limiar": 0.4
+  "speech": {
+    "pose": "happy",
+    "threshold": 0.4
   },
-  "expressoes": {
+  "expressions": {
     "neutral": {},
     "happy": {
-      "pose": "feliz"
+      "pose": "happy"
     },
     "excited": {
-      "pose": "feliz"
+      "pose": "happy"
     },
     "curious": {
-      "pose": "curioso"
+      "pose": "curious"
     },
     "skeptical": {
-      "pose": "cetico"
+      "pose": "skeptical"
     },
     "surprised": {
-      "pose": "surpreso"
+      "pose": "surprised"
     },
     "sad": {
-      "pose": "triste"
+      "pose": "sad"
     },
     "wink": {
-      "pose": "piscando"
+      "pose": "winking"
     },
     "love": {
-      "pose": "apaixonado"
+      "pose": "in-love"
     },
     "sleepy": {
-      "pose": "sonolento"
+      "pose": "sleepy"
     },
     "angry": {
-      "pose": "bravo"
+      "pose": "angry"
     },
     "dizzy": {
-      "pose": "tonto"
+      "pose": "dizzy"
     }
   },
-  "estados": {
+  "states": {
     "idle": {},
     "listening": {
-      "inclinacao": 6
+      "tilt": 6
     },
     "thinking": {
-      "inclinacao": -6
+      "tilt": -6
     },
     "speaking": {
-      "colar": "aceso",
-      "falando": true
+      "collar": "lit",
+      "speaking": true
     },
     "error": {
-      "pose": "tonto"
+      "pose": "dizzy"
     }
   },
-  "truques": {
+  "tricks": {
     "dance": {
-      "modo": "corpo",
-      "quadros": [
-        "acenar-1",
-        "acenar-2"
+      "mode": "body",
+      "frames": [
+        "wave-1",
+        "wave-2"
       ],
-      "intervaloMs": 420,
-      "duracaoMs": 3400
+      "intervalMs": 420,
+      "durationMs": 3400
     },
     "stretch": {
-      "modo": "corpo",
-      "quadros": [
-        "alongar-1",
-        "alongar-2"
+      "mode": "body",
+      "frames": [
+        "stretch-1",
+        "stretch-2"
       ],
-      "intervaloMs": 700,
-      "duracaoMs": 3000
+      "intervalMs": 700,
+      "durationMs": 3000
     },
     "nap": {
-      "modo": "corpo",
-      "quadros": [
-        "soneca-1",
-        "soneca-2"
+      "mode": "body",
+      "frames": [
+        "nap-1",
+        "nap-2"
       ],
-      "intervaloMs": 900,
-      "duracaoMs": 3800
+      "intervalMs": 900,
+      "durationMs": 3800
     },
     "sing": {
-      "modo": "busto",
-      "expressao": "happy",
-      "efeito": "notas",
-      "duracaoMs": 3000
+      "mode": "bust",
+      "expression": "happy",
+      "effect": "notes",
+      "durationMs": 3000
     },
     "meditate": {
-      "modo": "busto",
-      "expressao": "sleepy",
-      "efeito": "aneis",
-      "duracaoMs": 3400
+      "mode": "bust",
+      "expression": "sleepy",
+      "effect": "rings",
+      "durationMs": 3400
     },
     "celebrate": {
-      "modo": "busto",
-      "expressao": "excited",
-      "efeito": "confete",
-      "duracaoMs": 2600
+      "mode": "bust",
+      "expression": "excited",
+      "effect": "confetti",
+      "durationMs": 2600
     }
   }
 }

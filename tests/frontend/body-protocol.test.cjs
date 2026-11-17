@@ -326,7 +326,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       setMode, cycleMode,
     };\n})();`
   );
-  assert.notEqual(instrumentedSource, appSource, 'o IIFE do app deve aceitar instrumentação apenas no teste');
+  assert.notEqual(instrumentedSource, appSource, 'the app IIFE must accept instrumentation only in the test');
   vm.runInNewContext(instrumentedSource, context, { filename: sourcePath });
   const app = context.__appTest;
   return { sockets, app, context, document, window, elements, ws, wsMessages, timers, mediaRecorders };
@@ -342,7 +342,7 @@ function connected(harness) {
   return socket;
 }
 
-test('hello é enviado ao abrir o WebSocket, com audio conforme o modo TTS', () => {
+test('hello is sent when the WebSocket opens, with audio according to the TTS mode', () => {
   const harness = makeHarness();
   const socket = connected(harness);
   assert.deepEqual(socket.sent[0], { type: 'hello', body: 'web', protocol: 1, audio: [] });
@@ -353,22 +353,22 @@ test('hello é enviado ao abrir o WebSocket, com audio conforme o modo TTS', () 
   assert.deepEqual(socket.sent.at(-1), { type: 'hello', body: 'web', protocol: 1, audio: ['m4a'] });
 });
 
-test('no Android (RG406H) o hello se apresenta como rg406h-web', () => {
+test('on Android (RG406H) the hello presents itself as rg406h-web', () => {
   const harness = makeHarness({ navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 13; RG406H)' } });
   const socket = connected(harness);
   assert.equal(socket.sent[0].body, 'rg406h-web');
 });
 
-test('fora do Active Body o aparelho vira Dock sem Pet, e volta quando o Lupin retorna', () => {
+test('outside the Active Body the device becomes a Dock without Pet, and returns when Lupin comes back', () => {
   const harness = makeHarness();
   const { app, document } = harness;
   connected(harness);
   app.setMode('pet');
   app.handleWsMessage({ type: 'welcome', protocol: 1, active_body: 'esp32', active: false });
   assert.equal(app.state.mode, 'dock');
-  assert.ok(document.body.classList.contains('lupin-em-outro-body'));
+  assert.ok(document.body.classList.contains('lupin-in-other-body'));
   app.setMode('pet');
-  assert.equal(app.state.mode, 'dock', 'sem o Lupin não existe Pet Mode');
+  assert.equal(app.state.mode, 'dock', 'without Lupin there is no Pet Mode');
   for (let i = 0; i < 3; i += 1) {
     app.cycleMode(1);
     assert.notEqual(app.state.mode, 'pet');
@@ -377,10 +377,10 @@ test('fora do Active Body o aparelho vira Dock sem Pet, e volta quando o Lupin r
 
   app.handleWsMessage({ type: 'active_body', active_body: 'rg406h-web', active: true });
   assert.equal(app.state.mode, 'pet');
-  assert.ok(!document.body.classList.contains('lupin-em-outro-body'));
+  assert.ok(!document.body.classList.contains('lupin-in-other-body'));
 });
 
-test('sem o Lupin, o aparelho não fala as frases pelo navegador', () => {
+test('without Lupin, the device does not speak the sentences through the browser', () => {
   const harness = makeHarness();
   const { app } = harness;
   connected(harness);
@@ -391,7 +391,7 @@ test('sem o Lupin, o aparelho não fala as frases pelo navegador', () => {
   assert.equal(app.state.ttsQueue.length, 0);
 });
 
-test('toque no rosto envia touch (não pet) e welcome/mood são guardados', () => {
+test('touching the face sends touch (not pet) and welcome/mood are stored', () => {
   const harness = makeHarness();
   const socket = connected(harness);
   harness.app.handleWsMessage({ type: 'welcome', protocol: 1, active_body: 'rg406h-web' });
@@ -401,7 +401,7 @@ test('toque no rosto envia touch (não pet) e welcome/mood são guardados', () =
   assert.ok(!socket.sent.some((m) => m.type === 'pet'));
 });
 
-test('chunks audio são remontados e tocados só quando last chega', async () => {
+test('audio chunks are reassembled and played only when last arrives', async () => {
   const harness = makeHarness();
   const { app, elements } = harness;
   app.state.ttsMode = 'server';
@@ -415,7 +415,7 @@ test('chunks audio são remontados e tocados só quando last chega', async () =>
   assert.equal(app.state.audioChunks.size, 0);
 });
 
-test('interrupted limpa chunks pendentes e fila de áudio', async () => {
+test('interrupted clears pending chunks and the audio queue', async () => {
   const harness = makeHarness();
   const { app, elements } = harness;
   app.state.ttsMode = 'server';

@@ -335,7 +335,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       renderDataConsent,
     };\n})();`
   );
-  assert.notEqual(instrumentedSource, appSource, 'o IIFE do app deve aceitar instrumentação apenas no teste');
+  assert.notEqual(instrumentedSource, appSource, 'the app IIFE must accept instrumentation only in the test');
   vm.runInNewContext(instrumentedSource, context, { filename: sourcePath });
   const app = context.__appTest;
   return { sockets, app, context, document, window, elements, ws, wsMessages, timers, mediaRecorders };

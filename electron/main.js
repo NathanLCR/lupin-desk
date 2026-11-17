@@ -77,7 +77,7 @@ function startSidecar() {
   sidecarProc.on('exit', (code) => {
     sidecarProc = null;
     if (!isQuitting && ownsSidecar) {
-      console.error(`[sidecar] encerrou inesperadamente (code=${code}); reiniciando...`);
+      console.error(`[sidecar] exited unexpectedly (code=${code}); restarting...`);
       setTimeout(startSidecar, 1500);
     }
   });
@@ -124,7 +124,7 @@ function readMiniPetPosition() {
     const saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), MINI_PET_POSITION_FILE), 'utf8'));
     if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) return { x: saved.x, y: saved.y };
   } catch (_err) {
-    // O primeiro uso e arquivos inválidos usam a posição padrão.
+    // First run and invalid files fall back to the default position.
   }
   return null;
 }
@@ -139,7 +139,7 @@ function saveMiniPetPosition() {
       'utf8'
     );
   } catch (err) {
-    console.error(`[mini-pet] Não foi possível salvar a posição: ${err.message}`);
+    console.error(`[mini-pet] Could not save the position: ${err.message}`);
   }
 }
 
@@ -157,7 +157,7 @@ function displayForRect(rect) {
       bestOverlap = overlap;
     }
   }
-  // Sem sobreposição significa que a tela salva foi desconectada; volta à principal.
+  // No overlap means the saved display was disconnected; fall back to the primary one.
   return bestDisplay || screen.getPrimaryDisplay();
 }
 
@@ -211,7 +211,7 @@ function beginMiniPetDrag() {
         miniPetDrag.y + point.y - miniPetDrag.cursorY
       );
     } catch (err) {
-      console.error(`[mini-pet] Arraste interrompido: ${err.message}`);
+      console.error(`[mini-pet] Drag interrupted: ${err.message}`);
       stopMiniPetDrag();
     }
   }, 16);
@@ -275,11 +275,11 @@ function createTray() {
   tray = new Tray(icon);
   updateTrayTitle();
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Abrir Dashboard (Cmd+Shift+Space)', click: () => createDashboardWindow() },
-    { label: 'Mostrar Mini-Pet (Cmd+Shift+L)', accelerator: 'CommandOrControl+Shift+L', click: () => showMiniPetWindow() },
-    { label: 'Alternar Mini-Pet Flutuante', click: () => createMiniPetWindow() },
+    { label: 'Open Dashboard (Cmd+Shift+Space)', click: () => createDashboardWindow() },
+    { label: 'Show Mini-Pet (Cmd+Shift+L)', accelerator: 'CommandOrControl+Shift+L', click: () => showMiniPetWindow() },
+    { label: 'Toggle Floating Mini-Pet', click: () => createMiniPetWindow() },
     {
-      label: 'Olhar Tela (Jarvis Sob Demanda)',
+      label: 'Look at Screen (Jarvis On Demand)',
       click: () => {
         const win = createDashboardWindow();
         win.webContents.send('shortcut-trigger', 'vision');
@@ -287,7 +287,7 @@ function createTray() {
     },
     { type: 'separator' },
     {
-      label: 'Sair',
+      label: 'Quit',
       click: () => {
         isQuitting = true;
         app.quit();
@@ -303,11 +303,11 @@ ipcMain.handle('confirm-write', async (_event, payload) => {
   const win = dashboardWin && !dashboardWin.isDestroyed() ? dashboardWin : null;
   const result = await dialog.showMessageBox(win, {
     type: 'question',
-    buttons: ['Cancelar', 'Autorizar Escrita'],
+    buttons: ['Cancel', 'Authorize Write'],
     defaultId: 1,
     cancelId: 0,
-    title: payload?.title || 'Confirmar escrita no Cowork',
-    message: payload?.message || 'Confirmar alteração?',
+    title: payload?.title || 'Confirm write to Cowork',
+    message: payload?.message || 'Confirm change?',
     detail: payload?.diff ? String(payload.diff).slice(0, 1500) : '',
   });
   return result.response === 1;
@@ -359,7 +359,7 @@ ipcMain.on('tray-update', (_event, status) => {
 app.whenReady().then(async () => {
   const alreadyUp = await isServerHealthy();
   if (alreadyUp) {
-    console.log('[sidecar] Servidor já ativo em 127.0.0.1:8000; reutilizando instância existente.');
+    console.log('[sidecar] Server already running at 127.0.0.1:8000; reusing the existing instance.');
   } else {
     startSidecar();
     try {

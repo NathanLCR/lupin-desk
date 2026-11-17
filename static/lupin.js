@@ -1,17 +1,17 @@
 /**
- * Rosto do Lupin em camadas (/static/lupin.js)
+ * Layered Lupin face (/static/lupin.js)
  *
- * Desenha o husky a partir dos SVGs em /static/lupin/camadas/ e da tabela
- * /static/lupin/expressoes.json (mesma tabela que o Corpo ESP32/LVGL usa).
- * Expõe a API pública em window.LupinFace.
+ * Draws the husky from the SVGs in /static/lupin/layers/ and the table in
+ * /static/lupin/expressions.json (the same table the ESP32/LVGL Body uses).
+ * Exposes the public API on window.LupinFace.
  */
 (function (global) {
   'use strict';
 
   const BASE = '/static/lupin/';
-  const TABELA_URL = BASE + 'expressoes.json';
-  const LARGURA = 480;
-  const ALTURA = 320;
+  const TABLE_URL = BASE + 'expressions.json';
+  const WIDTH = 480;
+  const HEIGHT = 320;
 
   const SUPPORTED_STATES = Object.freeze(['idle', 'listening', 'thinking', 'speaking', 'error']);
   const SUPPORTED_EMOTIONS = Object.freeze([
@@ -21,7 +21,7 @@
   const SUPPORTED_ACCESSORIES = Object.freeze(['none', 'headphones', 'pomodoro']);
 
   const IDLE_SLEEP_TIMEOUT_MS = 90000;
-  const OLHAR_MANUAL_MS = 2500;
+  const MANUAL_GAZE_MS = 2500;
   const BLINK_MS = 130;
 
   function clamp(value, min, max) {
@@ -38,82 +38,82 @@
   }
 
   /**
-   * Resolve a variante de cada camada. Pura: a ordem de precedência é
-   * padrão < expressão < estado < piscada < fala.
+   * Resolves the variant of each layer. Pure: precedence order is
+   * default < expression < state < blink < speech.
    */
-  function resolverCamadas(tabela, entrada) {
-    const camadas = Object.assign({}, tabela.padrao);
-    const expressao = tabela.expressoes[entrada.emocao] || {};
-    const estado = tabela.estados[entrada.estado] || {};
-    let inclinacao = 0;
-    let olhar = null;
-    [expressao, estado].forEach((origem) => {
-      Object.keys(origem).forEach((chave) => {
-        if (chave === 'inclinacao') inclinacao = origem[chave];
-        else if (chave === 'olhar') olhar = origem[chave];
-        else if (chave === 'falando') return;
-        else if (tabela.camadas[chave]) camadas[chave] = origem[chave];
+  function resolveLayers(table, input) {
+    const layers = Object.assign({}, table.default);
+    const expression = table.expressions[input.emotion] || {};
+    const state = table.states[input.state] || {};
+    let tilt = 0;
+    let gaze = null;
+    [expression, state].forEach((source) => {
+      Object.keys(source).forEach((key) => {
+        if (key === 'tilt') tilt = source[key];
+        else if (key === 'gaze') gaze = source[key];
+        else if (key === 'speaking') return;
+        else if (table.layers[key]) layers[key] = source[key];
       });
     });
-    // Piscar: a tabela diz qual pose substitui cada uma (vazia até existir arte de olhos fechados).
-    const piscada = tabela.piscada || {};
-    if (entrada.piscando && piscada[camadas.pose]) {
-      camadas.pose = piscada[camadas.pose];
+    // Blink: the table says which pose replaces each one (empty until closed-eyes art exists).
+    const blink = table.blink || {};
+    if (input.blinking && blink[layers.pose]) {
+      layers.pose = blink[layers.pose];
     }
-    // Falar: com poses inteiras a boca abre trocando para a pose de boca aberta.
-    if (estado.falando && tabela.fala && entrada.nivelAudio >= tabela.fala.limiar) {
-      camadas.pose = tabela.fala.pose;
+    // Speaking: with whole poses the mouth opens by switching to the open-mouth pose.
+    if (state.speaking && table.speech && input.audioLevel >= table.speech.threshold) {
+      layers.pose = table.speech.pose;
     }
-    return { camadas, inclinacao, olhar };
+    return { layers, tilt, gaze };
   }
 
   const internal = {
     container: null,
     root: null,
     stage: null,
-    respira: null,
-    grupoCabeca: null,
-    corpo: null,
+    breath: null,
+    headGroup: null,
+    body: null,
     imgs: {},
-    camadaEl: {},
+    layerEl: {},
     visivel: {},
-    tabela: null,
-    carregando: false,
-    estado: 'idle',
-    emocao: 'neutral',
-    emocaoTimer: null,
-    nivelAudio: 0,
-    piscando: false,
-    proximaPiscada: 0,
-    fimPiscada: 0,
-    olharX: 0,
-    olharY: 0,
-    alvoX: 0,
-    alvoY: 0,
-    olharManualAte: 0,
-    proximoOlhar: 0,
-    inclinacao: 0,
-    inclinacaoAtual: 0,
-    ultimaInteracao: 0,
-    sonolento: false,
-    musica: false,
-    acessorio: 'none',
-    compacto: false,
-    cliques: [],
-    truqueTimers: [],
-    truqueAtivo: null,
+    table: null,
+    loading: false,
+    state: 'idle',
+    emotion: 'neutral',
+    emotionTimer: null,
+    audioLevel: 0,
+    blinking: false,
+    nextBlink: 0,
+    blinkEnd: 0,
+    gazeX: 0,
+    gazeY: 0,
+    targetX: 0,
+    targetY: 0,
+    manualGazeUntil: 0,
+    nextGaze: 0,
+    tilt: 0,
+    currentTilt: 0,
+    lastInteraction: 0,
+    sleepy: false,
+    music: false,
+    accessory: 'none',
+    compact: false,
+    clicks: [],
+    trickTimers: [],
+    activeTrick: null,
     rafId: null,
-    escala: 0,
+    scale: 0,
     motionQuery: null,
     motionListener: null,
-    reduzirMovimento: false,
+    reduceMotion: false,
   };
 
   function shouldReduceMotion() {
-    return internal.reduzirMovimento;
+    return internal.reduceMotion;
   }
 
-  function limparPreferenciaMovimento() {
+  function clearMotionPreference() {
     if (internal.motionQuery && internal.motionListener) {
       if (typeof internal.motionQuery.removeEventListener === 'function') {
         internal.motionQuery.removeEventListener('change', internal.motionListener);
@@ -123,269 +123,269 @@
     internal.motionListener = null;
   }
 
-  function ligarPreferenciaMovimento() {
-    limparPreferenciaMovimento();
+  function bindMotionPreference() {
+    clearMotionPreference();
     if (typeof global.matchMedia !== 'function') {
-      internal.reduzirMovimento = false;
+      internal.reduceMotion = false;
       return;
     }
     const query = global.matchMedia('(prefers-reduced-motion: reduce)');
-    internal.reduzirMovimento = Boolean(query && query.matches);
+    internal.reduceMotion = Boolean(query && query.matches);
     if (query && typeof query.addEventListener === 'function') {
       internal.motionListener = (event) => {
-        internal.reduzirMovimento = Boolean(event.matches);
-        if (internal.reduzirMovimento) assentar();
-        aplicar();
+        internal.reduceMotion = Boolean(event.matches);
+        if (internal.reduceMotion) settle();
+        apply();
       };
       query.addEventListener('change', internal.motionListener);
       internal.motionQuery = query;
     }
   }
 
-  // Com movimento reduzido, tudo para na pose estática da expressão atual.
-  function assentar() {
-    internal.piscando = false;
-    internal.olharX = 0;
-    internal.olharY = 0;
-    internal.alvoX = 0;
-    internal.alvoY = 0;
-    internal.inclinacaoAtual = internal.inclinacao;
-    if (internal.respira) internal.respira.style.transform = '';
-    transformarOlhar();
+  // With reduced motion, everything stops on the static pose of the current expression.
+  function settle() {
+    internal.blinking = false;
+    internal.gazeX = 0;
+    internal.gazeY = 0;
+    internal.targetX = 0;
+    internal.targetY = 0;
+    internal.currentTilt = internal.tilt;
+    if (internal.breath) internal.breath.style.transform = '';
+    transformGaze();
   }
 
-  function registrarInteracao(ts) {
-    internal.ultimaInteracao = typeof ts === 'number' ? ts : nowMs();
-    internal.sonolento = false;
+  function registerInteraction(ts) {
+    internal.lastInteraction = typeof ts === 'number' ? ts : nowMs();
+    internal.sleepy = false;
   }
 
-  function criar(tag, classe) {
+  function create(tag, className) {
     const el = global.document.createElement(tag);
-    if (classe) el.className = classe;
+    if (className) el.className = className;
     return el;
   }
 
-  function construirDom(container) {
+  function buildDom(container) {
     container.textContent = '';
-    const root = criar('div', 'lupin-root');
+    const root = create('div', 'lupin-root');
     root.setAttribute('role', 'img');
-    root.setAttribute('aria-label', 'Lupin, o husky de estimação');
-    const stage = criar('div', 'lupin-stage');
-    const respira = criar('div', 'lupin-respira');
-    stage.appendChild(respira);
+    root.setAttribute('aria-label', 'Lupin, the pet husky');
+    const stage = create('div', 'lupin-stage');
+    const breath = create('div', 'lupin-breath');
+    stage.appendChild(breath);
     root.appendChild(stage);
     container.appendChild(root);
     internal.container = container;
     internal.root = root;
     internal.stage = stage;
-    internal.respira = respira;
-    internal.grupoCabeca = null;
-    internal.corpo = null;
+    internal.breath = breath;
+    internal.headGroup = null;
+    internal.body = null;
     internal.imgs = {};
-    internal.camadaEl = {};
+    internal.layerEl = {};
     internal.visivel = {};
   }
 
-  function construirCamadas() {
-    const tabela = internal.tabela;
-    const respira = internal.respira;
-    respira.textContent = '';
+  function buildLayers() {
+    const table = internal.table;
+    const breath = internal.breath;
+    breath.textContent = '';
     internal.imgs = {};
-    internal.camadaEl = {};
+    internal.layerEl = {};
     internal.visivel = {};
-    const dentroDaCabeca = new Set(tabela.grupoCabeca);
-    const grupo = criar('div', 'lupin-grupo-cabeca');
-    internal.grupoCabeca = grupo;
-    let grupoAnexado = false;
-    tabela.ordemCamadas.forEach((nome) => {
-      const camada = criar('div', 'lupin-camada lupin-camada-' + nome);
-      camada.dataset.camada = nome;
-      internal.imgs[nome] = {};
-      internal.camadaEl[nome] = camada;
-      tabela.camadas[nome].forEach((variante) => {
-        const img = criar('img', 'lupin-variante');
-        img.setAttribute('src', BASE + 'camadas/' + nome + '/' + variante + '.svg');
+    const insideHead = new Set(table.headGroup);
+    const group = create('div', 'lupin-head-group');
+    internal.headGroup = group;
+    let groupAttached = false;
+    table.layerOrder.forEach((name) => {
+      const layer = create('div', 'lupin-layer lupin-layer-' + name);
+      layer.dataset.layer = name;
+      internal.imgs[name] = {};
+      internal.layerEl[name] = layer;
+      table.layers[name].forEach((variant) => {
+        const img = create('img', 'lupin-variant');
+        img.setAttribute('src', BASE + 'layers/' + name + '/' + variant + '.svg');
         img.setAttribute('alt', '');
         img.setAttribute('draggable', 'false');
         img.hidden = true;
-        camada.appendChild(img);
-        internal.imgs[nome][variante] = img;
+        layer.appendChild(img);
+        internal.imgs[name][variant] = img;
       });
-      if (dentroDaCabeca.has(nome)) {
-        grupo.appendChild(camada);
-        if (!grupoAnexado) {
-          respira.appendChild(grupo);
-          grupoAnexado = true;
+      if (insideHead.has(name)) {
+        group.appendChild(layer);
+        if (!groupAttached) {
+          breath.appendChild(group);
+          groupAttached = true;
         }
       } else {
-        respira.appendChild(camada);
+        breath.appendChild(layer);
       }
     });
-    const corpo = criar('img', 'lupin-corpo');
-    corpo.setAttribute('alt', '');
-    corpo.setAttribute('draggable', 'false');
-    corpo.hidden = true;
-    internal.stage.appendChild(corpo);
-    internal.corpo = corpo;
+    const body = create('img', 'lupin-body');
+    body.setAttribute('alt', '');
+    body.setAttribute('draggable', 'false');
+    body.hidden = true;
+    internal.stage.appendChild(body);
+    internal.body = body;
   }
 
-  function carregarTabela() {
-    if (internal.carregando || internal.tabela || typeof global.fetch !== 'function') return;
-    internal.carregando = true;
-    Promise.resolve(global.fetch(TABELA_URL))
-      .then((resposta) => {
-        if (!resposta || resposta.ok === false) throw new Error('HTTP ' + (resposta && resposta.status));
-        return resposta.json();
+  function loadTable() {
+    if (internal.loading || internal.table || typeof global.fetch !== 'function') return;
+    internal.loading = true;
+    Promise.resolve(global.fetch(TABLE_URL))
+      .then((response) => {
+        if (!response || response.ok === false) throw new Error('HTTP ' + (response && response.status));
+        return response.json();
       })
-      .then((tabela) => {
-        internal.tabela = tabela;
-        internal.carregando = false;
+      .then((table) => {
+        internal.table = table;
+        internal.loading = false;
         if (internal.stage) {
-          construirCamadas();
-          aplicar();
+          buildLayers();
+          apply();
         }
       })
-      .catch((erro) => {
-        internal.carregando = false;
+      .catch((error) => {
+        internal.loading = false;
         if (typeof console !== 'undefined' && console.warn) {
-          console.warn('[LupinFace] Não consegui carregar a tabela de expressões:', erro);
+          console.warn('[LupinFace] Could not load the expressions table:', error);
         }
       });
   }
 
-  function emocaoEfetiva() {
-    if (internal.sonolento && internal.emocao === 'neutral') return 'sleepy';
-    return internal.emocao;
+  function effectiveEmotion() {
+    if (internal.sleepy && internal.emotion === 'neutral') return 'sleepy';
+    return internal.emotion;
   }
 
-  function entradaAtual() {
+  function currentInput() {
     return {
-      emocao: emocaoEfetiva(),
-      estado: internal.estado,
-      piscando: internal.piscando,
-      nivelAudio: internal.nivelAudio,
+      emotion: effectiveEmotion(),
+      state: internal.state,
+      blinking: internal.blinking,
+      audioLevel: internal.audioLevel,
     };
   }
 
-  function transformarOlhar() {
-    if (!internal.tabela || !internal.camadaEl.olhos) return;
-    const dx = (internal.olharX * 9).toFixed(2);
-    const dy = (internal.olharY * 6).toFixed(2);
-    const valor = 'translate(' + dx + 'px, ' + dy + 'px)';
-    ['olhos', 'sobrancelhas'].forEach((nome) => {
-      const camada = internal.camadaEl[nome];
-      if (camada) camada.style.transform = valor;
+  function transformGaze() {
+    if (!internal.table || !internal.layerEl.eyes) return;
+    const dx = (internal.gazeX * 9).toFixed(2);
+    const dy = (internal.gazeY * 6).toFixed(2);
+    const value = 'translate(' + dx + 'px, ' + dy + 'px)';
+    ['eyes', 'eyebrows'].forEach((name) => {
+      const layer = internal.layerEl[name];
+      if (layer) layer.style.transform = value;
     });
   }
 
-  function transformarCabeca() {
-    if (!internal.grupoCabeca) return;
-    const graus = internal.inclinacaoAtual.toFixed(2);
-    const px = (internal.olharX * 3).toFixed(2);
-    internal.grupoCabeca.style.transform = 'translate(' + px + 'px, 0) rotate(' + graus + 'deg)';
+  function transformHead() {
+    if (!internal.headGroup) return;
+    const degrees = internal.currentTilt.toFixed(2);
+    const px = (internal.gazeX * 3).toFixed(2);
+    internal.headGroup.style.transform = 'translate(' + px + 'px, 0) rotate(' + degrees + 'deg)';
   }
 
-  function atualizarAtributos() {
+  function updateAttributes() {
     const root = internal.root;
     if (!root) return;
-    root.dataset.state = internal.estado;
-    root.dataset.emotion = emocaoEfetiva();
-    root.dataset.compact = internal.compacto ? 'true' : 'false';
-    root.dataset.accessory = internal.acessorio;
-    root.classList.toggle('lupin-compacto', internal.compacto);
-    root.classList.toggle('lupin-falando', internal.estado === 'speaking');
+    root.dataset.state = internal.state;
+    root.dataset.emotion = effectiveEmotion();
+    root.dataset.compact = internal.compact ? 'true' : 'false';
+    root.dataset.accessory = internal.accessory;
+    root.classList.toggle('lupin-compact', internal.compact);
+    root.classList.toggle('lupin-speaking', internal.state === 'speaking');
   }
 
-  // Aplica o estado lógico atual às camadas visíveis.
-  function aplicar() {
-    atualizarAtributos();
-    if (!internal.tabela || !internal.stage || !internal.grupoCabeca) return;
-    const resolvido = resolverCamadas(internal.tabela, entradaAtual());
-    Object.keys(resolvido.camadas).forEach((nome) => {
-      const escolhida = resolvido.camadas[nome];
-      if (internal.visivel[nome] === escolhida) return;
-      const variantes = internal.imgs[nome];
-      if (!variantes || !variantes[escolhida]) return;
-      if (internal.visivel[nome] && variantes[internal.visivel[nome]]) {
-        variantes[internal.visivel[nome]].hidden = true;
+  // Applies the current logical state to the visible layers.
+  function apply() {
+    updateAttributes();
+    if (!internal.table || !internal.stage || !internal.headGroup) return;
+    const resolved = resolveLayers(internal.table, currentInput());
+    Object.keys(resolved.layers).forEach((name) => {
+      const chosen = resolved.layers[name];
+      if (internal.visivel[name] === chosen) return;
+      const variants = internal.imgs[name];
+      if (!variants || !variants[chosen]) return;
+      if (internal.visivel[name] && variants[internal.visivel[name]]) {
+        variants[internal.visivel[name]].hidden = true;
       }
-      variantes[escolhida].hidden = false;
-      internal.visivel[nome] = escolhida;
+      variants[chosen].hidden = false;
+      internal.visivel[name] = chosen;
     });
-    internal.inclinacao = resolvido.inclinacao || 0;
-    if (resolvido.olhar && Date.now() > internal.olharManualAte) {
-      internal.alvoX = resolvido.olhar.x;
-      internal.alvoY = resolvido.olhar.y;
+    internal.tilt = resolved.tilt || 0;
+    if (resolved.gaze && Date.now() > internal.manualGazeUntil) {
+      internal.targetX = resolved.gaze.x;
+      internal.targetY = resolved.gaze.y;
     }
     if (shouldReduceMotion()) {
-      internal.inclinacaoAtual = internal.inclinacao;
-      transformarCabeca();
+      internal.currentTilt = internal.tilt;
+      transformHead();
     }
   }
 
-  function ajustarEscala() {
+  function fitScale() {
     if (!internal.root || !internal.stage) return;
-    const w = internal.root.clientWidth || LARGURA;
-    const h = internal.root.clientHeight || ALTURA;
-    const k = Math.min(w / LARGURA, h / ALTURA);
-    if (Math.abs(k - internal.escala) < 0.001) return;
-    internal.escala = k;
+    const w = internal.root.clientWidth || WIDTH;
+    const h = internal.root.clientHeight || HEIGHT;
+    const k = Math.min(w / WIDTH, h / HEIGHT);
+    if (Math.abs(k - internal.scale) < 0.001) return;
+    internal.scale = k;
     internal.stage.style.transform = 'translate(-50%, -50%) scale(' + k.toFixed(4) + ')';
   }
 
-  function agendarPiscada(ts) {
-    internal.proximaPiscada = ts + 2600 + Math.random() * 3600;
+  function scheduleBlink(ts) {
+    internal.nextBlink = ts + 2600 + Math.random() * 3600;
   }
 
   function step(ts) {
     internal.rafId = null;
     if (!internal.root) return;
-    ajustarEscala();
-    const reduzir = shouldReduceMotion();
+    fitScale();
+    const reduce = shouldReduceMotion();
 
-    if (!reduzir) {
-      if (ts >= internal.proximaPiscada && !internal.piscando) {
-        internal.piscando = true;
-        internal.fimPiscada = ts + BLINK_MS;
-        agendarPiscada(ts);
-        aplicar();
-      } else if (internal.piscando && ts >= internal.fimPiscada) {
-        internal.piscando = false;
-        aplicar();
+    if (!reduce) {
+      if (ts >= internal.nextBlink && !internal.blinking) {
+        internal.blinking = true;
+        internal.blinkEnd = ts + BLINK_MS;
+        scheduleBlink(ts);
+        apply();
+      } else if (internal.blinking && ts >= internal.blinkEnd) {
+        internal.blinking = false;
+        apply();
       }
 
-      // Olhar em volta quando ninguém está dirigindo o olhar.
-      if (Date.now() > internal.olharManualAte && internal.estado !== 'thinking') {
-        if (ts >= internal.proximoOlhar) {
-          internal.alvoX = (Math.random() - 0.5) * 1.0;
-          internal.alvoY = (Math.random() - 0.5) * 0.5;
-          internal.proximoOlhar = ts + 3000 + Math.random() * 4000;
+      // Look around when nobody is steering the gaze.
+      if (Date.now() > internal.manualGazeUntil && internal.state !== 'thinking') {
+        if (ts >= internal.nextGaze) {
+          internal.targetX = (Math.random() - 0.5) * 1.0;
+          internal.targetY = (Math.random() - 0.5) * 0.5;
+          internal.nextGaze = ts + 3000 + Math.random() * 4000;
         }
       }
-      internal.olharX = lerp(internal.olharX, internal.alvoX, 0.12);
-      internal.olharY = lerp(internal.olharY, internal.alvoY, 0.12);
-      transformarOlhar();
+      internal.gazeX = lerp(internal.gazeX, internal.targetX, 0.12);
+      internal.gazeY = lerp(internal.gazeY, internal.targetY, 0.12);
+      transformGaze();
 
-      let alvoInclinacao = internal.inclinacao;
-      if (internal.musica) alvoInclinacao += Math.sin(ts / 260) * 2.2;
-      internal.inclinacaoAtual = lerp(internal.inclinacaoAtual, alvoInclinacao, 0.14);
-      transformarCabeca();
+      let targetTilt = internal.tilt;
+      if (internal.music) targetTilt += Math.sin(ts / 260) * 2.2;
+      internal.currentTilt = lerp(internal.currentTilt, targetTilt, 0.14);
+      transformHead();
 
-      const respiracao = 1 + 0.012 * Math.sin(ts / 900);
-      internal.respira.style.transform = 'scale(' + respiracao.toFixed(4) + ')';
+      const breathing = 1 + 0.012 * Math.sin(ts / 900);
+      internal.breath.style.transform = 'scale(' + breathing.toFixed(4) + ')';
 
-      if (internal.estado === 'idle' && !internal.sonolento && ts - internal.ultimaInteracao > IDLE_SLEEP_TIMEOUT_MS) {
-        internal.sonolento = true;
-        aplicar();
+      if (internal.state === 'idle' && !internal.sleepy && ts - internal.lastInteraction > IDLE_SLEEP_TIMEOUT_MS) {
+        internal.sleepy = true;
+        apply();
       }
     }
 
-    if (internal.estado === 'speaking') {
-      aplicar();
-      const colar = internal.camadaEl.colar;
-      if (colar) {
-        const brilho = 3 + internal.nivelAudio * 12;
-        colar.style.filter = 'drop-shadow(0 0 ' + brilho.toFixed(1) + 'px #22d3ee)';
+    if (internal.state === 'speaking') {
+      apply();
+      const collar = internal.layerEl.collar;
+      if (collar) {
+        const glow = 3 + internal.audioLevel * 12;
+        collar.style.filter = 'drop-shadow(0 0 ' + glow.toFixed(1) + 'px #22d3ee)';
       }
     }
 
@@ -394,34 +394,34 @@
     }
   }
 
-  function limparTruque() {
-    internal.truqueTimers.forEach((id) => clearTimeout(id));
-    internal.truqueTimers = [];
-    internal.truqueAtivo = null;
-    if (internal.corpo) internal.corpo.hidden = true;
-    if (internal.root) internal.root.classList.remove('lupin-corpo-inteiro');
+  function clearTrick() {
+    internal.trickTimers.forEach((id) => clearTimeout(id));
+    internal.trickTimers = [];
+    internal.activeTrick = null;
+    if (internal.body) internal.body.hidden = true;
+    if (internal.root) internal.root.classList.remove('lupin-full-body');
     if (internal.stage) {
-      const efeitos = internal.stage.efeitos || [];
-      efeitos.forEach((el) => el.parentNode && el.parentNode.removeChild(el));
-      internal.stage.efeitos = [];
+      const effects = internal.stage.effects || [];
+      effects.forEach((el) => el.parentNode && el.parentNode.removeChild(el));
+      internal.stage.effects = [];
     }
   }
 
-  function agendar(fn, ms) {
+  function schedule(fn, ms) {
     const id = setTimeout(fn, ms);
-    internal.truqueTimers.push(id);
+    internal.trickTimers.push(id);
     return id;
   }
 
-  function lancarEfeito(tipo, quantidade) {
+  function launchEffect(kind, count) {
     if (!internal.stage || shouldReduceMotion()) return;
-    internal.stage.efeitos = internal.stage.efeitos || [];
-    for (let i = 0; i < quantidade; i += 1) {
-      const el = criar('i', 'lupin-efeito lupin-efeito-' + tipo);
+    internal.stage.effects = internal.stage.effects || [];
+    for (let i = 0; i < count; i += 1) {
+      const el = create('i', 'lupin-effect lupin-effect-' + kind);
       el.style.setProperty('--i', String(i));
-      el.style.setProperty('--x', String(Math.round((i / Math.max(1, quantidade - 1)) * 100)));
+      el.style.setProperty('--x', String(Math.round((i / Math.max(1, count - 1)) * 100)));
       internal.stage.appendChild(el);
-      internal.stage.efeitos.push(el);
+      internal.stage.effects.push(el);
     }
   }
 
@@ -432,24 +432,24 @@
         container = global.document.querySelector(container);
       }
       if (!container) {
-        throw new Error('LupinFace.init: containerEl inválido ou não encontrado.');
+        throw new Error('LupinFace.init: containerEl is invalid or was not found.');
       }
       if (internal.rafId !== null && typeof global.cancelAnimationFrame === 'function') {
         global.cancelAnimationFrame(internal.rafId);
         internal.rafId = null;
       }
-      limparTruque();
-      construirDom(container);
-      ligarPreferenciaMovimento();
-      internal.escala = 0;
+      clearTrick();
+      buildDom(container);
+      bindMotionPreference();
+      internal.scale = 0;
       const ts = nowMs();
-      registrarInteracao(ts);
-      agendarPiscada(ts);
-      internal.proximoOlhar = ts + 2500;
-      if (internal.tabela) construirCamadas();
-      else carregarTabela();
-      aplicar();
-      ajustarEscala();
+      registerInteraction(ts);
+      scheduleBlink(ts);
+      internal.nextGaze = ts + 2500;
+      if (internal.table) buildLayers();
+      else loadTable();
+      apply();
+      fitScale();
       if (typeof global.requestAnimationFrame === 'function') {
         internal.rafId = global.requestAnimationFrame(step);
       }
@@ -459,72 +459,72 @@
     setState(state) {
       if (!SUPPORTED_STATES.includes(state)) {
         if (typeof console !== 'undefined' && console.warn) {
-          console.warn('[LupinFace] Estado desconhecido ignorado: ' + state);
+          console.warn('[LupinFace] Unknown state ignored: ' + state);
         }
-        return internal.estado;
+        return internal.state;
       }
-      internal.estado = state;
-      if (state !== 'speaking') internal.nivelAudio = 0;
-      if (state !== 'speaking' && internal.camadaEl.colar) {
-        internal.camadaEl.colar.style.filter = '';
+      internal.state = state;
+      if (state !== 'speaking') internal.audioLevel = 0;
+      if (state !== 'speaking' && internal.layerEl.collar) {
+        internal.layerEl.collar.style.filter = '';
       }
-      registrarInteracao();
-      aplicar();
-      return internal.estado;
+      registerInteraction();
+      apply();
+      return internal.state;
     },
 
     setEmotion(emotion, opts) {
       if (!SUPPORTED_EMOTIONS.includes(emotion)) {
         if (typeof console !== 'undefined' && console.warn) {
-          console.warn('[LupinFace] Emoção desconhecida ignorada: ' + emotion);
+          console.warn('[LupinFace] Unknown emotion ignored: ' + emotion);
         }
-        return internal.emocao;
+        return internal.emotion;
       }
-      if (internal.emocaoTimer !== null) {
-        clearTimeout(internal.emocaoTimer);
-        internal.emocaoTimer = null;
+      if (internal.emotionTimer !== null) {
+        clearTimeout(internal.emotionTimer);
+        internal.emotionTimer = null;
       }
-      internal.emocao = emotion;
-      registrarInteracao();
+      internal.emotion = emotion;
+      registerInteraction();
       if (opts && typeof opts.durationMs === 'number' && opts.durationMs > 0) {
-        internal.emocaoTimer = setTimeout(() => {
-          internal.emocaoTimer = null;
-          internal.emocao = 'neutral';
-          aplicar();
+        internal.emotionTimer = setTimeout(() => {
+          internal.emotionTimer = null;
+          internal.emotion = 'neutral';
+          apply();
         }, opts.durationMs);
       }
-      aplicar();
-      return internal.emocao;
+      apply();
+      return internal.emotion;
     },
 
     lookAt(x, y) {
-      internal.alvoX = clamp(Number(x), -1, 1);
-      internal.alvoY = clamp(Number(y), -1, 1);
-      internal.olharManualAte = Date.now() + OLHAR_MANUAL_MS;
-      registrarInteracao();
+      internal.targetX = clamp(Number(x), -1, 1);
+      internal.targetY = clamp(Number(y), -1, 1);
+      internal.manualGazeUntil = Date.now() + MANUAL_GAZE_MS;
+      registerInteraction();
       if (shouldReduceMotion()) {
-        internal.olharX = 0;
-        internal.olharY = 0;
+        internal.gazeX = 0;
+        internal.gazeY = 0;
       }
     },
 
     blink() {
       if (shouldReduceMotion()) return;
-      internal.piscando = true;
-      internal.fimPiscada = nowMs() + BLINK_MS;
-      aplicar();
+      internal.blinking = true;
+      internal.blinkEnd = nowMs() + BLINK_MS;
+      apply();
     },
 
     setAudioLevel(level) {
-      internal.nivelAudio = clamp(Number(level), 0, 1);
+      internal.audioLevel = clamp(Number(level), 0, 1);
     },
 
     getState() {
-      return internal.estado;
+      return internal.state;
     },
 
     getEmotion() {
-      return internal.emocao;
+      return internal.emotion;
     },
 
     getSupportedEmotions() {
@@ -536,15 +536,15 @@
     },
 
     getTricks() {
-      return internal.tabela ? Object.keys(internal.tabela.truques) : [];
+      return internal.table ? Object.keys(internal.table.tricks) : [];
     },
 
     /**
-     * Toque direto. 'pet' (carinho) deixa Lupin feliz; 'poke' (cutucada)
-     * assusta, e cutucadas repetidas irritam.
+     * Direct touch. 'pet' makes Lupin happy; 'poke' startles him, and
+     * repeated pokes annoy him.
      */
     reactToTouch(kind, nx, ny) {
-      registrarInteracao();
+      registerInteraction();
       const audio = global.EmoAudio;
       if (kind === 'pet') {
         LupinFace.setEmotion('happy', { durationMs: 2400 });
@@ -553,10 +553,10 @@
         return;
       }
       if (kind === 'poke') {
-        const agora = Date.now();
-        internal.cliques = internal.cliques.filter((t) => agora - t < 3000);
-        internal.cliques.push(agora);
-        const n = internal.cliques.length;
+        const nowTs = Date.now();
+        internal.clicks = internal.clicks.filter((t) => nowTs - t < 3000);
+        internal.clicks.push(nowTs);
+        const n = internal.clicks.length;
         if (n >= 3) {
           LupinFace.setEmotion('angry', { durationMs: 3600 });
           if (audio && typeof audio.chirp === 'function') audio.chirp('angry');
@@ -571,22 +571,22 @@
       }
     },
 
-    // Acessórios ficam registrados; a arte deles entra junto da arte final.
+    // Accessories are registered; their art arrives with the final art.
     setAccessory(name) {
-      if (!SUPPORTED_ACCESSORIES.includes(name)) return internal.acessorio;
-      internal.acessorio = name;
-      atualizarAtributos();
-      return internal.acessorio;
+      if (!SUPPORTED_ACCESSORIES.includes(name)) return internal.accessory;
+      internal.accessory = name;
+      updateAttributes();
+      return internal.accessory;
     },
 
     setCompactMode(active) {
-      internal.compacto = Boolean(active);
-      atualizarAtributos();
+      internal.compact = Boolean(active);
+      updateAttributes();
     },
 
     setMusicPlaying(active) {
-      internal.musica = Boolean(active);
-      if (!internal.musica && !shouldReduceMotion()) internal.inclinacaoAtual = internal.inclinacao;
+      internal.music = Boolean(active);
+      if (!internal.music && !shouldReduceMotion()) internal.currentTilt = internal.tilt;
     },
 
     getHitboxRect() {
@@ -595,53 +595,53 @@
     },
 
     /**
-     * Truques vêm da tabela: 'corpo' troca o busto por quadros de corpo
-     * inteiro durante o Truque; 'busto' fica no busto com expressão e efeito.
+     * Tricks come from the table: 'body' swaps the bust for full-body
+     * frames during the Trick; 'bust' stays on the bust with an expression and effect.
      */
     playTrick(trickId) {
       const id = typeof trickId === 'string' ? trickId.toLowerCase() : '';
-      const truque = internal.tabela && internal.tabela.truques[id];
-      if (!truque) return false;
-      registrarInteracao();
-      limparTruque();
-      internal.truqueAtivo = id;
+      const trick = internal.table && internal.table.tricks[id];
+      if (!trick) return false;
+      registerInteraction();
+      clearTrick();
+      internal.activeTrick = id;
 
-      if (truque.modo === 'busto') {
-        LupinFace.setEmotion(truque.expressao, { durationMs: truque.duracaoMs });
-        const quantidade = { notas: 6, aneis: 3, confete: 18 }[truque.efeito] || 0;
-        lancarEfeito(truque.efeito, quantidade);
-        agendar(() => limparTruque(), truque.duracaoMs);
+      if (trick.mode === 'bust') {
+        LupinFace.setEmotion(trick.expression, { durationMs: trick.durationMs });
+        const count = { notes: 6, rings: 3, confetti: 18 }[trick.effect] || 0;
+        launchEffect(trick.effect, count);
+        schedule(() => clearTrick(), trick.durationMs);
         return true;
       }
 
       if (shouldReduceMotion()) {
-        LupinFace.setEmotion(id === 'nap' ? 'sleepy' : 'happy', { durationMs: truque.duracaoMs });
-        internal.truqueAtivo = null;
+        LupinFace.setEmotion(id === 'nap' ? 'sleepy' : 'happy', { durationMs: trick.durationMs });
+        internal.activeTrick = null;
         return true;
       }
 
-      const quadros = truque.quadros;
-      let indice = 0;
-      const mostrar = () => {
-        if (!internal.corpo) return;
-        internal.corpo.setAttribute('src', BASE + 'corpo/' + quadros[indice % quadros.length] + '.svg');
-        internal.corpo.hidden = false;
-        indice += 1;
+      const frames = trick.frames;
+      let index = 0;
+      const show = () => {
+        if (!internal.body) return;
+        internal.body.setAttribute('src', BASE + 'body/' + frames[index % frames.length] + '.svg');
+        internal.body.hidden = false;
+        index += 1;
       };
-      internal.root.classList.add('lupin-corpo-inteiro');
-      mostrar();
-      for (let t = truque.intervaloMs; t < truque.duracaoMs; t += truque.intervaloMs) {
-        agendar(mostrar, t);
+      internal.root.classList.add('lupin-full-body');
+      show();
+      for (let t = trick.intervalMs; t < trick.durationMs; t += trick.intervalMs) {
+        schedule(show, t);
       }
-      agendar(() => limparTruque(), truque.duracaoMs);
+      schedule(() => clearTrick(), trick.durationMs);
       return true;
     },
 
     isTrickPlaying() {
-      return internal.truqueAtivo !== null;
+      return internal.activeTrick !== null;
     },
   };
 
-  LupinFace.resolverCamadas = resolverCamadas;
+  LupinFace.resolveLayers = resolveLayers;
   global.LupinFace = LupinFace;
 })(typeof window !== 'undefined' ? window : globalThis);
