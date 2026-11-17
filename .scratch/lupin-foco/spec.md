@@ -13,8 +13,8 @@ Direction (ADR 0001): Lupin is the product. Mac control, Cowork, Shortcuts and a
 
 | # | Issue | Status |
 |---|-------|--------|
-| 01 | Cuts | ready-for-agent |
-| 02 | Living Body: Brain-Body protocol | ready-for-agent |
+| 01 | Cuts | done |
+| 02 | Living Body: Brain-Body protocol | done, in daily use |
 | 03 | Morning: First Wake | done, in daily use |
 | 04 | Presence | needs-triage |
 | 05 | Tasks, notes and habits by voice | needs-triage |
@@ -26,8 +26,8 @@ Direction (ADR 0001): Lupin is the product. Mac control, Cowork, Shortcuts and a
 | 11 | Fully local mode | needs-triage |
 | 12 | Lupin as an MCP server | needs-triage |
 | 13 | Showcase: README, video and opening the repo | needs-triage |
-| 14 | Translate the project to English | ready-for-agent |
-| 15 | Lupin's language setting | ready-for-agent (after 14) |
+| 14 | Translate the project to English | done |
+| 15 | Lupin's language setting | done (RG406H test pending) |
 
 Issue 01 comes before everything (clears the ground). Issue 09 is not in the 02..08 queue and only starts once the ESP32 is in use, or when the user decides.
 

@@ -1,6 +1,6 @@
 # 02 - Living Body: Brain-Body protocol
 
-Status: ready-for-agent
+Status: done, in daily use (1-week check pending)
 
 ## Context
 
