@@ -15,7 +15,7 @@ Direção (ADR 0001): Lupin é o produto. Mac control, Cowork, Shortcuts e recur
 |---|-------|--------|
 | 01 | Cortes | ready-for-agent |
 | 02 | Corpo vivo: protocolo Brain-Body | ready-for-agent |
-| 03 | Manhã: First Wake | em andamento |
+| 03 | Manhã: First Wake | done, in daily use |
 | 04 | Presença | needs-triage |
 | 05 | Tarefas, notas e hábitos por voz | needs-triage |
 | 06 | Busca inteligente | needs-triage |
@@ -26,6 +26,8 @@ Direção (ADR 0001): Lupin é o produto. Mac control, Cowork, Shortcuts e recur
 | 11 | Fully local mode | needs-triage |
 | 12 | Lupin as an MCP server | needs-triage |
 | 13 | Showcase: README, video and opening the repo | needs-triage |
+| 14 | Translate the project to English | ready-for-agent |
+| 15 | Lupin's language setting | ready-for-agent (after 14) |
 
 A issue 01 vem antes de tudo (limpa o terreno). A 09 não entra na fila 02..08 e só começa depois que o ESP32 estiver em uso, ou quando o usuário decidir.
 
