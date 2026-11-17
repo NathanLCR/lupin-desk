@@ -365,6 +365,8 @@
     ttsGeneration: 0,
     audioChunks: new Map(),
     activeBody: null,
+    // false quando o Lupin está em outro Body (ex.: ESP32): o aparelho vira só Dock.
+    isLupinBody: true,
     mood: null,
     ttsCancelPlayback: null,
     serverAudioUrl: null,
@@ -575,6 +577,7 @@
   // Alternador dos modos de tela
   function setMode(nextMode) {
     if (!MODES.includes(nextMode)) return;
+    if (nextMode === 'pet' && !state.isLupinBody) return;
     state.mode = nextMode;
     state.gamepadFocusIndex = -1;
 
@@ -692,7 +695,7 @@
   }
 
   function getVisibleModes() {
-    const modes = ['pet', 'dock'];
+    const modes = state.isLupinBody ? ['pet', 'dock'] : ['dock'];
     if (els.modeNathanButton && !els.modeNathanButton.classList.contains('hidden')) modes.push('nathan');
     return modes;
   }
@@ -870,6 +873,7 @@
     const clean = (text || '').trim();
     if (!clean) return;
     if (!state.ttsEnabled && !forceMode) return;
+    if (!state.isLupinBody) return;
     // No modo servidor o áudio vem do Brain via evento `audio` (enqueueServerAudio)
     if ((forceMode || state.ttsMode) === 'server') return;
 
@@ -1246,10 +1250,31 @@
   }
 
   // Handshake Brain↔Body (protocolo 1); `audio` só é anunciado no modo TTS do servidor
+  // O RG406H (Android) tem prioridade sobre navegadores comuns para ser o Active Body.
+  function detectBodyKind() {
+    const ua = (typeof navigator !== 'undefined' && navigator && navigator.userAgent) || '';
+    return window.AndroidBridge || /Android/i.test(ua) ? 'rg406h-web' : 'web';
+  }
+
+  // Lupin vive em um Body por vez; fora dele o aparelho é só Dock (ADR 0001).
+  function applyActiveBody(msg) {
+    state.activeBody = msg.active_body || null;
+    const ativo = msg.active !== false;
+    if (ativo === state.isLupinBody) return;
+    state.isLupinBody = ativo;
+    document.body.classList.toggle('lupin-em-outro-body', !ativo);
+    if (!ativo) {
+      stopSpeaking();
+      setMode('dock');
+    } else if (state.mode === 'dock') {
+      setMode('pet');
+    }
+  }
+
   function sendHello() {
     return sendWs({
       type: 'hello',
-      body: 'rg406h-web',
+      body: detectBodyKind(),
       protocol: 1,
       audio: state.ttsMode === 'server' ? ['m4a'] : [],
     });
@@ -1316,8 +1341,9 @@
     if (!msg || typeof msg.type !== 'string') return;
 
     switch (msg.type) {
-      case 'welcome': {
-        state.activeBody = msg.active_body || null;
+      case 'welcome':
+      case 'active_body': {
+        applyActiveBody(msg);
         break;
       }
       case 'mood': {

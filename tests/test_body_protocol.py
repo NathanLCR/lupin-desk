@@ -63,7 +63,12 @@ def test_hello_recebe_welcome(tmp_path: Path) -> None:
 
     with TestClient(_app(tmp_path, synth)) as client, client.websocket_connect("/ws") as ws:
         ws.send_json({"type": "hello", "body": "esp32", "protocol": 1, "audio": ["m4a"]})
-        assert ws.receive_json() == {"type": "welcome", "protocol": 1, "active_body": "esp32"}
+        assert ws.receive_json() == {
+            "type": "welcome",
+            "protocol": 1,
+            "active_body": "esp32",
+            "active": True,
+        }
 
 
 def test_touch_devolve_mood(tmp_path: Path) -> None:
@@ -131,3 +136,59 @@ def test_falha_de_tts_nao_quebra_turno(tmp_path: Path) -> None:
     types = [e["type"] for e in events]
     assert "done" in types
     assert "audio" not in types and "error" not in types
+
+
+def _hello(ws: Any, body: str, audio: bool = False) -> dict[str, Any]:
+    ws.send_json({"type": "hello", "body": body, "protocol": 1, "audio": ["m4a"] if audio else []})
+    return ws.receive_json()
+
+
+def test_esp32_tira_o_lupin_do_rg406h_e_devolve_ao_sair(tmp_path: Path) -> None:
+    async def synth(text: str, voice: str, fmt: str) -> bytes:
+        return b"x"
+
+    with TestClient(_app(tmp_path, synth)) as client:
+        with client.websocket_connect("/ws") as rg:
+            assert _hello(rg, "rg406h-web")["active"] is True
+            with client.websocket_connect("/ws") as esp:
+                welcome = _hello(esp, "esp32")
+                assert welcome["active"] is True
+                aviso = rg.receive_json()
+                assert aviso == {"type": "active_body", "active_body": "esp32", "active": False}
+            # ESP32 saiu: o RG406H volta a ser o Active Body.
+            assert rg.receive_json() == {"type": "active_body", "active_body": "rg406h-web", "active": True}
+
+
+def test_navegador_comum_nao_rouba_o_lupin_do_rg406h(tmp_path: Path) -> None:
+    async def synth(text: str, voice: str, fmt: str) -> bytes:
+        return b"x"
+
+    with TestClient(_app(tmp_path, synth)) as client:
+        with client.websocket_connect("/ws") as rg, client.websocket_connect("/ws") as mac:
+            _hello(rg, "rg406h-web")
+            welcome = _hello(mac, "web")
+            assert welcome["active"] is False and welcome["active_body"] == "rg406h-web"
+
+
+def test_mesmo_tipo_o_ultimo_a_chegar_fica_com_o_lupin(tmp_path: Path) -> None:
+    async def synth(text: str, voice: str, fmt: str) -> bytes:
+        return b"x"
+
+    with TestClient(_app(tmp_path, synth)) as client:
+        with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
+            _hello(a, "web")
+            assert _hello(b, "web")["active"] is True
+            assert a.receive_json()["active"] is False
+
+
+def test_body_inativo_nao_recebe_a_voz(tmp_path: Path) -> None:
+    async def synth(text: str, voice: str, fmt: str) -> bytes:
+        return b"x"
+
+    with TestClient(_app(tmp_path, synth)) as client:
+        with client.websocket_connect("/ws") as esp, client.websocket_connect("/ws") as rg:
+            _hello(esp, "esp32", audio=True)
+            assert _hello(rg, "rg406h-web", audio=True)["active"] is False
+            events = _turn(rg)
+    assert "done" in [e["type"] for e in events]
+    assert not [e for e in events if e["type"] == "audio"]

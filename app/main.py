@@ -138,6 +138,8 @@ class AppActivateRequest(BaseModel):
 # Protocolo Brain<->Body (docs/protocolo-cerebro-corpo.md).
 PROTOCOL_VERSION = 1
 _AUDIO_CHUNK_BYTES = 24 * 1024
+# Prioridade para escolher o Active Body; tipos fora da tabela valem 1.
+_BODY_RANK = {"esp32": 3, "rg406h-web": 2}
 
 
 class TTSRequest(BaseModel):
@@ -819,6 +821,31 @@ def create_app(
     # WebSocket Bidirecional (Streaming LLM, Barge-in, Ações, Voz e Pet)
     # ------------------------------------------------------------------
 
+    # Active Body (ADR 0001): Lupin vive em um Body por vez. ESP32 vence o RG406H,
+    # que vence os outros (navegador do Mac, iPhone); no mesmo tipo, o último hello vence.
+    bodies: list[dict[str, Any]] = []
+    body_seq = [0]
+
+    def current_active_body() -> dict[str, Any] | None:
+        if not bodies:
+            return None
+        return max(bodies, key=lambda b: (_BODY_RANK.get(b["body"], 1), b["seq"]))
+
+    async def announce_active_body(previous: dict[str, Any] | None, skip: dict[str, Any] | None) -> None:
+        """Avisa os Bodies (menos `skip`) quando o Active Body muda."""
+        active = current_active_body()
+        if active is previous or active is None:
+            return
+        for entry in list(bodies):
+            if entry is skip:
+                continue
+            try:
+                await entry["send"](
+                    {"type": "active_body", "active_body": active["body"], "active": entry is active}
+                )
+            except Exception:
+                logger.info("Body %s não recebeu o aviso de Active Body.", entry["body"])
+
     @fastapi_app.websocket("/ws")
     async def websocket_chat(websocket: WebSocket) -> None:
         """Canal WebSocket concorrente com streaming frase-a-frase, barge-in e ações."""
@@ -837,7 +864,10 @@ def create_app(
         active_turn_task: asyncio.Task[None] | None = None
         pending_approvals: dict[str, dict[str, Any]] = {}
         # Protocolo Brain<->Body v1: o Body declara em `hello` se quer áudio do servidor.
-        body_info: dict[str, Any] = {"body": None, "wants_audio": False}
+        body_info: dict[str, Any] = {"body": None, "wants_audio": False, "entry": None}
+
+        def is_active_body() -> bool:
+            return body_info["entry"] is not None and current_active_body() is body_info["entry"]
 
         async def safe_send(payload: dict[str, Any]) -> None:
             async with send_lock:
@@ -1015,7 +1045,7 @@ def create_app(
             emotion = "neutral"
             audio_queue: asyncio.Queue[str | None] | None = None
             audio_task: asyncio.Task[None] | None = None
-            if body_info["wants_audio"] and resolved_tts.is_available():
+            if body_info["wants_audio"] and is_active_body() and resolved_tts.is_available():
                 audio_queue = asyncio.Queue()
                 audio_task = asyncio.create_task(audio_worker(audio_queue))
 
@@ -1194,13 +1224,22 @@ def create_app(
                     audio_formats = data.get("audio")
                     body_info["body"] = str(data.get("body") or "unknown")
                     body_info["wants_audio"] = isinstance(audio_formats, list) and len(audio_formats) > 0
+                    previous = current_active_body()
+                    if body_info["entry"] is not None:
+                        bodies.remove(body_info["entry"])
+                    body_seq[0] += 1
+                    body_info["entry"] = {"body": body_info["body"], "seq": body_seq[0], "send": safe_send}
+                    bodies.append(body_info["entry"])
+                    active = current_active_body()
                     await safe_send(
                         {
                             "type": "welcome",
                             "protocol": PROTOCOL_VERSION,
-                            "active_body": body_info["body"],
+                            "active_body": active["body"] if active else body_info["body"],
+                            "active": active is body_info["entry"],
                         }
                     )
+                    await announce_active_body(previous, skip=body_info["entry"])
                     continue
 
                 if msg_type == "typing":
@@ -1431,6 +1470,10 @@ def create_app(
         except WebSocketDisconnect:
             logger.info("Cliente WebSocket desconectado.")
         finally:
+            if body_info["entry"] is not None and body_info["entry"] in bodies:
+                previous = current_active_body()
+                bodies.remove(body_info["entry"])
+                await announce_active_body(previous, skip=None)
             if active_turn_task is not None and not active_turn_task.done():
                 active_turn_task.cancel()
                 try:
