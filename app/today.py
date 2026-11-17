@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -375,18 +375,96 @@ class TodayEngine:
 
 
 class FirstWakeTracker:
-    """Controla o briefing proativo silencioso apenas na primeira interação do dia."""
+    """Marca o First Wake: a primeira interação depois das 5h, uma vez por dia."""
 
     _META_KEY = "last_first_wake_date"
+    HORA_INICIO = 5
 
-    def __init__(self, memory_store: MemoryStore) -> None:
+    def __init__(self, memory_store: MemoryStore, clock: Callable[[], datetime] | None = None) -> None:
         self._memory = memory_store
+        self._clock = clock or datetime.now
+
+    def today_iso(self) -> str:
+        return self._clock().date().isoformat()
 
     def should_trigger_today(self, today_iso: str | None = None) -> bool:
-        today_str = today_iso or datetime.now().date().isoformat()
+        today_str = today_iso or self.today_iso()
         return self._memory.get_meta(self._META_KEY) != today_str
 
+    def is_due(self) -> bool:
+        """Já passou das 5h e o First Wake de hoje ainda não aconteceu."""
+        return self._clock().hour >= self.HORA_INICIO and self.should_trigger_today()
+
     def mark_triggered(self, today_iso: str | None = None) -> str:
-        today_str = today_iso or datetime.now().date().isoformat()
+        today_str = today_iso or self.today_iso()
         self._memory.set_meta(self._META_KEY, today_str)
         return today_str
+
+
+def _hora_falada(inicio: str) -> str:
+    """'09:00' -> '9h00'."""
+    hora, _, minuto = str(inicio).partition(":")
+    try:
+        return f"{int(hora)}h{minuto or '00'}"
+    except ValueError:
+        return str(inicio)
+
+
+def _juntar(itens: list[str]) -> str:
+    if len(itens) <= 1:
+        return "".join(itens)
+    return ", ".join(itens[:-1]) + " e " + itens[-1]
+
+
+def compor_fala_first_wake(
+    state: dict[str, Any], agenda: list[dict[str, Any]] | None, today_iso: str
+) -> list[str]:
+    """Monta as 2-3 frases do First Wake só com o que existe no Cowork e na agenda.
+
+    `agenda` é None quando a agenda não pôde ser lida (nada é dito sobre ela).
+    Não usa LLM: nenhum dado de agenda sai da máquina.
+    """
+    frases: list[str] = []
+    abertas: list[dict[str, Any]] = []
+    if state.get("workspace_exists"):
+        abertas = [
+            t for t in (state.get("tasks") or [])
+            if isinstance(t, dict) and t.get("status") == "open" and str(t.get("title") or "").strip()
+        ]
+        if not abertas:
+            frases.append("Bom dia! Nenhuma tarefa aberta no Cowork.")
+        elif len(abertas) == 1:
+            frases.append("Bom dia! Você tem 1 tarefa aberta no Cowork.")
+        else:
+            frases.append(f"Bom dia! Você tem {len(abertas)} tarefas abertas no Cowork.")
+    else:
+        frases.append("Bom dia! Não consegui ler o Cowork agora.")
+
+    if agenda is not None:
+        if not agenda:
+            frases.append("Sua agenda está livre hoje.")
+        else:
+            itens = []
+            for ev in agenda[:3]:
+                titulo = str(ev.get("titulo") or "").strip()
+                if ev.get("dia_todo"):
+                    itens.append(f"{titulo} (dia todo)")
+                else:
+                    itens.append(f"{_hora_falada(ev.get('inicio', ''))} {titulo}")
+            resto = len(agenda) - 3
+            if resto > 0:
+                texto = ", ".join(itens) + f" e mais {resto}"
+            else:
+                texto = _juntar(itens)
+            frases.append(f"Na agenda de hoje: {texto}.")
+
+    if abertas:
+        vence_hoje = [t for t in abertas if str(t.get("due") or "") == today_iso]
+        if vence_hoje:
+            frases.append(f"Prioridade: {str(vence_hoje[0]['title']).strip()}, que vence hoje.")
+        else:
+            frases.append(f"Para começar: {str(abertas[0]['title']).strip()}.")
+
+    if len(frases) < 2:
+        frases.append("Estou por aqui se precisar.")
+    return frases[:3]

@@ -28,7 +28,7 @@ Há outras mensagens de controle (atalhos, aprovações, ações) usadas pelo Do
 | `delta` | `text` | Trecho de texto em streaming. |
 | `sentence` | `text` | Frase completa (a que será falada). |
 | `audio` | `sentence` (índice 0 no turno), `seq` (0), `last` (bool), `mime` ("audio/mp4"), `data` (base64, até 24 KiB brutos) | Voz da frase, em chunks. Só enviado se o `hello` pediu áudio e o TTS está disponível. Falha de TTS pula o áudio sem `error`. |
-| `done` | `text`, `emotion`, `facts`, `companion` | Fim do turno de texto. Os `audio` finais podem chegar depois dele. |
+| `done` | `text`, `emotion`, `facts`, `companion`, `first_wake?` | Fim do turno de texto. Os `audio` finais podem chegar depois dele. `first_wake: true` marca a fala do First Wake (primeira interação do dia depois das 5h no Active Body), que chega antes da resposta ao texto/áudio ou logo depois do `mood` de um toque. |
 | `interrupted` | — | Turno cancelado; nenhum `audio` novo é enviado. |
 | `error` | `message` | Falha. |
 

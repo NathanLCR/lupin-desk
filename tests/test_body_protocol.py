@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import sys
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,8 @@ if _ROOT_DIR not in sys.path:
 from app.config import Settings
 from app.llm import LLMClient
 from app.main import create_app
+from app.memory import MemoryStore
+from app.today import FirstWakeTracker
 from app.tts import ServerTTS
 
 
@@ -39,10 +42,14 @@ def _app(tmp_path: Path, synth: Any) -> Any:
             "emotion": "neutral",
         }
 
+    memory = MemoryStore(db_path=settings.db_path)
     return create_app(
         settings=settings,
+        memory_store=memory,
         llm_client=LLMClient(settings=settings, stream_fn=fake_stream),
         tts_engine=ServerTTS(synth_fn=synth),
+        # Antes das 5h: o First Wake não entra nos turnos destes testes.
+        first_wake=FirstWakeTracker(memory, clock=lambda: datetime(2026, 11, 17, 3, 0)),
     )
 
 

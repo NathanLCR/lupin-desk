@@ -2226,7 +2226,6 @@ body.is-minipet {
 body.is-minipet .settings-fab,
 body.is-minipet .bottom-dock,
 body.is-minipet .workspace-panel,
-body.is-minipet .first-wake-card,
 body.is-minipet .audio-unlock-banner,
 body.is-minipet .pet-clock,
 body.is-minipet .pet-ambient {
@@ -2248,37 +2247,6 @@ body.is-minipet #face-container {
   width: 100%;
   max-width: 1040px;
   margin: 0 auto;
-}
-
-/* Card silencioso de First Wake Briefing */
-.first-wake-card {
-  position: fixed;
-  top: calc(var(--hud-offset) + 14px + var(--safe-top));
-  right: calc(16px + var(--safe-right));
-  z-index: 40;
-  width: min(340px, calc(100vw - 32px - var(--safe-left) - var(--safe-right)));
-  max-height: calc(100dvh - var(--hud-offset) - 120px);
-  overflow-y: auto;
-  background: var(--glass-bg-strong);
-  border: 1px solid var(--glass-border-hover);
-  border-radius: var(--radius-md);
-  padding: 12px 14px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-}
-
-.first-wake-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.first-wake-headline {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: #e2e8f0;
 }
 
 .first-wake-list {

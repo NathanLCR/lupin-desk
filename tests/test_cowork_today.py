@@ -127,7 +127,8 @@ def test_first_wake_route(tmp_path: Path) -> None:
     app = create_app(settings=settings, memory_store=mem)
     try:
         with TestClient(app) as tc:
-            assert tc.get("/api/first-wake", params={"mark": "false"}).json()["should_brief"] is True
+            # O First Wake agora é falado por Lupin no WebSocket (tests/test_first_wake.py).
+            assert tc.get("/api/first-wake").status_code == 404
             assert tc.get("/api/jarvis/first-wake").status_code == 404
     finally:
         mem.close()

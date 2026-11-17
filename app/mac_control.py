@@ -149,6 +149,54 @@ _STATUS_CACHE_TTL_SECONDS = 3.0
 _WEATHER_CACHE_TTL_SECONDS = 900.0
 
 
+# Agenda de hoje (somente leitura): uma linha por evento com
+# "segundos desde a meia-noite<TAB>true/false (dia todo)<TAB>título".
+_CALENDAR_TODAY_SCRIPT = """
+set hoje to current date
+set time of hoje to 0
+set amanha to hoje + (1 * days)
+set saida to ""
+tell application "Calendar"
+    repeat with cal in calendars
+        set eventos to (every event of cal whose start date ≥ hoje and start date < amanha)
+        repeat with ev in eventos
+            set inicio to ((start date of ev) - hoje) as integer
+            set saida to saida & inicio & tab & ((allday event of ev) as string) & tab & (summary of ev) & linefeed
+        end repeat
+    end repeat
+end tell
+return saida
+"""
+
+
+def parse_calendar_output(stdout: str) -> list[dict[str, Any]]:
+    """Converte a saída do script do Calendar em eventos ordenados por horário."""
+    eventos: list[tuple[int, dict[str, Any]]] = []
+    for linha in (stdout or "").splitlines():
+        partes = linha.split("\t")
+        if len(partes) < 3:
+            continue
+        try:
+            segundos = int(partes[0].strip())
+        except ValueError:
+            continue
+        titulo = " ".join(p.strip() for p in partes[2:] if p.strip())
+        if not titulo or not 0 <= segundos < 86400:
+            continue
+        eventos.append(
+            (
+                segundos,
+                {
+                    "inicio": f"{segundos // 3600:02d}:{segundos % 3600 // 60:02d}",
+                    "titulo": titulo[:120],
+                    "dia_todo": partes[1].strip().lower() == "true",
+                },
+            )
+        )
+    eventos.sort(key=lambda item: item[0])
+    return [ev for _, ev in eventos]
+
+
 def _is_accessibility_error(stderr: str) -> bool:
     """Detecta erros de permissão de Acessibilidade do macOS no stderr do `osascript`."""
     lowered = (stderr or "").lower()
@@ -238,6 +286,13 @@ class MacController:
                 stdout="",
                 stderr=str(exc),
             )
+
+    def read_today_agenda(self) -> list[dict[str, Any]] | None:
+        """Lê os eventos de hoje no Calendar.app (somente leitura). None se não der para ler."""
+        proc = self._run_cmd(["/usr/bin/osascript", "-e", _CALENDAR_TODAY_SCRIPT], timeout=8.0)
+        if proc.returncode != 0:
+            return None
+        return parse_calendar_output(proc.stdout)
 
     def list_running_apps(self) -> list[dict[str, Any]]:
         """Lista apps abertos no Mac (com destaque ao frontal) + favoritos padrão."""
