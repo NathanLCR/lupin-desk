@@ -276,6 +276,11 @@
     brainAddress: document.getElementById('brain-address'),
     brainProvider: document.getElementById('brain-provider'),
     brainModel: document.getElementById('brain-model'),
+    consentAgenda: document.getElementById('btn-consent-agenda'),
+    consentEmail: document.getElementById('btn-consent-email'),
+    consentAgendaLabel: document.getElementById('consent-agenda-label'),
+    consentEmailLabel: document.getElementById('consent-email-label'),
+    consentNote: document.getElementById('consent-note'),
     settingsShortcutsList: document.getElementById('settings-shortcuts-list'),
     btnSettings: document.getElementById('btn-settings'),
     btnSettingsClose: document.getElementById('btn-settings-close'),
@@ -386,6 +391,7 @@
     shortcuts: [],
     dockPage: 0,
     isMac: false,
+    dataConsent: { agenda: false, email: false, receiver: '', can_edit: false },
     // Fala no Dock: contagem de frases por turno e volta automática do Pet.
     dockSentenceCount: 0,
     autoPetFromDock: false,
@@ -660,7 +666,10 @@
     ) {
       window.DeskSkills.activate();
     }
-    if (state.settingsOpen && state.settingsTab === 'brain') fetchBrainInfo();
+    if (state.settingsOpen && state.settingsTab === 'brain') {
+      fetchBrainInfo();
+      fetchDataConsent();
+    }
     if (state.settingsOpen && state.settingsTab === 'dock') {
       fetchClientInfo();
       fetchShortcuts();
@@ -685,6 +694,62 @@
       if (els.brainModel) els.brainModel.textContent = active.model || '—';
     } catch {
       // Ignora erro transitório; os campos ficam como estavam
+    }
+  }
+
+  // Data Consent: quem recebe agenda e e-mails. No Mac liga/desliga; nos outros aparelhos só mostra.
+  function renderDataConsent() {
+    const dc = state.dataConsent;
+    const receiver = dc.receiver || 'o provedor';
+    const rows = [
+      ['agenda', els.consentAgenda, els.consentAgendaLabel, 'sua agenda'],
+      ['email', els.consentEmail, els.consentEmailLabel, 'seus e-mails'],
+    ];
+    for (const [key, btn, label, what] of rows) {
+      if (label) label.textContent = `Permitir que ${receiver} veja ${what}`;
+      if (!btn) continue;
+      const on = Boolean(dc[key]);
+      btn.textContent = on ? 'Ligado' : 'Desligado';
+      btn.setAttribute('aria-checked', String(on));
+      btn.classList.toggle('is-active', on);
+      btn.disabled = !dc.can_edit;
+    }
+    if (els.consentNote) els.consentNote.classList.toggle('hidden', Boolean(dc.can_edit));
+  }
+
+  async function fetchDataConsent() {
+    try {
+      const res = await fetch('/api/data-consent');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.dataConsent = {
+        agenda: Boolean(data.agenda),
+        email: Boolean(data.email),
+        receiver: String(data.receiver || ''),
+        can_edit: Boolean(data.can_edit),
+      };
+      renderDataConsent();
+    } catch {
+      // Sem resposta: os interruptores ficam como estavam (somente leitura)
+    }
+  }
+
+  async function toggleDataConsent(key) {
+    if (!state.dataConsent.can_edit) return;
+    try {
+      const res = await fetch('/api/data-consent', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: !state.dataConsent[key] }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Não foi possível alterar a permissão', { isError: true });
+        return;
+      }
+      await fetchDataConsent();
+    } catch {
+      showToast('Erro de rede ao alterar a permissão', { isError: true });
     }
   }
 
@@ -3254,6 +3319,9 @@
     });
 
     els.btnTtsMode.addEventListener('click', toggleTtsMode);
+
+    if (els.consentAgenda) els.consentAgenda.addEventListener('click', () => toggleDataConsent('agenda'));
+    if (els.consentEmail) els.consentEmail.addEventListener('click', () => toggleDataConsent('email'));
 
     els.btnCaption.addEventListener('click', () => {
       state.captionVisible = !state.captionVisible;

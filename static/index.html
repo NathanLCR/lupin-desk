@@ -210,6 +210,23 @@
         </li>
       </ul>
       <p class="muted-note">Para trocar o endereço, o provedor ou o modelo, use o Mac.</p>
+      <ul class="settings-list" aria-label="Privacidade: o que o provedor pode ver">
+        <li>
+          <div class="settings-item-text">
+            <strong id="consent-agenda-label">Permitir que o provedor veja sua agenda</strong>
+            <span>Desligado por padrão. Vale só para este provedor.</span>
+          </div>
+          <button id="btn-consent-agenda" type="button" class="hud-btn" role="switch" aria-checked="false" aria-labelledby="consent-agenda-label" disabled>Desligado</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong id="consent-email-label">Permitir que o provedor veja seus e-mails</strong>
+            <span>Só remetente e assunto dos não lidos de hoje, nunca o corpo.</span>
+          </div>
+          <button id="btn-consent-email" type="button" class="hud-btn" role="switch" aria-checked="false" aria-labelledby="consent-email-label" disabled>Desligado</button>
+        </li>
+      </ul>
+      <p id="consent-note" class="muted-note">Só dá para mudar no Mac.</p>
     </div>
 
     <div id="settings-tab-memory" class="settings-subpanel hidden">

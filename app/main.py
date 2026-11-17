@@ -44,6 +44,7 @@ from app.skills import (
     set_skill_enabled,
 )
 from app.stt import LocalSTT
+from app.consent import DataConsent, build_personal_context
 from app.today import FirstWakeTracker, TodayEngine, compor_fala_first_wake
 from app.tts import ServerTTS
 
@@ -105,6 +106,13 @@ class LLMProviderUpdateRequest(BaseModel):
     provider_id: str
     base_url: str | None = None
     model: str
+
+
+class DataConsentRequest(BaseModel):
+    """Payload para alterar o Data Consent (campos ausentes ficam como estão)."""
+
+    agenda: bool | None = None
+    email: bool | None = None
 
 
 class SkillToggleRequest(BaseModel):
@@ -268,6 +276,7 @@ def create_app(
     today_engine: TodayEngine | None = None,
     first_wake: FirstWakeTracker | None = None,
     agenda_reader: Callable[[], list[dict[str, Any]] | None] | None = None,
+    inbox_reader: Callable[[], dict[str, Any] | None] | None = None,
     local_ips: Callable[[], frozenset[str]] | None = None,
 ) -> FastAPI:
     """Cria e configura a instância FastAPI com memória, atalhos, Mac, voz e WebSocket."""
@@ -319,6 +328,20 @@ def create_app(
         reader = getattr(resolved_mac, "read_today_agenda", None)
         return reader() if callable(reader) else None
 
+    def resolved_inbox_reader() -> dict[str, Any] | None:
+        if inbox_reader is not None:
+            return inbox_reader()
+        reader = getattr(resolved_mac, "read_inbox", None)
+        return reader() if callable(reader) else None
+
+    data_consent = DataConsent(
+        resolved_memory,
+        lambda: (
+            str(active_provider_state.get("provider_id") or "custom"),
+            resolved_settings.llm_base_url,
+        ),
+    )
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         try:
@@ -366,14 +389,13 @@ def create_app(
         normalized = (host or "").strip().split("%", 1)[0]
         return bool(normalized) and normalized in mac_ip_addresses()
 
-    def require_mac_client(request: Request) -> None:
-        """Shortcuts só são configurados no Mac, mesmo com DESK_DEV_SEM_TOKEN."""
+    def require_mac_client(
+        request: Request, detail: str = "Os atalhos só podem ser configurados no Mac."
+    ) -> None:
+        """Shortcuts e Data Consent só são configurados no Mac, mesmo com DESK_DEV_SEM_TOKEN."""
         host = request.client.host if request.client else None
         if not is_mac_client(host):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Os atalhos só podem ser configurados no Mac.",
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 
     @fastapi_app.middleware("http")
     async def lan_access_auth_middleware(request: Request, call_next: Any) -> Response:
@@ -528,6 +550,26 @@ def create_app(
         """Diz se quem pergunta é o próprio Mac (único lugar que edita Shortcuts)."""
         host = request.client.host if request.client else None
         return {"is_mac": is_mac_client(host)}
+
+    def data_consent_payload(request: Request) -> dict[str, Any]:
+        host = request.client.host if request.client else None
+        return {
+            **data_consent.get(),
+            "receiver": data_consent.receiver_name(),
+            "can_edit": is_mac_client(host),
+        }
+
+    @fastapi_app.get("/api/data-consent")
+    async def get_data_consent(request: Request) -> dict[str, Any]:
+        """Estado do Data Consent (agenda e e-mail) e quem recebe. Qualquer cliente lê."""
+        return data_consent_payload(request)
+
+    @fastapi_app.put("/api/data-consent")
+    async def put_data_consent(request: Request, body: DataConsentRequest) -> dict[str, Any]:
+        """Liga ou desliga o consentimento de agenda e/ou e-mail. Só no Mac."""
+        require_mac_client(request, "O Data Consent só pode ser alterado no Mac.")
+        data_consent.update(agenda=body.agenda, email=body.email)
+        return data_consent_payload(request)
 
     @fastapi_app.post("/api/shortcuts", status_code=status.HTTP_201_CREATED)
     async def create_shortcut(request: Request, payload: ShortcutPayloadRequest) -> dict[str, Any]:
@@ -1147,7 +1189,13 @@ def create_app(
             except Exception as exc:
                 logger.warning("First Wake sem agenda (%s).", type(exc).__name__)
                 agenda = None
-            frases = compor_fala_first_wake(state, agenda, today_iso)
+            try:
+                inbox = await asyncio.to_thread(resolved_inbox_reader)
+            except Exception as exc:
+                logger.warning("First Wake sem e-mail (%s).", type(exc).__name__)
+                inbox = None
+            nao_lidos = inbox.get("nao_lidos") if isinstance(inbox, dict) else None
+            frases = compor_fala_first_wake(state, agenda, today_iso, nao_lidos)
 
             audio_queue: asyncio.Queue[str | None] | None = None
             audio_task: asyncio.Task[None] | None = None
@@ -1218,6 +1266,23 @@ def create_app(
                 cowork_context = await asyncio.to_thread(resolved_cowork.build_prompt_context)
                 skills_context = build_skills_prompt(enabled_skill_ids)
 
+                # Data Consent: agenda e e-mail só são lidos e enviados com o interruptor ligado
+                # para o provedor ativo. Contexto efêmero: não vai para o histórico nem para o log.
+                consent = data_consent.get()
+                turn_agenda: list[dict[str, Any]] | None = None
+                turn_inbox: dict[str, Any] | None = None
+                if consent["agenda"]:
+                    try:
+                        turn_agenda = await asyncio.to_thread(resolved_agenda_reader)
+                    except Exception as exc:
+                        logger.warning("Conversa sem agenda (%s).", type(exc).__name__)
+                if consent["email"]:
+                    try:
+                        turn_inbox = await asyncio.to_thread(resolved_inbox_reader)
+                    except Exception as exc:
+                        logger.warning("Conversa sem e-mail (%s).", type(exc).__name__)
+                personal_context = build_personal_context(consent, turn_agenda, turn_inbox)
+
                 resolved_memory.add_message("user", user_text)
 
                 async for event in resolved_llm.stream_chat(
@@ -1229,6 +1294,7 @@ def create_app(
                     temporal_context=temporal_context,
                     cowork_context=cowork_context,
                     skills_context=skills_context,
+                    personal_context=personal_context,
                 ):
                     event_type = event.get("type")
                     if event_type == "emotion":
