@@ -332,6 +332,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       promptForPairingToken, fetchMacStatus, enqueueServerAudio, connectWebSocket, sendHello, toggleTtsMode,
       setMode, cycleMode, renderDock, setDockPage, dockPageCount, noteUserInput, applySwipe,
       dockTalkDown, dockTalkUp, handleFaceTap, syncDockCorner, fetchShortcuts, renderSettingsShortcuts,
+      renderDataConsent,
     };\n})();`
   );
   assert.notEqual(instrumentedSource, appSource, 'o IIFE do app deve aceitar instrumentação apenas no teste');

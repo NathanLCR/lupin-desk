@@ -62,6 +62,7 @@ def build_system_prompt(
     temporal_context: str = "",
     cowork_context: str = "",
     skills_context: str = "",
+    personal_context: str = "",
 ) -> str:
     """Constrói o system prompt em PT-BR com memória, contexto temporal, humor e ações no Mac."""
     emotions_list = ", ".join(SUPPORTED_EMOTIONS)
@@ -107,6 +108,12 @@ def build_system_prompt(
 
     if skills_context.strip():
         sections.append(f"Skills e truques do pet habilitados:\n{skills_context.strip()}")
+
+    if personal_context.strip():
+        sections.append(
+            "Agenda e e-mails do usuário (contexto só desta resposta; nunca os guarde como fato):\n"
+            f"{personal_context.strip()}"
+        )
 
     return "\n\n".join(sections)
 
@@ -339,6 +346,7 @@ class LLMClient:
         temporal_context: str = "",
         cowork_context: str = "",
         skills_context: str = "",
+        personal_context: str = "",
     ) -> dict[str, Any]:
         """Monta o payload JSON para `/chat/completions`."""
         system_prompt = build_system_prompt(
@@ -348,6 +356,7 @@ class LLMClient:
             temporal_context=temporal_context,
             cowork_context=cowork_context,
             skills_context=skills_context,
+            personal_context=personal_context,
         )
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt}
@@ -391,6 +400,7 @@ class LLMClient:
         temporal_context: str = "",
         cowork_context: str = "",
         skills_context: str = "",
+        personal_context: str = "",
     ) -> AsyncIterator[dict[str, Any]]:
         """Executa o streaming do LLM e emite eventos `emotion`, `delta`, `sentence`, `action` e `result`."""
         if self._stream_fn is not None:
@@ -410,6 +420,7 @@ class LLMClient:
                 "temporal_context": temporal_context,
                 "cowork_context": cowork_context,
                 "skills_context": skills_context,
+                "personal_context": personal_context,
             }
             for key, value in extra_kwargs.items():
                 if has_var_kw or key in sig.parameters:
@@ -427,6 +438,7 @@ class LLMClient:
             temporal_context=temporal_context,
             cowork_context=cowork_context,
             skills_context=skills_context,
+            personal_context=personal_context,
         )
         parser = TagStreamParser()
 

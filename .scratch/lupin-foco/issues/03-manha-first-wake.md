@@ -1,6 +1,6 @@
 # 03 - Manhã: First Wake
 
-Status: em andamento (Calendar pronto; Inbox pendente)
+Status: em andamento (Calendar, Inbox e Data Consent prontos; falta o uso real)
 
 ## Contexto
 
@@ -18,8 +18,8 @@ First Wake é a primeira interação do usuário com Lupin no dispositivo princi
 
 - [x] A primeira interação após 5h dispara o First Wake uma única vez por dia.
 - [x] A fala tem 2 a 3 frases e sai pela voz de Lupin.
-- [ ] Calendar e Inbox são lidos sem nenhuma escrita.
-- [ ] Sem escolha explícita de provedor, nenhum dado de e-mail/agenda sai da máquina.
+- [x] Calendar e Inbox são lidos sem nenhuma escrita (scripts fixos de `osascript`, só leitura).
+- [x] Sem escolha explícita de provedor (Data Consent), nenhum dado de e-mail/agenda sai da máquina.
 - [ ] Today não inventa nada fora do Cowork, Calendar e Inbox.
 - [ ] 1 semana de uso real (mín. 4 dias) sem bug irritante.
 
@@ -60,10 +60,10 @@ Respondidas na spec do resto da 03 (abaixo): o provedor é confirmado pelo Data 
 
 ### Critérios de aceite extras
 
-- [ ] First Wake fala a contagem de não lidos sem remetente nem assunto.
-- [ ] Sem Data Consent, nenhum dado de agenda/e-mail aparece na chamada ao LLM (teste).
-- [ ] Trocar provider ou base_url desliga os dois consentimentos (teste).
-- [ ] Alterar consentimento fora do Mac retorna 403 (teste).
+- [x] First Wake fala a contagem de não lidos sem remetente nem assunto.
+- [x] Sem Data Consent, nenhum dado de agenda/e-mail aparece na chamada ao LLM (teste).
+- [x] Trocar provider ou base_url desliga os dois consentimentos (teste).
+- [x] Alterar consentimento fora do Mac retorna 403 (teste).
 
 ## Feito em 2026-11-17
 
@@ -74,8 +74,16 @@ Respondidas na spec do resto da 03 (abaixo): o provedor é confirmado pelo Data 
 - Calendar: `MacController.read_today_agenda` roda um script fixo de `osascript` (somente leitura, sem entrada do cliente). Se o macOS negar acesso ao Calendar, a fala só omite a agenda.
 - O card antigo (`/api/first-wake`, card no Pet Mode e "Ouvir resumo" no navegador) saiu.
 
+## Feito (resto) em 2026-11-17
+
+- Inbox: `MacController.read_inbox()` roda um script fixo do Mail.app (somente leitura) e devolve a contagem de não lidos da caixa de entrada de todas as contas e até 10 não lidos das últimas 24h (remetente e assunto, nunca o corpo). Para não travar numa caixa grande, olha só as 300 mensagens mais novas; a contagem do badge é exata. Falha de leitura omite o e-mail.
+- First Wake: a frase 1 ganha "e N e-mails não lidos" (singular, zero e sem Cowork tratados), sem remetente nem assunto e sem LLM.
+- Data Consent (`app/consent.py`): `GET /api/data-consent` (qualquer cliente) e `PUT /api/data-consent` (só Mac, 403 fora). Dois interruptores, desligados por padrão, presos ao id do provider e ao host:porta do base_url; qualquer troca desliga os dois e voltar ao antigo não reativa. A chave de API nunca aparece. UI em Ajustes > Cérebro, com o nome do receptor no texto.
+- Conversa: o turno do LLM recebe `personal_context` efêmero. Com consentimento, agenda de hoje e não lidos (remetente e assunto); sem, só uma instrução de que o Lupin não tem acesso e deve dizer isso; leitura que falhou vira um aviso sem dados. Nada disso entra no histórico salvo nem em log.
+- Os testes não leem mais o Mail.app nem o Calendar reais (`tests/conftest.py`).
+- Limite conhecido: a resposta do modelo é salva no histórico como sempre; se ele citar um título de agenda ou remetente, isso fica salvo.
+
 Ainda falta:
 
-- Inbox (Mail.app somente leitura) e o Data Consent (ver a spec acima).
 - O script do Calendar não expande eventos recorrentes nem eventos que começaram antes de hoje; ver no uso real se isso incomoda.
 - 1 semana de uso real.

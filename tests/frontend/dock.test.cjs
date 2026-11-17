@@ -239,3 +239,26 @@ test('a volta ao Dock só é agendada depois que a voz termina de tocar', () => 
   app.handleWsMessage({ type: 'error', message: 'fim' });
   assert.notEqual(app.state.dockReturnTimer, null);
 });
+
+test('Data Consent: texto nomeia o receptor; editável só no Mac', () => {
+  const harness = setup();
+  const { app, elements } = harness;
+  const agenda = harness.document.getElementById('btn-consent-agenda');
+  app.state.dataConsent = { agenda: true, email: false, receiver: 'Proxy Local (127.0.0.1:31415)', can_edit: false };
+  app.renderDataConsent();
+  assert.equal(
+    elements.get('consent-agenda-label').textContent,
+    'Permitir que Proxy Local (127.0.0.1:31415) veja sua agenda',
+  );
+  assert.equal(
+    elements.get('consent-email-label').textContent,
+    'Permitir que Proxy Local (127.0.0.1:31415) veja seus e-mails',
+  );
+  assert.equal(agenda.disabled, true);
+  assert.equal(agenda.textContent, 'Ligado');
+  assert.ok(!elements.get('consent-note').classList.contains('hidden'));
+  app.state.dataConsent.can_edit = true;
+  app.renderDataConsent();
+  assert.equal(agenda.disabled, false);
+  assert.ok(elements.get('consent-note').classList.contains('hidden'));
+});
