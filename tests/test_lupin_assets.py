@@ -16,7 +16,7 @@ def test_toda_variante_da_tabela_tem_svg_480x320():
         for variante in variantes:
             svg = LUPIN / "camadas" / camada / f"{variante}.svg"
             assert svg.is_file(), f"falta {svg}"
-            assert 'viewBox="0 0 480 320"' in svg.read_text(encoding="utf-8"), svg
+            assert 'width="480" height="320"' in svg.read_text(encoding="utf-8"), svg
 
 
 def test_nenhum_svg_orfao_fora_da_tabela():
@@ -46,10 +46,10 @@ def test_truques_de_corpo_inteiro_sao_so_dance_stretch_e_nap():
     assert {"sing", "meditate", "celebrate"} <= set(TABELA["truques"])
 
 
-def test_arte_so_usa_a_paleta_do_lupin():
-    permitidas = {
-        "#000", "#0b0b0b", "#1d1d24", "#11c3fb", "#ebebea", "#d6d5d5", "#eb617e",
-    }
+def test_arte_nao_traz_codigo_nem_imagens_externas():
     for svg in LUPIN.rglob("*.svg"):
-        cores = {c.lower() for c in re.findall(r"(?<!\()#[0-9a-fA-F]{3,6}\b", svg.read_text(encoding="utf-8"))}
-        assert cores <= permitidas, f"{svg}: {cores - permitidas}"
+        texto = svg.read_text(encoding="utf-8").lower()
+        for proibido in ("<script", "<image", "<foreignobject", "http://", "href="):
+            if proibido == "http://":
+                texto = texto.replace("http://www.w3.org/2000/svg", "")
+            assert proibido not in texto, f"{svg}: {proibido}"

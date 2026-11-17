@@ -40,3 +40,12 @@ Feedback do teste no RG406H: o rosto abstrato estilo EMO está errado. Lupin é 
 - Só existia o SVG da pose neutra. Olhos, sobrancelhas e bocas das outras expressões foram redesenhados à mão no estilo do traçado. Os PNGs de feliz, surpreso e corações do Recraft não viraram SVG; se exportar esses SVGs, dá para trocar as variantes.
 - Os 6 quadros de corpo inteiro reutilizam a nova cabeça num corpo simples ainda desenhado à mão.
 - Paleta: ciano `#11c3fb`, branco `#ebebea`, cinza `#d6d5d5`, rosa `#eb617e`, preto. Maior PNG: 8 KB.
+
+## Arte final em poses inteiras (2026-11-17)
+
+- A arte nova (busto + 7 expressões + 3 Truques de corpo inteiro, traçados em SVG) substitui a primeira versão em peças. Ela vem como poses completas, não dá para separar olhos e boca sem refazer o traçado.
+- Modelo atual: camada `pose` (8 variantes de busto) + camada `colar` (brilho da onda, só aceso quando fala). A tabela `expressoes.json` (versão 2) escolhe a pose por Expressão e Estado.
+- Falar: a coleira acende e a pose alterna entre neutro e feliz (boca aberta) a partir do nível de áudio (`fala.limiar`).
+- Piscar: a tabela tem `piscada` (pose → pose de olhos fechados), hoje vazia. Falta o SVG do busto neutro com olhos fechados.
+- Sem pose própria: `curious` (neutro inclinado), `skeptical` e `sad` (usam sonolento). Faltam SVGs de curioso, cético e triste.
+- Truque `dance` usa os quadros de acenar. Total: 16 SVGs, maior PNG 11 KB, 136 KB no conjunto, bem abaixo do orçamento do ESP32.

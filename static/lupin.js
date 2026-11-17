@@ -20,8 +20,6 @@
   ]);
   const SUPPORTED_ACCESSORIES = Object.freeze(['none', 'headphones', 'pomodoro']);
 
-  // Olhos que fecham ao piscar. Os demais (fechado, feliz, x...) já são "fechados".
-  const OLHOS_QUE_PISCAM = Object.freeze(['aberto', 'brilho', 'surpreso', 'bravo', 'triste', 'cetico']);
   const IDLE_SLEEP_TIMEOUT_MS = 90000;
   const OLHAR_MANUAL_MS = 2500;
   const BLINK_MS = 130;
@@ -57,12 +55,14 @@
         else if (tabela.camadas[chave]) camadas[chave] = origem[chave];
       });
     });
-    if (entrada.piscando && OLHOS_QUE_PISCAM.includes(camadas.olhos)) {
-      camadas.olhos = 'fechado';
+    // Piscar: a tabela diz qual pose substitui cada uma (vazia até existir arte de olhos fechados).
+    const piscada = tabela.piscada || {};
+    if (entrada.piscando && piscada[camadas.pose]) {
+      camadas.pose = piscada[camadas.pose];
     }
-    if (estado.falando) {
-      const nivel = entrada.nivelAudio;
-      camadas.boca = nivel < 0.12 ? 'fechada' : nivel < 0.4 ? 'meio-aberta' : 'aberta';
+    // Falar: com poses inteiras a boca abre trocando para a pose de boca aberta.
+    if (estado.falando && tabela.fala && entrada.nivelAudio >= tabela.fala.limiar) {
+      camadas.pose = tabela.fala.pose;
     }
     return { camadas, inclinacao, olhar };
   }
