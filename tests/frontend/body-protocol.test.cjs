@@ -323,6 +323,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       renderShortcutsGrid, runShortcut, openShortcutModal, closeShortcutModal,
       openMemoryDrawer, closeMemoryDrawer, trapDialogFocus,
       promptForPairingToken, fetchMacStatus, enqueueServerAudio, connectWebSocket, sendHello, toggleTtsMode,
+      setMode, cycleMode,
     };\n})();`
   );
   assert.notEqual(instrumentedSource, appSource, 'o IIFE do app deve aceitar instrumentação apenas no teste');
@@ -344,12 +345,50 @@ function connected(harness) {
 test('hello é enviado ao abrir o WebSocket, com audio conforme o modo TTS', () => {
   const harness = makeHarness();
   const socket = connected(harness);
-  assert.deepEqual(socket.sent[0], { type: 'hello', body: 'rg406h-web', protocol: 1, audio: [] });
+  assert.deepEqual(socket.sent[0], { type: 'hello', body: 'web', protocol: 1, audio: [] });
 
   harness.app.state.ttsMode = 'browser';
   harness.app.toggleTtsMode();
   assert.equal(harness.app.state.ttsMode, 'server');
-  assert.deepEqual(socket.sent.at(-1), { type: 'hello', body: 'rg406h-web', protocol: 1, audio: ['m4a'] });
+  assert.deepEqual(socket.sent.at(-1), { type: 'hello', body: 'web', protocol: 1, audio: ['m4a'] });
+});
+
+test('no Android (RG406H) o hello se apresenta como rg406h-web', () => {
+  const harness = makeHarness({ navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 13; RG406H)' } });
+  const socket = connected(harness);
+  assert.equal(socket.sent[0].body, 'rg406h-web');
+});
+
+test('fora do Active Body o aparelho vira Dock sem Pet, e volta quando o Lupin retorna', () => {
+  const harness = makeHarness();
+  const { app, document } = harness;
+  connected(harness);
+  app.setMode('pet');
+  app.handleWsMessage({ type: 'welcome', protocol: 1, active_body: 'esp32', active: false });
+  assert.equal(app.state.mode, 'dock');
+  assert.ok(document.body.classList.contains('lupin-em-outro-body'));
+  app.setMode('pet');
+  assert.equal(app.state.mode, 'dock', 'sem o Lupin não existe Pet Mode');
+  for (let i = 0; i < 3; i += 1) {
+    app.cycleMode(1);
+    assert.notEqual(app.state.mode, 'pet');
+  }
+  app.setMode('dock');
+
+  app.handleWsMessage({ type: 'active_body', active_body: 'rg406h-web', active: true });
+  assert.equal(app.state.mode, 'pet');
+  assert.ok(!document.body.classList.contains('lupin-em-outro-body'));
+});
+
+test('sem o Lupin, o aparelho não fala as frases pelo navegador', () => {
+  const harness = makeHarness();
+  const { app } = harness;
+  connected(harness);
+  app.state.ttsMode = 'browser';
+  app.state.ttsEnabled = true;
+  app.handleWsMessage({ type: 'active_body', active_body: 'esp32', active: false });
+  app.enqueueTtsSentence('Oi!');
+  assert.equal(app.state.ttsQueue.length, 0);
 });
 
 test('toque no rosto envia touch (não pet) e welcome/mood são guardados', () => {

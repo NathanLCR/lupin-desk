@@ -88,14 +88,18 @@ def test_modo_dev_sem_token_libera_lan_mesmo_com_token_configurado(tmp_path: Pat
             assert ws.receive_json()["type"] == "interrupted"
 
 
-def test_modo_dev_sem_token_so_liga_com_valor_explicito(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_modo_dev_sem_token_so_liga_com_valor_explicito(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from app.config import load_settings
 
+    env_vazio = tmp_path / ".env"
+    env_vazio.write_text("", encoding="utf-8")
     for valor, esperado in (("1", True), ("true", True), ("sim", True), ("0", False), ("", False)):
         monkeypatch.setenv("DESK_DEV_SEM_TOKEN", valor)
-        assert load_settings().desk_dev_sem_token is esperado, valor
+        assert load_settings(env_vazio).desk_dev_sem_token is esperado, valor
     monkeypatch.delenv("DESK_DEV_SEM_TOKEN")
-    assert load_settings().desk_dev_sem_token is False
+    assert load_settings(env_vazio).desk_dev_sem_token is False
 
 
 def test_import_app_main_has_no_db_side_effect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

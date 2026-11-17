@@ -17,11 +17,11 @@ Feature 1 da fila. O Body principal será um ESP32-S3 JC4832W535 (3,5" 480x320, 
 
 ## Critérios de aceite
 
-- [ ] Existe documento do protocolo com todos os eventos e exemplos JSON.
-- [ ] O Brain envia Expression, Mood, frase falada e áudio; recebe toque pelo mesmo WebSocket.
-- [ ] O Body web do RG406H não usa nenhum outro canal para mostrar ou ouvir Lupin.
-- [ ] Lupin nunca está em dois Bodies ao mesmo tempo.
-- [ ] O Body cuida sozinho dos comportamentos ociosos pequenos (piscar, olhar em volta).
+- [x] Existe documento do protocolo com todos os eventos e exemplos JSON.
+- [x] O Brain envia Expression, Mood, frase falada e áudio; recebe toque pelo mesmo WebSocket.
+- [x] O Body web do RG406H não usa nenhum outro canal para mostrar ou ouvir Lupin.
+- [x] Lupin nunca está em dois Bodies ao mesmo tempo.
+- [x] O Body cuida sozinho dos comportamentos ociosos pequenos (piscar, olhar em volta).
 - [ ] Uso real no RG406H por 1 semana (mín. 4 dias) sem bug irritante antes de iniciar a 03.
 
 ## Feedback do teste no RG406H (2026-11-16) e decisões
@@ -44,3 +44,9 @@ Feature 1 da fila. O Body principal será um ESP32-S3 JC4832W535 (3,5" 480x320, 
 - [x] Tela cheia automática no primeiro toque ou tecla (`Select` ainda alterna); "fixar barra" removido.
 - Fora do passo: trocar endereço/provedor/modelo pelo RG406H (continua no Mac); o rosto EMO segue até o passo 2 (issue 10).
 - Teste do mini-pet `minipet-state.test.cjs` já falhava antes (rótulo "Ativar som"); não faz parte deste passo.
+
+### Active Body (2026-11-17)
+
+- O Brain escolhe um Active Body: `esp32` > `rg406h-web` > `web`; no mesmo tipo, o último `hello` vence. Os outros recebem `active_body` com `active: false` e viram só Dock (sem Pet, sem voz). Decisão do usuário: o aparelho sem Lupin fica como Dock, não é desconectado.
+- A página se apresenta como `rg406h-web` só no Android; navegador do Mac e iPhone são `web`, para não roubarem Lupin do RG406H.
+- Piscar e olhar em volta já são do Body (`lupin.js`); a piscada usa o busto de olhos fechados.

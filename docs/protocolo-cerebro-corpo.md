@@ -6,7 +6,7 @@ O **Body** abre um único WebSocket em `/ws` e usa só ele para conversar com o 
 
 | Evento | Campos | Descrição |
 |---|---|---|
-| `hello` | `body` ("rg406h-web", "esp32", ...), `protocol` (1), `audio`? (lista, ex.: `["m4a"]`) | Primeira mensagem. `audio` não vazio pede a voz do Brain. O Brain responde `welcome`. |
+| `hello` | `body` ("esp32", "rg406h-web", "web"), `protocol` (1), `audio`? (lista, ex.: `["m4a"]`) | Primeira mensagem. `audio` não vazio pede a voz do Brain. O Brain responde `welcome`. |
 | `text` | `text` | Mensagem de chat do usuário; inicia um turno. |
 | `audio` | `data` (base64), `mime_type`, `language`? | Áudio gravado para STT; inicia um turno. (Não confundir com o `audio` Brain→Body.) |
 | `touch` | `kind` ("pet" \| "poke"), `intensity`? | Toque no Lupin; o Brain responde `mood`. |
@@ -20,7 +20,8 @@ Há outras mensagens de controle (atalhos, aprovações, ações) usadas pelo Do
 
 | Evento | Campos | Descrição |
 |---|---|---|
-| `welcome` | `protocol` (1), `active_body` | Resposta ao `hello`; ecoa o `body` informado. |
+| `welcome` | `protocol` (1), `active_body`, `active` (bool) | Resposta ao `hello`: qual Body está com Lupin e se é este. |
+| `active_body` | `active_body`, `active` (bool) | O Active Body mudou (outro Body chegou ou saiu). |
 | `state` | `state` (`thinking`, `listening`, `idle`, `error`) | Estado do turno. |
 | `emotion` | `emotion` | Expression atual do rosto. |
 | `mood` | `kind`, `affinity`, `energy`, ... (campos do Mood) | Mood após um `touch`. Substitui `companion_updated`. |
@@ -33,6 +34,6 @@ Há outras mensagens de controle (atalhos, aprovações, ações) usadas pelo Do
 
 O `/api/tts` HTTP continua existindo para o Dock e outros usos.
 
-## Active Body (futuro)
+## Active Body
 
-Lupin vive em um Body por vez: o ESP32 enquanto conectado, senão o RG406H; um ESP32 posterior vence. **Ainda não é imposto:** hoje o Brain apenas responde `welcome` com o `body` do `hello`, sem recusar ou derrubar outras conexões.
+Lupin vive em um Body por vez. O Brain escolhe pela prioridade `esp32` > `rg406h-web` > qualquer outro (`web`: navegador do Mac, iPhone); no mesmo tipo, o último `hello` vence. Quando o Active Body muda, os outros Bodies recebem `active_body`. Um Body com `active: false` não recebe `audio`, não fala pelo navegador e fica só como Dock (sem Pet Mode). Quando o Active Body sai, o próximo da fila recebe `active_body` com `active: true`.
