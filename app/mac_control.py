@@ -197,6 +197,61 @@ def parse_calendar_output(stdout: str) -> list[dict[str, Any]]:
     return [ev for _, ev in eventos]
 
 
+# Caixa de entrada do Mail.app (somente leitura): primeira linha é a contagem de não lidos da
+# caixa de entrada unificada (todas as contas); as demais, "remetente<TAB>assunto" dos não lidos
+# das últimas 24h (mais recentes primeiro, no máximo 10; olha só as 300 mensagens mais novas). Nunca lê o corpo nem altera mensagens.
+_MAIL_INBOX_SCRIPT = """
+set saida to ""
+tell application "Mail"
+    set saida to ((unread count of inbox) as string) & linefeed
+    set limite to (current date) - (1 * days)
+    set achadas to 0
+    set caixa to messages of inbox
+    set total to count of caixa
+    if total > 300 then set total to 300
+    repeat with i from 1 to total
+        set m to item i of caixa
+        if (date received of m) < limite then exit repeat
+        if read status of m is false then
+            set saida to saida & (sender of m) & tab & (subject of m) & linefeed
+            set achadas to achadas + 1
+            if achadas ≥ 10 then exit repeat
+        end if
+    end repeat
+end tell
+return saida
+"""
+
+
+def parse_mail_output(stdout: str) -> dict[str, Any] | None:
+    """Converte a saída do script do Mail.app em contagem de não lidos e itens recentes.
+
+    Devolve None se a primeira linha não for uma contagem válida.
+    """
+    linhas = (stdout or "").splitlines()
+    if not linhas:
+        return None
+    try:
+        nao_lidos = int(linhas[0].strip())
+    except ValueError:
+        return None
+    if nao_lidos < 0:
+        return None
+    recentes: list[dict[str, str]] = []
+    for linha in linhas[1:]:
+        partes = linha.split("\t")
+        if len(partes) < 2:
+            continue
+        remetente = partes[0].strip()
+        assunto = " ".join(p.strip() for p in partes[1:] if p.strip())
+        if not remetente and not assunto:
+            continue
+        recentes.append({"remetente": remetente[:80], "assunto": assunto[:120]})
+        if len(recentes) >= 10:
+            break
+    return {"nao_lidos": nao_lidos, "recentes": recentes}
+
+
 def _is_accessibility_error(stderr: str) -> bool:
     """Detecta erros de permissão de Acessibilidade do macOS no stderr do `osascript`."""
     lowered = (stderr or "").lower()
@@ -293,6 +348,13 @@ class MacController:
         if proc.returncode != 0:
             return None
         return parse_calendar_output(proc.stdout)
+
+    def read_inbox(self) -> dict[str, Any] | None:
+        """Lê a caixa de entrada do Mail.app (somente leitura). None se não der para ler."""
+        proc = self._run_cmd(["/usr/bin/osascript", "-e", _MAIL_INBOX_SCRIPT], timeout=15.0)
+        if proc.returncode != 0:
+            return None
+        return parse_mail_output(proc.stdout)
 
     def list_running_apps(self) -> list[dict[str, Any]]:
         """Lista apps abertos no Mac (com destaque ao frontal) + favoritos padrão."""

@@ -416,13 +416,44 @@ def _juntar(itens: list[str]) -> str:
     return ", ".join(itens[:-1]) + " e " + itens[-1]
 
 
-def compor_fala_first_wake(
-    state: dict[str, Any], agenda: list[dict[str, Any]] | None, today_iso: str
-) -> list[str]:
-    """Monta as 2-3 frases do First Wake só com o que existe no Cowork e na agenda.
+def _frase_abertura(
+    state: dict[str, Any], abertas: list[dict[str, Any]], nao_lidos: int | None
+) -> str:
+    """Frase 1: tarefas abertas do Cowork e, se lida, a contagem de e-mails não lidos."""
+    if nao_lidos is None:
+        if not state.get("workspace_exists"):
+            return "Bom dia! Não consegui ler o Cowork agora."
+        if not abertas:
+            return "Bom dia! Nenhuma tarefa aberta no Cowork."
+        if len(abertas) == 1:
+            return "Bom dia! Você tem 1 tarefa aberta no Cowork."
+        return f"Bom dia! Você tem {len(abertas)} tarefas abertas no Cowork."
 
-    `agenda` é None quando a agenda não pôde ser lida (nada é dito sobre ela).
-    Não usa LLM: nenhum dado de agenda sai da máquina.
+    if nao_lidos == 0:
+        emails = "nenhum e-mail não lido"
+    elif nao_lidos == 1:
+        emails = "1 e-mail não lido"
+    else:
+        emails = f"{nao_lidos} e-mails não lidos"
+    if not state.get("workspace_exists"):
+        return f"Bom dia! Não consegui ler o Cowork agora, mas você tem {emails}."
+    if not abertas:
+        return f"Bom dia! Nenhuma tarefa aberta e {emails}."
+    tarefas = "1 tarefa aberta" if len(abertas) == 1 else f"{len(abertas)} tarefas abertas"
+    return f"Bom dia! Você tem {tarefas} e {emails}."
+
+
+def compor_fala_first_wake(
+    state: dict[str, Any],
+    agenda: list[dict[str, Any]] | None,
+    today_iso: str,
+    nao_lidos: int | None = None,
+) -> list[str]:
+    """Monta as 2-3 frases do First Wake só com o que existe no Cowork, na agenda e no Mail.
+
+    `agenda` é None quando a agenda não pôde ser lida; `nao_lidos` é None quando o Mail.app
+    não pôde ser lido (nada é dito sobre eles). Nunca fala remetente nem assunto.
+    Não usa LLM: nenhum dado de agenda ou e-mail sai da máquina.
     """
     frases: list[str] = []
     abertas: list[dict[str, Any]] = []
@@ -431,14 +462,7 @@ def compor_fala_first_wake(
             t for t in (state.get("tasks") or [])
             if isinstance(t, dict) and t.get("status") == "open" and str(t.get("title") or "").strip()
         ]
-        if not abertas:
-            frases.append("Bom dia! Nenhuma tarefa aberta no Cowork.")
-        elif len(abertas) == 1:
-            frases.append("Bom dia! Você tem 1 tarefa aberta no Cowork.")
-        else:
-            frases.append(f"Bom dia! Você tem {len(abertas)} tarefas abertas no Cowork.")
-    else:
-        frases.append("Bom dia! Não consegui ler o Cowork agora.")
+    frases.append(_frase_abertura(state, abertas, nao_lidos))
 
     if agenda is not None:
         if not agenda:

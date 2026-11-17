@@ -102,7 +102,21 @@ def test_le_saida_do_calendar_app() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _app(tmp_path: Path, hora: int, chamadas_llm: list[dict[str, Any]]) -> tuple[Any, list[str]]:
+INBOX = {
+    "nao_lidos": 2,
+    "recentes": [
+        {"remetente": "Carla Souza", "assunto": "Contrato assinado"},
+        {"remetente": "Banco", "assunto": "Fatura aberta"},
+    ],
+}
+
+
+def _app(
+    tmp_path: Path,
+    hora: int,
+    chamadas_llm: list[dict[str, Any]],
+    inbox: dict[str, Any] | None = None,
+) -> tuple[Any, list[str]]:
     settings = Settings(
         llm_base_url="http://127.0.0.1:31415/v1",
         llm_api_key="test-key",
@@ -130,6 +144,7 @@ def _app(tmp_path: Path, hora: int, chamadas_llm: list[dict[str, Any]]) -> tuple
         tts_engine=ServerTTS(synth_fn=synth),
         first_wake=tracker,
         agenda_reader=lambda: list(AGENDA),
+        inbox_reader=lambda: inbox,
     )
     return app, sintetizadas
 
@@ -213,3 +228,62 @@ def test_texto_recebe_first_wake_antes_e_agenda_nao_vai_para_o_llm(tmp_path: Pat
     assert len(chamadas) == 1
     assert "Dentista" not in repr(chamadas[0])
     assert "Reunião de laboratório" not in repr(chamadas[0])
+
+
+# ---------------------------------------------------------------------------
+# Inbox (Mail.app) no First Wake
+# ---------------------------------------------------------------------------
+
+from app.mac_control import parse_mail_output  # noqa: E402
+
+
+def test_le_saida_do_mail_app() -> None:
+    saida = "12\nAna <ana@x.com>\tOrçamento\nBob\tRe: reunião\tcom tab\n\nlixo\n"
+    assert parse_mail_output(saida) == {
+        "nao_lidos": 12,
+        "recentes": [
+            {"remetente": "Ana <ana@x.com>", "assunto": "Orçamento"},
+            {"remetente": "Bob", "assunto": "Re: reunião com tab"},
+        ],
+    }
+    assert parse_mail_output("0\n") == {"nao_lidos": 0, "recentes": []}
+    assert parse_mail_output("") is None
+    assert parse_mail_output("erro\n") is None
+    muitos = "3\n" + "".join(f"R{i}\tA{i}\n" for i in range(15))
+    assert len(parse_mail_output(muitos)["recentes"]) == 10
+
+
+def test_first_wake_fala_a_contagem_de_nao_lidos() -> None:
+    frases = compor_fala_first_wake(ESTADO, AGENDA, HOJE, 12)
+    assert len(frases) <= 3
+    assert frases[0] == "Bom dia! Você tem 2 tarefas abertas e 12 e-mails não lidos."
+
+
+def test_first_wake_singular_zero_e_sem_cowork() -> None:
+    um = {"workspace_exists": True, "tasks": [{"title": "A", "status": "open"}]}
+    assert compor_fala_first_wake(um, None, HOJE, 1)[0] == "Bom dia! Você tem 1 tarefa aberta e 1 e-mail não lido."
+    assert compor_fala_first_wake(um, None, HOJE, 0)[0] == "Bom dia! Você tem 1 tarefa aberta e nenhum e-mail não lido."
+    vazio = {"workspace_exists": True, "tasks": []}
+    assert compor_fala_first_wake(vazio, None, HOJE, 3)[0] == "Bom dia! Nenhuma tarefa aberta e 3 e-mails não lidos."
+    sem = compor_fala_first_wake({"workspace_exists": False}, None, HOJE, 5)
+    assert sem[0] == "Bom dia! Não consegui ler o Cowork agora, mas você tem 5 e-mails não lidos."
+    assert len(sem) <= 3
+
+
+def test_first_wake_sem_leitura_do_mail_fica_como_antes() -> None:
+    assert compor_fala_first_wake(ESTADO, AGENDA, HOJE) == compor_fala_first_wake(ESTADO, AGENDA, HOJE, None)
+    assert not any("e-mail" in f for f in compor_fala_first_wake(ESTADO, AGENDA, HOJE, None))
+
+
+def test_first_wake_pelo_ws_fala_contagem_sem_remetente_nem_assunto(tmp_path: Path) -> None:
+    chamadas: list[dict[str, Any]] = []
+    app, _ = _app(tmp_path, 7, chamadas, inbox=INBOX)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "hello", "body": "rg406h-web", "protocol": 1})
+        ws.receive_json()
+        ws.send_json({"type": "touch", "kind": "pet"})
+        assert ws.receive_json()["type"] == "mood"
+        texto = " ".join(e["text"] for e in _ate_done(ws) if e["type"] == "sentence")
+    assert "2 e-mails não lidos" in texto
+    assert "Carla" not in texto and "Contrato" not in texto
+    assert chamadas == []
