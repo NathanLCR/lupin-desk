@@ -23,10 +23,10 @@ A physical device that shows Lupin, plays his sounds and senses the user (touch,
 _Avoid_: client, device, frontend (when the role is meant)
 
 **Active Body**:
-The one Body Lupin lives in right now: the ESP32 whenever it is connected, otherwise the RG406H. Lupin is never in two Bodies at once.
+The one Body Lupin lives in right now: the ESP32 whenever it is connected, otherwise the RG406H. Lupin is never in two Bodies at once. The user can talk to Lupin from any device, but Lupin always answers in the Active Body; the device the user spoke from only shows the reply as text.
 
 **Dock**:
-A role a device plays: a control surface for the user's Mac (its open apps and the Shortcuts). The RG406H is the Dock and can also be a Body.
+A role a device plays: a control surface for the user's Mac (its Pinned Shortcuts and its open apps). The RG406H is the Dock and can also be a Body.
 _Avoid_: Stream Deck, control panel
 
 ### Lupin's inner life
@@ -62,6 +62,10 @@ _Avoid_: animation, pet action
 **Shortcut**:
 A user-configured button that makes the Mac do one thing: a key combo, an app activation, a safe Mac command or a canned prompt.
 _Avoid_: tile, macro, hotkey
+
+**Pinned Shortcut**:
+A Shortcut the user chose, on the Mac, to show in the Dock. Only Pinned Shortcuts appear there, in the order the user set; Shortcuts are created, edited and pinned only on the Mac.
+_Avoid_: deck key, favourite
 
 ### Cowork
 

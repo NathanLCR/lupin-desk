@@ -19,3 +19,11 @@ The architecture follows the "physical Taby" model. The **Brain** is the server 
 - Lupin's voice comes out of the Body. Listening happens on the Mac's microphone, started by touching the Body (tap-to-talk), as long as the board has no microphone.
 - Offline operation is not a requirement for now.
 - Future agents and swarms must not build more than one feature at a time, nor add Bodies or Modes, without revisiting this ADR.
+
+## Addendum (2026-11-17): talking to Lupin from any device
+
+"Lupin lives in only one Body" first meant that a device that isn't the Active Body gets nothing from Lupin. That turned out too strict: the user wants to talk to Lupin from whatever is in their hand (the RG406H while it is only the Dock, the Mac, the iPhone). So any device can talk to Lupin, but the reply always plays in the Active Body (voice, face, Expression), and the device the user spoke from gets only the text, with no audio. Without an Active Body connected, that device gets the text alone.
+
+Rejected: answering on the device that asked (Lupin would appear in two Bodies) and refusing to talk from a device that isn't the Active Body (the user would have to walk to the ESP32 to ask anything).
+
+Consequence: the Brain routes a turn's voice and Expression to the Active Body, which may be a different connection from the one that sent the text or audio.
