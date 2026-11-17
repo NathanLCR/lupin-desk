@@ -10,7 +10,7 @@ First Wake é a primeira interação do usuário com Lupin no dispositivo princi
 
 - Detectar o First Wake (primeira interação após 5h no Active Body).
 - Lupin fala o Today em 2 a 3 frases.
-- Incluir Calendar (via Calendar.app) e Inbox (via Gmail), ambos somente leitura.
+- Incluir Calendar (via Calendar.app) e Inbox (via Mail.app), ambos somente leitura.
 - Dados de e-mail e agenda só vão para o provedor de LLM que o usuário escolheu explicitamente.
 - Today continua checado para não afirmar o que o Cowork não contém.
 
@@ -25,8 +25,45 @@ First Wake é a primeira interação do usuário com Lupin no dispositivo princi
 
 ## Perguntas em aberto
 
-- Como o usuário escolhe e confirma o provedor de LLM para dados sensíveis?
-- Como autenticar o Gmail somente leitura?
+Respondidas na spec do resto da 03 (abaixo): o provedor é confirmado pelo Data Consent, e o Inbox vem do Mail.app, sem OAuth e sem senha guardada.
+
+## Spec do resto da 03 (combinada em 2026-11-17)
+
+### Inbox
+
+- Fonte: Mail.app, por um script fixo de `osascript` somente leitura, no mesmo padrão do Calendar (`subprocess.run` com argv, nada vindo do cliente). Sem OAuth, sem senha guardada.
+- "Não lidos" = toda mensagem não lida na caixa de entrada de todas as contas do Mail.app (o número do badge do Mail).
+- Se o Mail.app não puder ser lido (sem permissão, fechado, erro), o e-mail é só omitido.
+
+### First Wake
+
+- Continua sem LLM.
+- A frase 1 ganha a contagem de não lidos: "Bom dia! Você tem 4 tarefas abertas e 12 e-mails não lidos."
+- Nunca fala remetente nem assunto.
+- Sem leitura do Mail.app, a frase fica como hoje.
+
+### Data Consent
+
+- Dois interruptores: um para a agenda, outro para o e-mail.
+- Ficam em Settings → Brain e só podem ser alterados no Mac (`is_mac_client`); os outros aparelhos só veem o estado. Alteração vinda de outro cliente recebe 403.
+- O texto nomeia quem recebe, por exemplo: "Permitir que Proxy Local (127.0.0.1:31415) veja sua agenda".
+- O consentimento fica ligado ao id do provider e ao host do base_url. Se qualquer um mudar, os dois interruptores desligam sozinhos.
+- Sem exceções, Ollama incluído.
+- Padrão: desligados.
+
+### Conversa
+
+- Com consentimento de agenda: o contexto do LLM recebe a agenda de hoje (hora e título).
+- Com consentimento de e-mail: recebe os não lidos das últimas 24h, no máximo 10, só remetente e assunto, nunca o corpo.
+- Sem consentimento: o contexto não recebe nada disso, e o Lupin diz que não pode ver a agenda/o e-mail em vez de adivinhar.
+- Agenda e e-mail não entram no histórico salvo nem em log.
+
+### Critérios de aceite extras
+
+- [ ] First Wake fala a contagem de não lidos sem remetente nem assunto.
+- [ ] Sem Data Consent, nenhum dado de agenda/e-mail aparece na chamada ao LLM (teste).
+- [ ] Trocar provider ou base_url desliga os dois consentimentos (teste).
+- [ ] Alterar consentimento fora do Mac retorna 403 (teste).
 
 ## Feito em 2026-11-17
 
@@ -39,6 +76,6 @@ First Wake é a primeira interação do usuário com Lupin no dispositivo princi
 
 Ainda falta:
 
-- Inbox (Gmail somente leitura) e a escolha explícita de provedor para dados sensíveis.
+- Inbox (Mail.app somente leitura) e o Data Consent (ver a spec acima).
 - O script do Calendar não expande eventos recorrentes nem eventos que começaram antes de hoje; ver no uso real se isso incomoda.
 - 1 semana de uso real.
