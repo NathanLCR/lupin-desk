@@ -20,7 +20,11 @@
       "sonolento",
       "bravo",
       "tonto",
-      "piscando"
+      "piscando",
+      "piscar",
+      "curioso",
+      "cetico",
+      "triste"
     ],
     "colar": [
       "apagado",
@@ -31,7 +35,9 @@
     "pose": "neutro",
     "colar": "apagado"
   },
-  "piscada": {},
+  "piscada": {
+    "neutro": "piscar"
+  },
   "fala": {
     "pose": "feliz",
     "limiar": 0.4
@@ -45,18 +51,16 @@
       "pose": "feliz"
     },
     "curious": {
-      "inclinacao": 8
+      "pose": "curioso"
     },
     "skeptical": {
-      "pose": "sonolento",
-      "inclinacao": -5
+      "pose": "cetico"
     },
     "surprised": {
       "pose": "surpreso"
     },
     "sad": {
-      "pose": "sonolento",
-      "inclinacao": 4
+      "pose": "triste"
     },
     "wink": {
       "pose": "piscando"

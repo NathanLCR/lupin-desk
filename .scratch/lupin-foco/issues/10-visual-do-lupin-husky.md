@@ -49,3 +49,11 @@ Feedback do teste no RG406H: o rosto abstrato estilo EMO está errado. Lupin é 
 - Piscar: a tabela tem `piscada` (pose → pose de olhos fechados), hoje vazia. Falta o SVG do busto neutro com olhos fechados.
 - Sem pose própria: `curious` (neutro inclinado), `skeptical` e `sad` (usam sonolento). Faltam SVGs de curioso, cético e triste.
 - Truque `dance` usa os quadros de acenar. Total: 16 SVGs, maior PNG 11 KB, 136 KB no conjunto, bem abaixo do orçamento do ESP32.
+
+## Poses que faltavam (2026-11-17)
+
+- Chegaram 4 SVGs novos (mesmo traçado VTracer, sem grupos nomeados): olhos fechados, curioso, cético e triste. Os outros 14 arquivos do lote eram idênticos aos já usados.
+- Camada `pose` passa a 12 variantes: `piscar`, `curioso`, `cetico`, `triste` entram. `piscada` = `neutro → piscar`; `curious`, `skeptical` e `sad` ganham pose própria (sem inclinação extra, a arte já vem inclinada).
+- O enquadramento comum do busto não mudou (`-263.5 -8 1551 1034`), então o brilho da coleira e os corpos ficam como estavam.
+- Total: 20 SVGs, maior PNG 11,3 KB, 171 KB no conjunto.
+- Ainda faltam: quadros de dançar (o `dance` segue com acenar) e bocas de fala (meio/aberta); a fala segue alternando neutro/feliz.

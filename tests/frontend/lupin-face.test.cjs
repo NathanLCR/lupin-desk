@@ -185,8 +185,11 @@ test('piscar usa a pose de olhos fechados quando a tabela tiver uma', () => {
   t.piscada = { neutro: 'sonolento' };
   const r = api.resolverCamadas(t, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
   assert.equal(r.camadas.pose, 'sonolento');
-  const sem = api.resolverCamadas(tabela, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
+  t.piscada = {};
+  const sem = api.resolverCamadas(t, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
   assert.equal(sem.camadas.pose, 'neutro');
+  const real = api.resolverCamadas(tabela, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
+  assert.equal(real.camadas.pose, 'piscar');
 });
 
 test('Truque de corpo inteiro troca o busto pelos quadros e volta no fim', async () => {

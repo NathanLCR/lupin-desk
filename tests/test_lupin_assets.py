@@ -53,3 +53,11 @@ def test_arte_nao_traz_codigo_nem_imagens_externas():
             if proibido == "http://":
                 texto = texto.replace("http://www.w3.org/2000/svg", "")
             assert proibido not in texto, f"{svg}: {proibido}"
+
+
+def test_piscada_e_fala_apontam_para_poses_que_existem():
+    poses = set(TABELA["camadas"]["pose"])
+    for origem, destino in TABELA["piscada"].items():
+        assert origem in poses and destino in poses, (origem, destino)
+    assert TABELA["piscada"], "o Lupin precisa piscar a partir da pose neutra"
+    assert TABELA["fala"]["pose"] in poses
