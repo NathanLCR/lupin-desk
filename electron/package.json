@@ -1,7 +1,7 @@
 {
   "name": "desk-assistant-electron",
   "version": "0.2.0",
-  "description": "macOS Electron shell for Desk Assistant + Nathan OS + Cowork + Jarvis",
+  "description": "macOS Electron shell for the Desk Assistant mini-pet (frozen)",
   "main": "main.js",
   "private": true,
   "scripts": {

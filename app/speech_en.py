@@ -69,8 +69,7 @@ SKILL_PROMPT_INSTRUCTIONS: dict[str, str] = {
         "use the Cowork/weather context and, if useful, emit [action:today:brief]."
     ),
     "coding_buddy": (
-        "Coding Buddy skill is on: give direct, concise technical answers; use "
-        "[action:vision:screen] or [action:vision:clipboard] when the user asks you to look at the screen or clipboard."
+        "Coding Buddy skill is on: give direct, concise technical answers."
     ),
     "wellness_breaks": (
         "Wellness & Breaks skill is on: suggest short breaks for water, posture and breathing "
