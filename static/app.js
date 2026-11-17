@@ -347,6 +347,7 @@
     btnConfirmReset: document.getElementById('btn-confirm-reset'),
     btnCancelReset: document.getElementById('btn-cancel-reset'),
     serverTtsAudio: document.getElementById('server-tts-audio'),
+    selLupinLanguage: document.getElementById('sel-lupin-language'),
   };
 
   const state = {
@@ -366,6 +367,9 @@
     petSoundsEnabled: loadBoolPref(PREFS.petSoundsEnabled, true),
     audioUnlocked: false,
     selectedVoice: null,
+    // Lupin's language lives on the Brain (GET/PUT /api/lupin-language); pt-BR until it answers.
+    lupinLanguage: 'pt-BR',
+    lupinPhrases: null,
     activeUtterance: null,
     ttsQueue: [],
     ttsPlaying: false,
@@ -868,24 +872,24 @@
     return typeof window !== 'undefined' && 'speechSynthesis' in window;
   }
 
-  function pickBestPortugueseVoice() {
+  function speechLocale() {
+    return state.lupinLanguage === 'en' ? 'en-US' : 'pt-BR';
+  }
+
+  function pickBestVoice() {
     if (!supportsSpeechSynthesis()) return null;
     const voices = window.speechSynthesis.getVoices() || [];
     if (voices.length === 0) return null;
 
-    const ptBrVoices = voices.filter((v) => /^pt[-_]br$/i.test(v.lang));
-    const ptAnyVoices = voices.filter((v) => /^pt\b/i.test(v.lang));
-    const pool = ptBrVoices.length > 0 ? ptBrVoices : ptAnyVoices;
+    const english = state.lupinLanguage === 'en';
+    const exactVoices = voices.filter((v) => (english ? /^en[-_]us$/i : /^pt[-_]br$/i).test(v.lang));
+    const anyVoices = voices.filter((v) => (english ? /^en\b/i : /^pt\b/i).test(v.lang));
+    const pool = exactVoices.length > 0 ? exactVoices : anyVoices;
     if (pool.length === 0) return null;
 
-    const preferredPatterns = [
-      /luciana/i,
-      /felipe/i,
-      /google.*portugu/i,
-      /natural/i,
-      /enhanced/i,
-      /neural/i,
-    ];
+    const preferredPatterns = english
+      ? [/samantha/i, /google.*us english/i, /natural/i, /enhanced/i, /neural/i]
+      : [/luciana/i, /felipe/i, /google.*portugu/i, /natural/i, /enhanced/i, /neural/i];
     for (const pattern of preferredPatterns) {
       const match = pool.find((v) => pattern.test(v.name));
       if (match) return match;
@@ -894,7 +898,7 @@
   }
 
   function refreshVoices() {
-    state.selectedVoice = pickBestPortugueseVoice();
+    state.selectedVoice = pickBestVoice();
     if (window.DeskDiagnostics && typeof window.DeskDiagnostics.refreshVoices === 'function') {
       window.DeskDiagnostics.refreshVoices();
     }
@@ -928,7 +932,7 @@
           const primer = new SpeechSynthesisUtterance(' ');
           primer.volume = 0;
           primer.rate = 10;
-          primer.lang = 'pt-BR';
+          primer.lang = speechLocale();
           window.speechSynthesis.speak(primer);
         }
         refreshVoices();
@@ -1084,7 +1088,7 @@
   function playBrowserTtsItem(clean, generation, onDone) {
     refreshVoices();
     const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = 'pt-BR';
+    utterance.lang = speechLocale();
     utterance.rate = 1.03;
     utterance.pitch = 1.0;
     if (state.selectedVoice) {
@@ -1196,6 +1200,62 @@
       });
     } catch {
       // Silence playback errors for the Brain's audio
+    }
+  }
+
+  // Lupin's spoken phrases come from the Brain with the language setting; until it answers,
+  // these pt-BR defaults (the default language) are used.
+  const DEFAULT_LUPIN_PHRASES = {
+    pomodoro_focus_done: 'Ciclo Pomodoro de foco concluído! Faça uma pausa.',
+    pomodoro_break_done: 'Pausa do Pomodoro finalizada! Hora de voltar ao foco.',
+    diag_test_browser_tts: 'Olá! Teste de voz do navegador funcionando.',
+    diag_test_server_tts: 'Olá! Teste de voz offline do servidor Mac.',
+  };
+
+  function lupinPhrase(key) {
+    return (state.lupinPhrases && state.lupinPhrases[key]) || DEFAULT_LUPIN_PHRASES[key];
+  }
+
+  function renderLupinLanguage() {
+    if (els.selLupinLanguage) els.selLupinLanguage.value = state.lupinLanguage;
+  }
+
+  function applyLupinLanguage(data) {
+    if (!data || typeof data.language !== 'string') return;
+    const changed = data.language !== state.lupinLanguage;
+    state.lupinLanguage = data.language;
+    state.lupinPhrases = data.phrases || null;
+    renderLupinLanguage();
+    if (changed) refreshVoices();
+  }
+
+  async function fetchLupinLanguage() {
+    try {
+      const res = await fetch('/api/lupin-language');
+      if (!res.ok) return;
+      applyLupinLanguage(await res.json());
+    } catch {
+      // No response: keep the current language
+    }
+  }
+
+  async function changeLupinLanguage(language) {
+    try {
+      const res = await fetch('/api/lupin-language', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || "Could not change Lupin's language", { isError: true });
+        renderLupinLanguage();
+        return;
+      }
+      applyLupinLanguage(await res.json());
+    } catch {
+      showToast("Network error while changing Lupin's language", { isError: true });
+      renderLupinLanguage();
     }
   }
 
@@ -1566,6 +1626,7 @@
       state.reconnectDelayMs = WS_RECONNECT_BASE_MS;
       setWsStatus('connected', 'Connected');
       sendHello();
+      fetchLupinLanguage();
       fetchMemory();
       const aud = audioApi();
       if (aud && typeof aud.wake === 'function' && state.audioUnlocked && state.petSoundsEnabled) {
@@ -2750,11 +2811,10 @@
         const aud = audioApi();
         if (aud && typeof aud.alert === 'function' && state.petSoundsEnabled) aud.alert();
         applyFaceEmotion('excited');
-        // Lupin's spoken line stays in Brazilian Portuguese; the toast is UI text.
-        const spoken =
-          endedPhase === 'break'
-            ? 'Pausa do Pomodoro finalizada! Hora de voltar ao foco.'
-            : 'Ciclo Pomodoro de foco concluído! Faça uma pausa.';
+        // Lupin's spoken line follows his language setting; the toast is UI text.
+        const spoken = lupinPhrase(
+          endedPhase === 'break' ? 'pomodoro_break_done' : 'pomodoro_focus_done',
+        );
         const toastText =
           endedPhase === 'break'
             ? 'Pomodoro break finished! Time to get back to focus.'
@@ -3324,6 +3384,9 @@
     });
 
     els.btnTtsMode.addEventListener('click', toggleTtsMode);
+    if (els.selLupinLanguage) {
+      els.selLupinLanguage.addEventListener('change', () => changeLupinLanguage(els.selLupinLanguage.value));
+    }
 
     if (els.consentCalendar) els.consentCalendar.addEventListener('click', () => toggleDataConsent('calendar'));
     if (els.consentEmail) els.consentEmail.addEventListener('click', () => toggleDataConsent('email'));
@@ -3529,6 +3592,8 @@
     if (!window.DeskDiagnostics || typeof window.DeskDiagnostics.init !== 'function') return;
     window.DeskDiagnostics.init(els.diagnosticsRoot, {
       getTtsMode: () => state.ttsMode,
+      getVoiceLang: () => (state.lupinLanguage === 'en' ? 'en' : 'pt'),
+      getTestPhrase: (kind) => lupinPhrase(kind === 'server' ? 'diag_test_server_tts' : 'diag_test_browser_tts'),
       onTestBrowserTts: (text) => {
         unlockAudio();
         enqueueTtsSentence(text, 'browser');
@@ -3570,6 +3635,7 @@
     initGamepad();
     initDiagnostics();
     connectWebSocket();
+    fetchLupinLanguage();
     fetchMemory();
     fetchMacStatus();
     fetchClientInfo();

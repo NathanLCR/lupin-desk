@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
-from app import speech_pt_br as speech
+from app import speech
 from app.memory import MemoryStore
 from app.providers import get_preset
 

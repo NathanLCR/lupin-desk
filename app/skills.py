@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from app import speech_pt_br as speech
+from app import speech
 from app.memory import MemoryStore
 
 _META_KEY_ENABLED_SKILLS = "pet_skills_enabled"
@@ -20,9 +20,15 @@ class SkillPack:
     icon: str
     name: str
     description: str
-    voice_hint: str
     default_enabled: bool
-    prompt_instruction: str
+
+    @property
+    def voice_hint(self) -> str:
+        return speech.SKILL_VOICE_HINTS[self.id]
+
+    @property
+    def prompt_instruction(self) -> str:
+        return speech.SKILL_PROMPT_INSTRUCTIONS[self.id]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,9 +39,12 @@ class PetTrick:
     icon: str
     name: str
     description: str
-    voice_hint: str
     emotion: str
     duration_ms: int
+
+    @property
+    def voice_hint(self) -> str:
+        return speech.TRICK_VOICE_HINTS[self.id]
 
 
 SKILL_PACKS: tuple[SkillPack, ...] = (
@@ -44,45 +53,35 @@ SKILL_PACKS: tuple[SkillPack, ...] = (
         icon="🎯",
         name="Focus Coach",
         description="Helps start Pomodoro sessions, keep focus blocks and suggest short breaks.",
-        voice_hint=speech.SKILL_VOICE_HINTS["focus_coach"],
         default_enabled=True,
-        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["focus_coach"],
     ),
     SkillPack(
         id="daily_briefing",
         icon="☀️",
         name="Daily Briefing",
         description="Combines time of day, weather and Cowork Today priorities into concise summaries.",
-        voice_hint=speech.SKILL_VOICE_HINTS["daily_briefing"],
         default_enabled=True,
-        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["daily_briefing"],
     ),
     SkillPack(
         id="coding_buddy",
         icon="💻",
         name="Coding Buddy",
         description="Helps with debugging, architecture and quick inspection of the screen or clipboard.",
-        voice_hint=speech.SKILL_VOICE_HINTS["coding_buddy"],
         default_enabled=True,
-        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["coding_buddy"],
     ),
     SkillPack(
         id="wellness_breaks",
         icon="🧘",
         name="Wellness & Breaks",
         description="Gentle reminders for hydration, posture, the 20-20-20 rule and guided breathing.",
-        voice_hint=speech.SKILL_VOICE_HINTS["wellness_breaks"],
         default_enabled=False,
-        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["wellness_breaks"],
     ),
     SkillPack(
         id="playful_companion",
         icon="✨",
         name="Playful Pet",
         description="Enables expressive tricks such as dancing, singing, celebrating, stretching and napping.",
-        voice_hint=speech.SKILL_VOICE_HINTS["playful_companion"],
         default_enabled=True,
-        prompt_instruction=speech.SKILL_PROMPT_INSTRUCTIONS["playful_companion"],
     ),
 )
 
@@ -92,7 +91,6 @@ PET_TRICKS: tuple[PetTrick, ...] = (
         icon="💃",
         name="Dance",
         description="Rhythmic sequence of little hops, sparkling eyes and confetti.",
-        voice_hint=speech.TRICK_VOICE_HINTS["dance"],
         emotion="excited",
         duration_ms=2800,
     ),
@@ -101,7 +99,6 @@ PET_TRICKS: tuple[PetTrick, ...] = (
         icon="🎵",
         name="Sing",
         description="Procedural Web Audio melody with floating musical notes.",
-        voice_hint=speech.TRICK_VOICE_HINTS["sing"],
         emotion="happy",
         duration_ms=3000,
     ),
@@ -110,7 +107,6 @@ PET_TRICKS: tuple[PetTrick, ...] = (
         icon="🧘",
         name="Meditate",
         description="Calm breathing and a zen rhythm to go with breaks.",
-        voice_hint=speech.TRICK_VOICE_HINTS["meditate"],
         emotion="love",
         duration_ms=3400,
     ),
@@ -119,7 +115,6 @@ PET_TRICKS: tuple[PetTrick, ...] = (
         icon="😴",
         name="Nap",
         description="Cozy nap with Zzz particles and slow breathing.",
-        voice_hint=speech.TRICK_VOICE_HINTS["nap"],
         emotion="sleepy",
         duration_ms=3400,
     ),
@@ -128,7 +123,6 @@ PET_TRICKS: tuple[PetTrick, ...] = (
         icon="🎉",
         name="Celebrate",
         description="Lively celebration with a sound fanfare and a shower of particles.",
-        voice_hint=speech.TRICK_VOICE_HINTS["celebrate"],
         emotion="excited",
         duration_ms=2600,
     ),
@@ -137,7 +131,6 @@ PET_TRICKS: tuple[PetTrick, ...] = (
         icon="🤸",
         name="Stretch",
         description="Elastic squash-and-stretch to recharge energy.",
-        voice_hint=speech.TRICK_VOICE_HINTS["stretch"],
         emotion="happy",
         duration_ms=2400,
     ),

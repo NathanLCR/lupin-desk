@@ -235,7 +235,11 @@
     if (btnTestBrowser) {
       btnTestBrowser.addEventListener('click', () => {
         if (typeof options.onTestBrowserTts === 'function') {
-          options.onTestBrowserTts('Olá! Teste de voz do navegador funcionando.');
+          options.onTestBrowserTts(
+            typeof options.getTestPhrase === 'function'
+              ? options.getTestPhrase('browser')
+              : 'Hi! The browser voice test is working.',
+          );
         }
       });
     }
@@ -243,7 +247,11 @@
     if (btnTestServer) {
       btnTestServer.addEventListener('click', () => {
         if (typeof options.onTestServerTts === 'function') {
-          options.onTestServerTts('Olá! Teste de voz offline do servidor Mac.');
+          options.onTestServerTts(
+            typeof options.getTestPhrase === 'function'
+              ? options.getTestPhrase('server')
+              : "Hi! The Mac server's offline voice test is working.",
+          );
         }
       });
     }
@@ -744,7 +752,8 @@
       browserList.innerHTML = '';
       if ('speechSynthesis' in global) {
         const voices = global.speechSynthesis.getVoices() || [];
-        const ptVoices = voices.filter((v) => /^pt/i.test(v.lang));
+        const wanted = typeof options.getVoiceLang === 'function' ? options.getVoiceLang() : 'pt';
+        const ptVoices = voices.filter((v) => new RegExp('^' + wanted, 'i').test(v.lang));
         const shown = (ptVoices.length > 0 ? ptVoices : voices).slice(0, 8);
         if (shown.length === 0) {
           browserList.innerHTML = '<li>No voices listed yet</li>';

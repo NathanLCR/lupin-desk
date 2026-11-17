@@ -7,8 +7,8 @@ say something lives elsewhere (app/llm.py, app/memory.py, app/skills.py, app/tod
 app/consent.py); the words live here.
 
 Instructions to the LLM are written in Portuguese on purpose and always tell it to answer
-in Brazilian Portuguese. A future English variant (issue 15) can add a sibling module with
-the same public names and select between them; language switching is NOT implemented here.
+in Brazilian Portuguese. The English sibling is `app/speech_en.py`; `app/speech.py` picks between
+them from the Brain's language setting.
 """
 
 from __future__ import annotations
@@ -312,3 +312,13 @@ def today_fallback_due_warning(due_count: int, today_iso: str) -> str:
 
 # Spoken fallback when the LLM is unreachable (shown/spoken in the chat error).
 FRIENDLY_LLM_ERROR = "Não consegui falar com o modelo agora. Verifique se a API local está rodando."
+
+
+# ---------------------------------------------------------------------------
+# Client-side phrases (served to the web Body through /api/lupin-language)
+# ---------------------------------------------------------------------------
+
+POMODORO_FOCUS_DONE = "Ciclo Pomodoro de foco concluído! Faça uma pausa."
+POMODORO_BREAK_DONE = "Pausa do Pomodoro finalizada! Hora de voltar ao foco."
+DIAG_TEST_BROWSER_TTS = "Olá! Teste de voz do navegador funcionando."
+DIAG_TEST_SERVER_TTS = "Olá! Teste de voz offline do servidor Mac."
