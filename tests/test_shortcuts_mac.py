@@ -56,7 +56,7 @@ def test_default_seed_and_find_replace(tmp_path: Path) -> None:
 
         find_replace = store.get_shortcut("find_replace")
         assert find_replace is not None
-        assert find_replace["title"] == "Pesquisar e Substituir"
+        assert find_replace["title"] == "Find and Replace"
         assert find_replace["category"] == "editing"
         assert find_replace["action_type"] == "keystroke"
         assert find_replace["payload"] == {"keys": "cmd+opt+f"}
@@ -188,7 +188,7 @@ def test_build_agent_shortcuts_prompt_respects_limit(tmp_path: Path) -> None:
         prompt = store.build_agent_shortcuts_prompt(running_apps=running_apps, max_chars=1800)
         assert len(prompt) <= 1800
         assert "[find_replace]" in prompt
-        assert "Pesquisar e Substituir" in prompt
+        assert "Find and Replace" in prompt
         assert "Google Chrome*" in prompt
         assert "Visual Studio Code" in prompt
 
@@ -496,3 +496,75 @@ def test_mac_status_and_media_omit_uninstalled_players(monkeypatch: pytest.Monke
     assert res_no_player["ok"] is True
     assert res_no_player["output"] == "no_player"
 
+
+
+def test_default_titles_are_english_and_triggers_bilingual() -> None:
+    """Seeds have English titles and keep every Portuguese phrase next to new English ones."""
+    from app.shortcuts import DEFAULT_SHORTCUTS, _LEGACY_PT_DEFAULTS
+
+    assert set(_LEGACY_PT_DEFAULTS) == {item["slug"] for item in DEFAULT_SHORTCUTS}
+    by_slug = {item["slug"]: item for item in DEFAULT_SHORTCUTS}
+    for slug, (_old_title, old_triggers) in _LEGACY_PT_DEFAULTS.items():
+        phrases = [p.strip() for p in by_slug[slug]["voice_triggers"].split(",")]
+        old = [p.strip() for p in old_triggers.split(",")]
+        assert all(p in phrases for p in old)
+        assert len(phrases) >= len(old) + 2 or len(phrases) >= 6, slug
+    assert by_slug["app_expose"]["title"] == "App Exposé"
+    assert by_slug["paste_plain"]["title"] == "Paste Without Formatting"
+    assert by_slug["space_left"]["title"] == "Space Left ⬅️"
+
+
+def test_voice_triggers_resolve_in_both_languages(tmp_path: Path) -> None:
+    """A Portuguese and an English phrase resolve to the same Shortcut."""
+    store = ShortcutStore(db_path=tmp_path / "bi.db")
+    try:
+        pt = store.find_by_trigger("colar sem formatação")
+        en = store.find_by_trigger("paste as plain text")
+        assert pt is not None and en is not None
+        assert pt["slug"] == en["slug"] == "paste_plain"
+    finally:
+        store.close()
+
+
+def test_legacy_migration_upgrades_untouched_rows_only(tmp_path: Path) -> None:
+    from app.shortcuts import DEFAULT_SHORTCUTS, _LEGACY_PT_DEFAULTS
+
+    db_file = tmp_path / "legacy.db"
+    store = ShortcutStore(db_path=db_file)
+    old_title, old_triggers = _LEGACY_PT_DEFAULTS["undo"]
+    store._conn.execute(
+        "UPDATE shortcuts SET title = ?, voice_triggers = ? WHERE slug = 'undo'",
+        (old_title, old_triggers),
+    )
+    store._conn.execute(
+        "UPDATE shortcuts SET title = 'My Redo', voice_triggers = ? WHERE slug = 'redo'",
+        (_LEGACY_PT_DEFAULTS["redo"][1],),
+    )
+    store._conn.execute(
+        "UPDATE shortcuts SET title = ?, voice_triggers = 'buscar agora' WHERE slug = 'find'",
+        (_LEGACY_PT_DEFAULTS["find"][0],),
+    )
+    store._conn.commit()
+    store.close()
+
+    store = ShortcutStore(db_path=db_file)
+    try:
+        defaults = {i["slug"]: i for i in DEFAULT_SHORTCUTS}
+        undo = store.get_shortcut("undo")
+        assert undo["title"] == "Undo"
+        assert undo["voice_triggers"] == defaults["undo"]["voice_triggers"]
+        redo = store.get_shortcut("redo")
+        assert redo["title"] == "My Redo"
+        assert redo["voice_triggers"] == _LEGACY_PT_DEFAULTS["redo"][1]
+        find = store.get_shortcut("find")
+        assert find["title"] == _LEGACY_PT_DEFAULTS["find"][0]
+        assert find["voice_triggers"] == "buscar agora"
+        snapshot = store.list_shortcuts()
+    finally:
+        store.close()
+
+    store = ShortcutStore(db_path=db_file)
+    try:
+        assert store.list_shortcuts() == snapshot
+    finally:
+        store.close()
