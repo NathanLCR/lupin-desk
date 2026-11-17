@@ -1,7 +1,7 @@
 /* ============================================================================
- * Estilos principais da interface web do Desk Assistant
- * Multiplataforma nativa: Anbernic RG406H (960x720 4:3), macOS Desktop e
- * iPhone (iOS Safari / PWA standalone com 100dvh e safe-area-inset-*).
+ * Main styles for the Desk Assistant web interface
+ * Natively cross-platform: Anbernic RG406H (960x720 4:3), macOS Desktop and
+ * iPhone (iOS Safari / standalone PWA with 100dvh and safe-area-inset-*).
  * ============================================================================ */
 
 :root {
@@ -102,7 +102,7 @@ textarea {
   background: var(--accent-cyan);
 }
 
-/* Palco central do rosto */
+/* Central face stage */
 .stage {
   position: fixed;
   inset: 0;
@@ -123,7 +123,7 @@ textarea {
   touch-action: none;
 }
 
-/* O pet permanece apenas na aba Pet */
+/* The pet stays only on the Pet tab */
 body.mode-dock .stage,
 body.settings-open .stage,
 body.mode-nathan .stage {
@@ -131,7 +131,7 @@ body.mode-nathan .stage {
   pointer-events: none;
 }
 
-/* Relógio OLED discreto e chip Pomodoro no modo Pet */
+/* Discreet OLED clock and Pomodoro chip in Pet Mode */
 .pet-clock {
   position: fixed;
   left: calc(18px + var(--safe-left));
@@ -201,7 +201,7 @@ body.settings-open .pet-ambient {
   display: none;
 }
 
-/* Botão discreto de Ajustes: único controle fixo fora do rodapé. O ponto mostra a conexão com o Brain. */
+/* Discreet Settings button: the only fixed control outside the footer. The dot shows the connection to the Brain. */
 .settings-fab {
   position: fixed;
   top: calc(10px + var(--safe-top));
@@ -311,7 +311,7 @@ body.settings-open .pet-ambient {
   color: #dffcff;
 }
 
-/* Lista de Ajustes: uma linha por item, texto à esquerda e controle à direita */
+/* Settings list: one row per item, text on the left and control on the right */
 .settings-list {
   list-style: none;
   margin: 0 0 12px;
@@ -356,7 +356,7 @@ body.settings-open .pet-ambient {
   margin-bottom: 12px;
 }
 
-/* Barra rápida de expressões e estados */
+/* Quick bar of expressions and states */
 .expressions-bar {
   padding: 12px 14px;
   border-radius: var(--radius-md);
@@ -407,7 +407,7 @@ body.settings-open .pet-ambient {
   font-weight: 600;
 }
 
-/* Banner de desbloqueio de áudio */
+/* Audio unlock banner */
 .audio-unlock-banner {
   position: fixed;
   top: calc(56px + var(--safe-top));
@@ -425,7 +425,7 @@ body.settings-open .pet-ambient {
   white-space: nowrap;
 }
 
-/* Toast discreto de ação executada */
+/* Discreet toast for an executed action */
 .action-toast {
   position: fixed;
   top: calc(58px + var(--safe-top));
@@ -449,7 +449,7 @@ body.settings-open .pet-ambient {
   color: #ffd0d0;
 }
 
-/* Painéis centrais dos modos Dock e Nathan OS e do painel de Ajustes */
+/* Central panels for the Dock and Nathan OS modes and the Settings panel */
 .workspace-panel {
   position: fixed;
   left: calc(12px + var(--safe-left));
@@ -513,7 +513,7 @@ body.mode-nathan .workspace-panel {
   color: var(--text-muted);
 }
 
-/* Modo 2: Dock Viva Compacta & Virtual Stream Deck */
+/* Mode 2: Compact Live Dock & Virtual Stream Deck */
 .dock-layout,
 .vsd-layout {
   display: flex;
@@ -692,7 +692,7 @@ body.mode-nathan .workspace-panel {
   font-weight: 600;
 }
 
-/* Grade de Teclas estilo Elgato Virtual Stream Deck */
+/* Elgato-style Virtual Stream Deck key grid */
 .shortcuts-grid,
 .vsd-grid {
   --vsd-key-min: 112px;
@@ -828,7 +828,7 @@ body.mode-nathan .workspace-panel {
   font-weight: 700;
 }
 
-/* Botão de edição e atalho técnico ficam ocultos no uso normal para manter visual limpo */
+/* The edit button and technical shortcut stay hidden in normal use to keep the look clean */
 .shortcut-edit-btn {
   display: none;
   position: absolute;
@@ -1019,7 +1019,7 @@ body.mode-nathan .workspace-panel {
   background: linear-gradient(90deg, #00c4ff, #2fe07a);
 }
 
-/* Modo 4: Diagnóstico */
+/* Mode 4: Diagnostics */
 .diagnostics-root {
   max-width: 1100px;
   margin: 0 auto;
@@ -1100,7 +1100,7 @@ body.mode-nathan .workspace-panel {
 }
 
 /* ============================================================================
-   Modo ✨ Skills do Pet
+   Mode ✨ Pet Skills
    ========================================================================== */
 
 .skills-root {
@@ -1374,7 +1374,7 @@ body.mode-nathan .workspace-panel {
   font-weight: 700;
 }
 
-/* Área inferior: aprovação + legenda + PTT + chat */
+/* Bottom area: approval + caption + PTT + chat */
 .bottom-dock {
   position: fixed;
   left: 50%;
@@ -1521,7 +1521,7 @@ body.mode-nathan .workspace-panel {
   flex-shrink: 0;
 }
 
-/* Modal CRUD de Atalhos */
+/* Shortcuts CRUD modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1782,7 +1782,7 @@ body.mode-nathan .workspace-panel {
   cursor: pointer;
 }
 
-/* Botões utilitários */
+/* Utility buttons */
 .btn-primary,
 .btn-secondary,
 .btn-danger-ghost,
@@ -1836,7 +1836,7 @@ body.mode-nathan .workspace-panel {
   color: #ffffff;
 }
 
-/* Gaveta lateral de memória */
+/* Memory side drawer */
 .memory-backdrop {
   position: fixed;
   inset: 0;
@@ -2045,7 +2045,7 @@ body.mode-nathan .workspace-panel {
   gap: 6px;
 }
 
-/* Evita que o painel de trabalho fique sob a conversa fixa. */
+/* Keeps the workspace panel from sitting under the fixed chat. */
 body:has(#caption-box:not(.is-empty):not(.is-hidden-by-user)) {
   --dock-clearance: 174px;
 }
@@ -2058,7 +2058,7 @@ body:has(#caption-box:not(.is-empty):not(.is-hidden-by-user)):has(#approval-bann
   --dock-clearance: 234px;
 }
 
-/* Responsividade RG406H (960x720) e iPhone retrato */
+/* RG406H (960x720) and iPhone portrait responsiveness */
 @media (max-width: 1024px) {
   input:not([type="checkbox"]):not([type="radio"]),
   select,
@@ -2122,7 +2122,7 @@ body:has(#caption-box:not(.is-empty):not(.is-hidden-by-user)):has(#approval-bann
   }
 }
 
-/* Modo Mini-Pet Flutuante Transparente (Electron) */
+/* Transparent Floating Mini-Pet Mode (Electron) */
 .mini-pet-controls,
 #mini-pet-help {
   display: none;
@@ -2326,7 +2326,7 @@ body.is-minipet #face-container {
   }
 }
 
-/* Dock: grade 3x3 de Pinned Shortcuts, páginas e canto com Lupin */
+/* Dock: 3x3 grid of Pinned Shortcuts, pages and a corner with Lupin */
 .dock-pages {
   height: 100%;
   max-width: 820px;
@@ -2411,7 +2411,7 @@ body.is-minipet #face-container {
   margin: 8px 0;
 }
 
-/* No Dock o conteúdo fica livre: legenda, PTT e texto saem do rodapé (o texto reabre ao tocar em "Falar com Lupin"). */
+/* In the Dock the content stays free: caption, PTT and text leave the footer (the text reopens when tapping "Talk to Lupin"). */
 body.mode-dock #caption-box,
 body.mode-dock #vad-status,
 body.mode-dock .chat-form {
@@ -2487,7 +2487,7 @@ body.mode-dock.dock-lupin-corner .dock-corner {
   visibility: hidden;
 }
 
-/* Lupin pequeno no canto: o mesmo rosto, encolhido, sem cobrir a grade. */
+/* Small Lupin in the corner: the same face, shrunk, without covering the grid. */
 body.mode-dock.dock-lupin-corner .stage {
   inset: auto;
   left: calc(12px + var(--safe-left));
@@ -2514,25 +2514,25 @@ body.mode-dock.dock-lupin-corner .pet-ambient {
   display: none;
 }
 
-/* Mini-pet fora do Active Body: some o desenho, fica só o botão. */
+/* Mini-pet outside the Active Body: the drawing disappears, only the button stays. */
 .mini-pet-talk {
   display: none;
 }
 
-body.is-minipet.lupin-em-outro-body .stage {
+body.is-minipet.lupin-in-other-body .stage {
   visibility: hidden;
 }
 
-body.is-minipet.lupin-em-outro-body .mini-pet-controls {
+body.is-minipet.lupin-in-other-body .mini-pet-controls {
   opacity: 1;
   pointer-events: auto;
 }
 
-body.is-minipet.lupin-em-outro-body .mini-pet-controls > :not(.mini-pet-talk) {
+body.is-minipet.lupin-in-other-body .mini-pet-controls > :not(.mini-pet-talk) {
   display: none;
 }
 
-body.is-minipet.lupin-em-outro-body .mini-pet-talk {
+body.is-minipet.lupin-in-other-body .mini-pet-talk {
   display: inline-flex;
   appearance: none;
   border: 0;

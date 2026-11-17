@@ -1,11 +1,11 @@
 /**
- * Controlador principal da interface web do Assistente de Mesa (/static/app.js).
- * Integra:
- * - 4 modos de tela (Pet Vivo, Dock & Atalhos do Mac, Smart Display, Diagnóstico)
- * - Rosto do Lupin em camadas (window.LupinFace) + Áudio Procedural (window.EmoAudio)
- * - Gamepad RG406H (window.DeskGamepad) + Diagnóstico (window.DeskDiagnostics)
- * - WebSocket (/ws) com streaming frase-a-frase, Push-to-Talk, barge-in e ações
- * - TTS híbrido (Browser speechSynthesis vs Servidor Mac via Brain)
+ * Main controller of the Desk Assistant web interface (/static/app.js).
+ * Integrates:
+ * - 4 screen modes (Live Pet, Dock & Mac Shortcuts, Smart Display, Diagnostics)
+ * - Lupin's layered face (window.LupinFace) + Procedural Audio (window.EmoAudio)
+ * - RG406H gamepad (window.DeskGamepad) + Diagnostics (window.DeskDiagnostics)
+ * - WebSocket (/ws) with sentence-by-sentence streaming, Push-to-Talk, barge-in and actions
+ * - Hybrid TTS (Browser speechSynthesis vs Mac server via the Brain)
  */
 (() => {
   'use strict';
@@ -33,7 +33,7 @@
         window.history.replaceState({}, '', url.toString());
       }
     } catch (_) {
-      // Ignora ambientes sem URL/localStorage
+      // Ignore environments without URL/localStorage
     }
   }
 
@@ -54,7 +54,7 @@
         window.localStorage.removeItem(DESK_TOKEN_STORAGE_KEY);
       }
     } catch (_) {
-      // Ignora
+      // Ignore
     }
   }
 
@@ -69,13 +69,13 @@
     overlay.id = 'desk-pairing-modal';
     overlay.className = 'modal-backdrop';
     overlay.innerHTML = `
-      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Pareamento do dispositivo">
-        <h3>🔐 Token de acesso</h3>
-        <p class="modal-hint">Informe o DESK_ACCESS_TOKEN exibido no terminal do Mac para conectar este dispositivo.</p>
-        <input id="desk-pairing-input" type="password" autocomplete="off" placeholder="Cole o token de acesso..." />
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Device pairing">
+        <h3>🔐 Access token</h3>
+        <p class="modal-hint">Enter the DESK_ACCESS_TOKEN shown in the Mac terminal to connect this device.</p>
+        <input id="desk-pairing-input" type="password" autocomplete="off" placeholder="Paste the access token..." />
         <div class="modal-actions">
-          <button id="desk-pairing-cancel" type="button" class="btn-secondary">Cancelar</button>
-          <button id="desk-pairing-save" type="button" class="btn-primary">Conectar</button>
+          <button id="desk-pairing-cancel" type="button" class="btn-secondary">Cancel</button>
+          <button id="desk-pairing-save" type="button" class="btn-primary">Connect</button>
         </div>
       </div>
     `;
@@ -172,38 +172,38 @@
 
   const FALLBACK_STATES = ['idle', 'listening', 'thinking', 'speaking', 'error'];
 
-  const EMOTION_LABELS_PT = {
-    neutral: 'neutro',
-    happy: 'feliz',
-    excited: 'animado',
-    curious: 'curioso',
-    skeptical: 'cético',
-    surprised: 'surpreso',
-    sad: 'triste',
-    wink: 'piscando',
-    love: 'carinhoso',
-    sleepy: 'sonolento',
-    angry: 'bravo',
-    dizzy: 'tonto',
+  const EMOTION_LABELS = {
+    neutral: 'neutral',
+    happy: 'happy',
+    excited: 'excited',
+    curious: 'curious',
+    skeptical: 'skeptical',
+    surprised: 'surprised',
+    sad: 'sad',
+    wink: 'winking',
+    love: 'affectionate',
+    sleepy: 'sleepy',
+    angry: 'angry',
+    dizzy: 'dizzy',
   };
 
-  const STATE_LABELS_PT = {
-    idle: 'ocioso',
-    listening: 'ouvindo',
-    thinking: 'pensando',
-    speaking: 'falando',
-    error: 'erro',
+  const STATE_LABELS = {
+    idle: 'idle',
+    listening: 'listening',
+    thinking: 'thinking',
+    speaking: 'speaking',
+    error: 'error',
   };
 
-  const CATEGORY_LABELS_PT = {
-    general: 'geral',
-    name: 'nome',
-    identity: 'identidade',
-    location: 'local',
-    preference: 'preferência',
-    routine: 'rotina',
-    personal: 'pessoal',
-    work: 'trabalho',
+  const CATEGORY_LABELS = {
+    general: 'general',
+    name: 'name',
+    identity: 'identity',
+    location: 'location',
+    preference: 'preference',
+    routine: 'routine',
+    personal: 'personal',
+    work: 'work',
   };
 
   const TYPING_IDLE_MS = 2500;
@@ -221,7 +221,7 @@
     captionVisible: 'desk_assistant_caption_visible',
   };
 
-  // WAV silencioso mínimo (~44 bytes) para destravar <audio> no iOS Safari no primeiro toque
+  // Minimal silent WAV (~44 bytes) to unlock <audio> on iOS Safari at the first tap
   const SILENT_WAV_DATA_URI =
     'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 
@@ -245,7 +245,7 @@
     stateChips: document.getElementById('state-chips'),
     audioUnlockBanner: document.getElementById('audio-unlock-banner'),
     actionToast: document.getElementById('action-toast'),
-    // Modo Dock & Atalhos
+    // Dock & Shortcuts mode
     modeDock: document.getElementById('mode-dock'),
     dockActiveApp: document.getElementById('dock-active-app'),
     btnRefreshApps: document.getElementById('btn-refresh-apps'),
@@ -259,7 +259,7 @@
     settingsDockNote: document.getElementById('settings-dock-note'),
     btnSettingsNewShortcut: document.getElementById('btn-settings-new-shortcut'),
     btnSettingsManageShortcuts: document.getElementById('btn-settings-manage-shortcuts'),
-    // Pomodoro e Tocando no Mac (faixa pequena no modo Pet)
+    // Pomodoro and Now Playing on the Mac (small strip in Pet Mode)
     pomodoroPhaseLabel: document.getElementById('pomodoro-phase-label'),
     pomodoroTimer: document.getElementById('pomodoro-timer'),
     btnPomoFocus: document.getElementById('btn-pomo-focus'),
@@ -271,14 +271,14 @@
     btnMediaPrev: document.getElementById('btn-media-prev'),
     btnMediaPlay: document.getElementById('btn-media-play'),
     btnMediaNext: document.getElementById('btn-media-next'),
-    // Ajustes (Skills e Diagnóstico)
+    // Settings (Skills and Diagnostics)
     modeNathanButton: document.getElementById('btn-mode-nathan'),
     brainAddress: document.getElementById('brain-address'),
     brainProvider: document.getElementById('brain-provider'),
     brainModel: document.getElementById('brain-model'),
-    consentAgenda: document.getElementById('btn-consent-agenda'),
+    consentCalendar: document.getElementById('btn-consent-calendar'),
     consentEmail: document.getElementById('btn-consent-email'),
-    consentAgendaLabel: document.getElementById('consent-agenda-label'),
+    consentCalendarLabel: document.getElementById('consent-calendar-label'),
     consentEmailLabel: document.getElementById('consent-email-label'),
     consentNote: document.getElementById('consent-note'),
     settingsShortcutsList: document.getElementById('settings-shortcuts-list'),
@@ -288,9 +288,9 @@
     settingsSubtabs: Array.from(document.querySelectorAll('.settings-subtab')),
     skillsRoot: document.getElementById('skills-root'),
     diagnosticsRoot: document.getElementById('diagnostics-root'),
-    // Modo Nathan OS (Electron)
+    // Nathan OS mode (Electron)
     modeNathan: document.getElementById('mode-nathan'),
-    // Dock inferior
+    // Bottom dock
     approvalBanner: document.getElementById('approval-banner'),
     approvalText: document.getElementById('approval-text'),
     btnApproveAction: document.getElementById('btn-approve-action'),
@@ -300,7 +300,7 @@
     chatForm: document.getElementById('chat-form'),
     btnPtt: document.getElementById('btn-ptt'),
     chatInput: document.getElementById('chat-input'),
-    // Modal CRUD Atalhos
+    // Shortcuts CRUD modal
     shortcutModalBackdrop: document.getElementById('shortcut-modal-backdrop'),
     shortcutModal: document.getElementById('shortcut-modal'),
     btnCloseShortcutModal: document.getElementById('btn-close-shortcut-modal'),
@@ -330,7 +330,7 @@
     btnScDelete: document.getElementById('btn-sc-delete'),
     btnScResetDefaults: document.getElementById('btn-sc-reset-defaults'),
     scManageList: document.getElementById('sc-manage-list'),
-    // Gaveta de Memória
+    // Memory drawer
     memoryBackdrop: document.getElementById('memory-backdrop'),
     memoryDrawer: document.getElementById('memory-drawer'),
     btnCloseMemory: document.getElementById('btn-close-memory'),
@@ -372,7 +372,7 @@
     ttsGeneration: 0,
     audioChunks: new Map(),
     activeBody: null,
-    // false quando o Lupin está em outro Body (ex.: ESP32): o aparelho vira só Dock.
+    // false when Lupin is in another Body (e.g. ESP32): the device becomes just a Dock.
     isLupinBody: true,
     mood: null,
     ttsCancelPlayback: null,
@@ -386,13 +386,13 @@
     facts: [],
     recentMessagesCount: 0,
     wakeLock: null,
-    // Dock & Atalhos
+    // Dock & Shortcuts
     macApps: [],
     shortcuts: [],
     dockPage: 0,
     isMac: false,
-    dataConsent: { agenda: false, email: false, receiver: '', can_edit: false },
-    // Fala no Dock: contagem de frases por turno e volta automática do Pet.
+    dataConsent: { calendar: false, email: false, receiver: '', can_edit: false },
+    // Speech in the Dock: sentence count per turn and automatic return to Pet.
     dockSentenceCount: 0,
     autoPetFromDock: false,
     dockReturnTimer: null,
@@ -411,7 +411,7 @@
     musicPlaying: false,
     settingsOpen: false,
     settingsTab: 'voice',
-    // Push-to-Talk & Aprovação
+    // Push-to-Talk & Approval
     ptt: {
       active: false,
       stream: null,
@@ -457,11 +457,11 @@
     try {
       window.localStorage.setItem(key, String(value));
     } catch {
-      // Ignora erro de armazenamento
+      // Ignore storage error
     }
   }
 
-  // Helpers seguros para LupinFace e EmoAudio
+  // Safe helpers for LupinFace and EmoAudio
   function faceApi() {
     return window.LupinFace || null;
   }
@@ -551,7 +551,7 @@
     }, durationMs);
   }
 
-  // Chips de expressão/estado
+  // Expression/state chips
   function buildExpressionChips() {
     const api = faceApi();
     const emotions =
@@ -569,7 +569,7 @@
       btn.type = 'button';
       btn.className = 'chip-btn';
       btn.dataset.value = emotion;
-      btn.textContent = `${emotion} (${EMOTION_LABELS_PT[emotion] || emotion})`;
+      btn.textContent = `${emotion} (${EMOTION_LABELS[emotion] || emotion})`;
       btn.addEventListener('click', () => applyFaceEmotion(emotion));
       els.emotionChips.appendChild(btn);
     });
@@ -580,7 +580,7 @@
       btn.type = 'button';
       btn.className = 'chip-btn';
       btn.dataset.value = st;
-      btn.textContent = `${st} (${STATE_LABELS_PT[st] || st})`;
+      btn.textContent = `${st} (${STATE_LABELS[st] || st})`;
       btn.addEventListener('click', () => applyFaceState(st));
       els.stateChips.appendChild(btn);
     });
@@ -588,11 +588,11 @@
     syncFaceBadges();
   }
 
-  // Alternador dos modos de tela
+  // Screen mode switcher
   function setMode(nextMode, { auto = false } = {}) {
     if (!MODES.includes(nextMode)) return;
     if (nextMode === 'pet' && !state.isLupinBody) return;
-    // Troca feita pelo usuário cancela a volta automática do Pet para o Dock.
+    // A switch made by the user cancels the automatic return from Pet to Dock.
     if (!auto) clearAutoPet();
     const previousMode = state.mode;
     state.mode = nextMode;
@@ -634,7 +634,7 @@
     }
   }
 
-  // Ajustes: Skills e Diagnóstico ficam num painel, não são modos de tela
+  // Settings: Skills and Diagnostics live in a panel, they are not screen modes
   function setSettingsOpen(open, tab) {
     if (!els.settingsPanel) return;
     if (tab) state.settingsTab = tab;
@@ -693,23 +693,23 @@
       if (els.brainProvider) els.brainProvider.textContent = (preset && preset.name) || active.provider_id || '—';
       if (els.brainModel) els.brainModel.textContent = active.model || '—';
     } catch {
-      // Ignora erro transitório; os campos ficam como estavam
+      // Ignore the transient error; the fields stay as they were
     }
   }
 
-  // Data Consent: quem recebe agenda e e-mails. No Mac liga/desliga; nos outros aparelhos só mostra.
+  // Data Consent: who receives the calendar and emails. On the Mac it can be toggled; on other devices it is read-only.
   function renderDataConsent() {
     const dc = state.dataConsent;
-    const receiver = dc.receiver || 'o provedor';
+    const receiver = dc.receiver || 'the provider';
     const rows = [
-      ['agenda', els.consentAgenda, els.consentAgendaLabel, 'sua agenda'],
-      ['email', els.consentEmail, els.consentEmailLabel, 'seus e-mails'],
+      ['calendar', els.consentCalendar, els.consentCalendarLabel, 'your calendar'],
+      ['email', els.consentEmail, els.consentEmailLabel, 'your emails'],
     ];
     for (const [key, btn, label, what] of rows) {
-      if (label) label.textContent = `Permitir que ${receiver} veja ${what}`;
+      if (label) label.textContent = `Let ${receiver} see ${what}`;
       if (!btn) continue;
       const on = Boolean(dc[key]);
-      btn.textContent = on ? 'Ligado' : 'Desligado';
+      btn.textContent = on ? 'On' : 'Off';
       btn.setAttribute('aria-checked', String(on));
       btn.classList.toggle('is-active', on);
       btn.disabled = !dc.can_edit;
@@ -723,14 +723,14 @@
       if (!res.ok) return;
       const data = await res.json();
       state.dataConsent = {
-        agenda: Boolean(data.agenda),
+        calendar: Boolean(data.calendar),
         email: Boolean(data.email),
         receiver: String(data.receiver || ''),
         can_edit: Boolean(data.can_edit),
       };
       renderDataConsent();
     } catch {
-      // Sem resposta: os interruptores ficam como estavam (somente leitura)
+      // No response: the switches stay as they were (read-only)
     }
   }
 
@@ -744,12 +744,12 @@
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        showToast(err.detail || 'Não foi possível alterar a permissão', { isError: true });
+        showToast(err.detail || 'Could not change the permission', { isError: true });
         return;
       }
       await fetchDataConsent();
     } catch {
-      showToast('Erro de rede ao alterar a permissão', { isError: true });
+      showToast('Network error while changing the permission', { isError: true });
     }
   }
 
@@ -761,7 +761,7 @@
       state.isMac = Boolean(data && data.is_mac);
       renderSettingsShortcuts();
     } catch {
-      // Sem resposta: este aparelho segue como somente leitura
+      // No response: this device stays read-only
     }
   }
 
@@ -775,29 +775,29 @@
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        showToast(err.detail || 'Erro ao fixar o atalho', { isError: true });
+        showToast(err.detail || 'Error pinning the shortcut', { isError: true });
         return;
       }
       await fetchShortcuts();
     } catch {
-      showToast('Erro de rede ao fixar o atalho', { isError: true });
+      showToast('Network error while pinning the shortcut', { isError: true });
     }
   }
 
-  // Ajustes > Dock: no Mac é o editor completo; nos outros aparelhos, só a lista.
+  // Settings > Dock: on the Mac it is the full editor; on other devices, just the list.
   function renderSettingsShortcuts() {
     if (els.settingsDockEditor) els.settingsDockEditor.classList.toggle('hidden', !state.isMac);
     if (els.settingsDockNote) {
       els.settingsDockNote.textContent = state.isMac
-        ? 'Escolha aqui quais Atalhos ficam fixados no Dock, a ordem e o que cada um faz.'
-        : 'Os Atalhos do Dock são criados e editados no Mac. Aqui você só vê a lista.';
+        ? 'Choose here which Shortcuts are pinned to the Dock, their order and what each one does.'
+        : 'Dock Shortcuts are created and edited on the Mac. Here you can only see the list.';
     }
     if (!els.settingsShortcutsList) return;
     els.settingsShortcutsList.textContent = '';
     if (!state.shortcuts.length) {
       const empty = document.createElement('li');
       empty.className = 'muted-note';
-      empty.textContent = 'Nenhum Atalho configurado no Mac.';
+      empty.textContent = 'No Shortcut configured on the Mac.';
       els.settingsShortcutsList.appendChild(empty);
       return;
     }
@@ -806,10 +806,10 @@
       const text = document.createElement('div');
       text.className = 'settings-item-text';
       const title = document.createElement('strong');
-      title.textContent = sc.title || sc.slug || 'Atalho';
+      title.textContent = sc.title || sc.slug || 'Shortcut';
       const hint = document.createElement('span');
       const pinned = sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0;
-      hint.textContent = [pinned ? 'Fixado' : '', formatShortcutBadge(sc)].filter(Boolean).join(' · ');
+      hint.textContent = [pinned ? 'Pinned' : '', formatShortcutBadge(sc)].filter(Boolean).join(' · ');
       text.appendChild(title);
       text.appendChild(hint);
       item.appendChild(text);
@@ -818,12 +818,12 @@
         pin.type = 'button';
         pin.className = 'hud-btn';
         pin.setAttribute('aria-pressed', String(pinned));
-        pin.textContent = pinned ? 'Desafixar' : 'Fixar';
+        pin.textContent = pinned ? 'Unpin' : 'Pin';
         pin.addEventListener('click', () => toggleShortcutPinned(sc));
         const edit = document.createElement('button');
         edit.type = 'button';
         edit.className = 'hud-btn';
-        edit.textContent = 'Editar';
+        edit.textContent = 'Edit';
         edit.addEventListener('click', () => openShortcutModal(sc));
         item.appendChild(pin);
         item.appendChild(edit);
@@ -845,7 +845,7 @@
     setMode(available[nextIdx]);
   }
 
-  // Legenda em streaming
+  // Streaming caption
   function setCaption(text, { isError = false } = {}) {
     const clean = (text || '').trim();
     els.captionText.textContent = clean;
@@ -860,10 +860,10 @@
     els.captionBox.classList.toggle('is-hidden-by-user', !state.captionVisible);
     els.btnCaption.classList.toggle('is-active', state.captionVisible);
     els.btnCaption.setAttribute('aria-pressed', String(state.captionVisible));
-    els.btnCaption.textContent = state.captionVisible ? 'Ligada' : 'Desligada';
+    els.btnCaption.textContent = state.captionVisible ? 'On' : 'Off';
   }
 
-  // Áudio Procedural + TTS Híbrido (Browser + Servidor Mac)
+  // Procedural Audio + Hybrid TTS (Browser + Mac server)
   function supportsSpeechSynthesis() {
     return typeof window !== 'undefined' && 'speechSynthesis' in window;
   }
@@ -910,14 +910,14 @@
       aud.unlock();
     }
 
-    // Destrava <audio> no iOS Safari com WAV silencioso no gesto do usuário
+    // Unlock <audio> on iOS Safari with a silent WAV on the user gesture
     if (els.serverTtsAudio) {
       try {
         els.serverTtsAudio.src = SILENT_WAV_DATA_URI;
         const p = els.serverTtsAudio.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch {
-        // Ignora bloqueio em ambiente headless
+        // Ignore the block in a headless environment
       }
     }
 
@@ -933,7 +933,7 @@
         }
         refreshVoices();
       } catch {
-        // Ignora bloqueio
+        // Ignore the block
       }
     }
   }
@@ -975,7 +975,7 @@
       state.speechStartGuardTimer = null;
     }
 
-    // Descarta chunks de áudio ainda incompletos do Brain
+    // Discard still-incomplete audio chunks from the Brain
     state.audioChunks.clear();
     const cancelPlayback = state.ttsCancelPlayback;
     state.ttsCancelPlayback = null;
@@ -986,7 +986,7 @@
         els.serverTtsAudio.pause();
         els.serverTtsAudio.currentTime = 0;
       } catch {
-        // Ignora erro
+        // Ignore error
       }
       if (state.serverAudioUrl) {
         URL.revokeObjectURL(state.serverAudioUrl);
@@ -998,7 +998,7 @@
       try {
         window.speechSynthesis.cancel();
       } catch {
-        // Ignora erro
+        // Ignore error
       }
     }
 
@@ -1012,7 +1012,7 @@
     if (!clean) return;
     if (!state.ttsEnabled && !forceMode) return;
     if (!state.isLupinBody) return;
-    // No modo servidor o áudio vem do Brain via evento `audio` (enqueueServerAudio)
+    // In server mode the audio comes from the Brain via the `audio` event (enqueueServerAudio)
     if ((forceMode || state.ttsMode) === 'server') return;
 
     state.ttsQueue.push({ text: clean, mode: forceMode || state.ttsMode });
@@ -1027,7 +1027,7 @@
     if (!state.ttsPlaying) pumpTtsQueue();
   }
 
-  // Remonta os chunks base64 de uma sentença e enfileira o áudio quando `last` chega
+  // Reassemble the base64 chunks of a sentence and queue the audio when `last` arrives
   function handleAudioChunk(msg) {
     if (!state.ttsEnabled || state.ttsMode !== 'server') return;
     if (typeof msg.data !== 'string') return;
@@ -1195,7 +1195,7 @@
         }
       });
     } catch {
-      // Silencia erro de reprodução do áudio do Brain
+      // Silence playback errors for the Brain's audio
     }
   }
 
@@ -1210,19 +1210,19 @@
 
   function syncTtsUI() {
     if (els.btnTts) {
-      els.btnTts.textContent = state.ttsEnabled ? 'Ligada' : 'Desligada';
+      els.btnTts.textContent = state.ttsEnabled ? 'On' : 'Off';
       els.btnTts.classList.toggle('is-active', state.ttsEnabled);
       els.btnTts.setAttribute('aria-pressed', String(state.ttsEnabled));
     }
 
     if (els.btnTtsMode) {
-      els.btnTtsMode.textContent = state.ttsMode === 'server' ? 'Mac' : 'Navegador';
+      els.btnTtsMode.textContent = state.ttsMode === 'server' ? 'Mac' : 'Browser';
       els.btnTtsMode.classList.toggle('is-active', state.ttsMode === 'server');
       els.btnTtsMode.setAttribute('aria-pressed', String(state.ttsMode === 'server'));
     }
 
     if (els.btnPetSounds) {
-      els.btnPetSounds.textContent = state.petSoundsEnabled ? 'Ligados' : 'Desligados';
+      els.btnPetSounds.textContent = state.petSoundsEnabled ? 'On' : 'Off';
       els.btnPetSounds.classList.toggle('is-active', state.petSoundsEnabled);
       els.btnPetSounds.setAttribute('aria-pressed', String(state.petSoundsEnabled));
     }
@@ -1230,8 +1230,8 @@
     const muted = !state.ttsEnabled && !state.petSoundsEnabled;
     if (els.miniPetMute) {
       const label = document.getElementById('mini-pet-mute-label') || els.miniPetMute;
-      label.textContent = muted ? 'Ativar som' : 'Silenciar';
-      els.miniPetMute.title = muted ? 'Ativar voz e sons do pet' : 'Silenciar voz e sons do pet';
+      label.textContent = muted ? 'Unmute' : 'Mute';
+      els.miniPetMute.title = muted ? "Unmute the pet's voice and sounds" : "Mute the pet's voice and sounds";
       els.miniPetMute.setAttribute('aria-label', els.miniPetMute.title);
       els.miniPetMute.classList.toggle('is-active', !muted);
       els.miniPetMute.setAttribute('aria-pressed', String(muted));
@@ -1304,8 +1304,8 @@
           if (api && typeof api.setState === 'function') api.setState(message.state);
           if (api && typeof api.setEmotion === 'function') api.setEmotion(message.emotion);
           if (api && typeof api.setMusicPlaying === 'function') api.setMusicPlaying(message.musicPlaying);
-          // Fora do Active Body o mini-pet esconde o desenho e mostra só "Falar com Lupin".
-          document.body.classList.toggle('lupin-em-outro-body', message.lupinBody === false);
+          // Outside the Active Body the mini-pet hides the drawing and shows only "Talk to Lupin".
+          document.body.classList.toggle('lupin-in-other-body', message.lupinBody === false);
           syncFaceBadges();
         } else if (!isMiniPet && message.type === 'request') {
           lastPublishedPetSnapshot = '';
@@ -1342,12 +1342,12 @@
     sendHello();
     showToast(
       state.ttsMode === 'server'
-        ? 'Voz alterada para Servidor Mac (Brain)'
-        : 'Voz alterada para Navegador (speechSynthesis)'
+        ? 'Voice changed to Mac server (Brain)'
+        : 'Voice changed to Browser (speechSynthesis)'
     );
   }
 
-  // Barge-in determinístico
+  // Deterministic barge-in
   function triggerBargeIn() {
     const api = faceApi();
     const currentFaceState = api && typeof api.getState === 'function' ? api.getState() : 'idle';
@@ -1365,7 +1365,7 @@
     }
   }
 
-  // Fala no Dock: Lupin pequeno no canto, texto em uma linha e volta automática do Pet.
+  // Speech in the Dock: small Lupin in the corner, one-line text and automatic return to Pet.
   const DOCK_STRIP_HIDE_MS = 4000;
   const DOCK_RETURN_MS = 5000;
   const DOCK_TALK_HOLD_MS = 280;
@@ -1379,7 +1379,7 @@
     }
   }
 
-  // Qualquer toque, tecla, botão do gamepad ou troca de modo cancela a volta automática.
+  // Any touch, key, gamepad button or mode switch cancels the automatic return.
   function noteUserInput() {
     clearAutoPet();
   }
@@ -1389,7 +1389,7 @@
     document.body.classList.toggle('dock-lupin-corner', inDock && state.isLupinBody);
     if (els.btnDockTalk) {
       els.btnDockTalk.classList.toggle('hidden', state.isLupinBody);
-      els.btnDockTalk.textContent = state.ptt.active ? '🔴 Ouvindo...' : 'Falar com Lupin';
+      els.btnDockTalk.textContent = state.ptt.active ? '🔴 Listening...' : 'Talk to Lupin';
     }
   }
 
@@ -1410,7 +1410,7 @@
       window.clearTimeout(state.dockReturnTimer);
       state.dockReturnTimer = null;
     }
-    // Só o Active Body, em Dock Mode, pode subir para o Pet por causa da fala.
+    // Only the Active Body, in Dock Mode, may go up to Pet because of speech.
     if (state.mode !== 'dock' || !state.isLupinBody) return;
     state.dockSentenceCount += 1;
     if ((msg && msg.first_wake) || state.dockSentenceCount > DOCK_MAX_SENTENCES) {
@@ -1438,7 +1438,7 @@
     }
   }
 
-  // Toque no Lupin pequeno do canto abre o Pet Mode.
+  // Tapping the small Lupin in the corner opens Pet Mode.
   function handleFaceTap() {
     if (state.mode === 'dock' && state.isLupinBody) {
       setMode('pet');
@@ -1453,7 +1453,7 @@
     if (next && els.chatInput && typeof els.chatInput.focus === 'function') els.chatInput.focus();
   }
 
-  // "Falar com Lupin": segurar grava o microfone, tocar abre o texto.
+  // "Talk to Lupin": holding records the microphone, tapping opens the text input.
   function dockTalkDown() {
     unlockAudio();
     if (state.dockTalk.holdTimer !== null) window.clearTimeout(state.dockTalk.holdTimer);
@@ -1501,7 +1501,7 @@
     if (state.reconnectTimer) return;
     const waitMs = state.reconnectDelayMs;
     state.reconnectDelayMs = Math.min(state.reconnectDelayMs * 1.5, WS_RECONNECT_MAX_MS);
-    setWsStatus('reconnecting', 'Reconectando...');
+    setWsStatus('reconnecting', 'Reconnecting...');
 
     state.reconnectTimer = window.setTimeout(() => {
       state.reconnectTimer = null;
@@ -1509,24 +1509,24 @@
     }, waitMs);
   }
 
-  // Handshake Brain↔Body (protocolo 1); `audio` só é anunciado no modo TTS do servidor
-  // O RG406H (Android) tem prioridade sobre navegadores comuns para ser o Active Body.
+  // Brain↔Body handshake (protocol 1); `audio` is only announced in server TTS mode
+  // The RG406H (Android) takes priority over regular browsers to be the Active Body.
   function detectBodyKind() {
     const ua = (typeof navigator !== 'undefined' && navigator && navigator.userAgent) || '';
     return window.AndroidBridge || /Android/i.test(ua) ? 'rg406h-web' : 'web';
   }
 
-  // Lupin vive em um Body por vez; fora dele o aparelho é só Dock (ADR 0001).
+  // Lupin lives in one Body at a time; outside it the device is just a Dock (ADR 0001).
   function applyActiveBody(msg) {
     state.activeBody = msg.active_body || null;
-    const ativo = msg.active !== false;
-    if (ativo === state.isLupinBody) return;
-    state.isLupinBody = ativo;
-    document.body.classList.toggle('lupin-em-outro-body', !ativo);
+    const isActive = msg.active !== false;
+    if (isActive === state.isLupinBody) return;
+    state.isLupinBody = isActive;
+    document.body.classList.toggle('lupin-in-other-body', !isActive);
     clearAutoPet();
     syncDockCorner();
     publishPetSnapshot();
-    if (!ativo) {
+    if (!isActive) {
       stopSpeaking();
       setMode('dock');
     } else if (state.mode === 'dock') {
@@ -1556,7 +1556,7 @@
     const wsUrl = token
       ? `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
       : `${protocol}//${window.location.host}/ws`;
-    setWsStatus('reconnecting', 'Conectando...');
+    setWsStatus('reconnecting', 'Connecting...');
 
     const ws = new WebSocket(wsUrl);
     state.ws = ws;
@@ -1564,7 +1564,7 @@
     ws.addEventListener('open', () => {
       state.wsConnected = true;
       state.reconnectDelayMs = WS_RECONNECT_BASE_MS;
-      setWsStatus('connected', 'Conectado');
+      setWsStatus('connected', 'Connected');
       sendHello();
       fetchMemory();
       const aud = audioApi();
@@ -1587,7 +1587,7 @@
       state.wsConnected = false;
       state.backendTurnActive = false;
       state.ws = null;
-      setWsStatus('disconnected', 'Desconectado');
+      setWsStatus('disconnected', 'Disconnected');
       if (event && event.code === 4401) {
         promptForPairingToken(() => connectWebSocket());
         return;
@@ -1596,7 +1596,7 @@
     });
 
     ws.addEventListener('error', () => {
-      setWsStatus('reconnecting', 'Erro na conexão');
+      setWsStatus('reconnecting', 'Connection error');
     });
   }
 
@@ -1703,7 +1703,7 @@
         state.backendTurnActive = false;
         stopSpeaking({ resetState: false });
         applyFaceState('error');
-        setCaption(msg.message || 'Ocorreu um erro ao processar sua mensagem.', {
+        setCaption(msg.message || 'An error occurred while processing your message.', {
           isError: true,
         });
         state.dockSentenceCount = 0;
@@ -1730,11 +1730,11 @@
     if (msg.kind === 'pet' && msg.ok && msg.target) {
       playPetTrick(msg.target);
     }
-    const label = msg.title || msg.target || msg.action || 'Ação executada';
+    const label = msg.title || msg.target || msg.action || 'Action executed';
     const ok = msg.ok !== false;
     const message = ok
       ? `⚡ ${label}`
-      : `⚠️ ${msg.message || msg.error || `Falha em ${label}`}`;
+      : `⚠️ ${msg.message || msg.error || `Failed: ${label}`}`;
     showToast(message, { isError: !ok });
 
     const target = String(msg.target || '').toLowerCase();
@@ -1760,7 +1760,7 @@
       return;
     }
 
-    els.approvalText.textContent = `Confirmar ação: ${approval.title}?`;
+    els.approvalText.textContent = `Confirm action: ${approval.title}?`;
     const diffEl = document.getElementById('approval-diff');
     if (diffEl) {
       diffEl.textContent = approval.diff;
@@ -1775,11 +1775,11 @@
     const approvalId = String(id);
     if (state.approvalQueue.some((approval) => approval.id === approvalId)) return;
 
-    const desc = msg.title || msg.description || msg.target || 'executar atalho no Mac';
+    const desc = msg.title || msg.description || msg.target || 'run a shortcut on the Mac';
     const approval = Object.freeze({
       id: approvalId,
       title: desc,
-      message: msg.message || `Confirmar escrita em ${msg.target || 'Cowork'}?`,
+      message: msg.message || `Confirm write to ${msg.target || 'Cowork'}?`,
       diff: msg.diff || '',
       risk: msg.risk || '',
       target: msg.target || '',
@@ -1826,19 +1826,19 @@
     triggerBargeIn();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      showToast('Microfone indisponível neste navegador/origem (use HTTPS ou localhost).', {
+      showToast('Microphone unavailable in this browser/origin (use HTTPS or localhost).', {
         isError: true,
       });
       return;
     }
     if (typeof window.MediaRecorder === 'undefined') {
-      showToast('Gravação MediaRecorder indisponível neste navegador.', { isError: true });
+      showToast('MediaRecorder recording is unavailable in this browser.', { isError: true });
       return;
     }
 
     state.ptt.active = true;
     els.btnPtt.classList.add('is-recording');
-    els.btnPtt.textContent = '🔴 Ouvindo...';
+    els.btnPtt.textContent = '🔴 Listening...';
     els.btnPtt.setAttribute('aria-pressed', 'true');
     applyFaceState('listening');
     syncDockCorner();
@@ -1880,7 +1880,7 @@
       if (stream) stream.getTracks().forEach((t) => t.stop());
       if (state.ptt.generation !== generation) return;
       cancelPttUI();
-      showToast(`Erro ao abrir microfone: ${err.message || err}`, { isError: true });
+      showToast(`Error opening microphone: ${err.message || err}`, { isError: true });
       applyFaceState('idle');
     }
   }
@@ -1888,7 +1888,7 @@
   function cancelPttUI() {
     state.ptt.active = false;
     els.btnPtt.classList.remove('is-recording');
-    els.btnPtt.textContent = '🎤 Segure para falar';
+    els.btnPtt.textContent = '🎤 Hold to talk';
     els.btnPtt.setAttribute('aria-pressed', 'false');
     syncDockCorner();
   }
@@ -1932,7 +1932,7 @@
       if (state.ptt.generation !== generation) return;
       state.streamingText = '';
       state.receivedSentenceStream = false;
-      setCaption('🎤 Transcrevendo...');
+      setCaption('🎤 Transcribing...');
       applyFaceState('thinking');
 
       const sent = sendWs({
@@ -1944,7 +1944,7 @@
         state.backendTurnActive = true;
       } else {
         applyFaceState('error');
-        setCaption('Sem conexão no momento. Tentando reconectar...', { isError: true });
+        setCaption('No connection right now. Trying to reconnect...', { isError: true });
       }
     } catch {
       if (state.ptt.generation === generation) applyFaceState('error');
@@ -1959,12 +1959,12 @@
         const commaIdx = result.indexOf(',');
         resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
       };
-      reader.onerror = () => reject(new Error('Falha ao ler áudio'));
+      reader.onerror = () => reject(new Error('Failed to read audio'));
       reader.readAsDataURL(blob);
     });
   }
 
-  // Digitação e envio de texto
+  // Typing and sending text
   function stopTypingSignal({ resetLook = true } = {}) {
     if (state.typingTimer) {
       window.clearTimeout(state.typingTimer);
@@ -2018,7 +2018,7 @@
     const sent = sendWs({ type: 'text', text: clean });
     if (!sent) {
       applyFaceState('error');
-      setCaption('Sem conexão no momento. Tentando reconectar...', { isError: true });
+      setCaption('No connection right now. Trying to reconnect...', { isError: true });
       return;
     }
     state.backendTurnActive = true;
@@ -2035,7 +2035,7 @@
     lookAtSafe(0, 0);
   }
 
-  // Interação direta de toque/carinho no rosto
+  // Direct touch/petting interaction on the face
   function computeNormalizedTouch(clientX, clientY) {
     const rect = els.faceContainer.getBoundingClientRect();
     if (!rect.width || !rect.height) return { nx: 0, ny: 0 };
@@ -2117,7 +2117,7 @@
     els.faceContainer.addEventListener('pointercancel', endTouch);
   }
 
-  // Dock Viva & Stream Deck de Atalhos
+  // Live Dock & Shortcuts Stream Deck
   async function fetchMacApps() {
     try {
       const res = await fetch('/api/mac/apps');
@@ -2127,19 +2127,19 @@
       state.macApps = apps;
       renderMacApps();
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
   function renderMacApps() {
     els.dockAppsGrid.textContent = '';
     const front = state.macApps.find((a) => a.frontmost || a.is_frontmost);
-    els.dockActiveApp.textContent = `Ativo: ${front ? front.name : '—'}`;
+    els.dockActiveApp.textContent = `Active: ${front ? front.name : '—'}`;
 
     if (state.macApps.length === 0) {
       const empty = document.createElement('span');
       empty.className = 'panel-pill';
-      empty.textContent = 'Nenhum app listado';
+      empty.textContent = 'No apps listed';
       els.dockAppsGrid.appendChild(empty);
       return;
     }
@@ -2180,16 +2180,16 @@
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok !== false) {
-        showToast(`🖥️ ${appName} em foco`);
+        showToast(`🖥️ ${appName} in focus`);
         applyFaceEmotion('happy');
         fetchMacApps();
       } else {
-        showToast(data.error || data.message || data.detail || `Erro ao ativar ${appName}`, {
+        showToast(data.error || data.message || data.detail || `Error activating ${appName}`, {
           isError: true,
         });
       }
     } catch {
-      showToast(`Erro de rede ao ativar ${appName}`, { isError: true });
+      showToast(`Network error while activating ${appName}`, { isError: true });
     }
   }
 
@@ -2205,7 +2205,7 @@
         renderShortcutManageList();
       }
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -2213,14 +2213,14 @@
     const p = sc.payload || {};
     if (sc.action_type === 'keystroke') return p.keys || '';
     if (sc.action_type === 'app_activate') return p.app || 'App';
-    if (sc.action_type === 'mac_command') return p.command || 'Comando';
-    if (sc.action_type === 'agent_prompt') return 'Assistente';
+    if (sc.action_type === 'mac_command') return p.command || 'Command';
+    if (sc.action_type === 'agent_prompt') return 'Assistant';
     return '';
   }
 
-  // Dock: grade 3x3 de Pinned Shortcuts, 9 por página. A última página lista os apps abertos.
+  // Dock: 3x3 grid of Pinned Shortcuts, 9 per page. The last page lists the open apps.
   const DOCK_PAGE_SIZE = 9;
-  const DOCK_EMPTY_TEXT = 'Nenhum atalho fixado. Escolha os atalhos no Mac.';
+  const DOCK_EMPTY_TEXT = 'No pinned shortcuts. Choose shortcuts on the Mac.';
 
   function pinnedShortcuts() {
     return state.shortcuts
@@ -2238,7 +2238,7 @@
     return Math.max(1, Math.ceil(pinnedShortcuts().length / DOCK_PAGE_SIZE));
   }
 
-  // Páginas de atalhos + 1 página final de "Apps abertos".
+  // Shortcut pages + 1 final "Open apps" page.
   function dockPageCount() {
     return shortcutPageCount() + 1;
   }
@@ -2271,7 +2271,7 @@
     }
     els.dockPageDots.setAttribute(
       'aria-label',
-      `Página ${state.dockPage + 1} de ${total}${state.dockPage === total - 1 ? ' (Apps abertos)' : ''}`
+      `Page ${state.dockPage + 1} of ${total}${state.dockPage === total - 1 ? ' (Open apps)' : ''}`
     );
   }
 
@@ -2303,7 +2303,7 @@
   }
 
   function buildShortcutTile(sc) {
-    const labelText = sc.title || sc.slug || 'Atalho';
+    const labelText = sc.title || sc.slug || 'Shortcut';
     const hintText = formatShortcutBadge(sc);
 
     const tile = document.createElement('div');
@@ -2365,7 +2365,7 @@
 
     if (sc.requires_confirmation || sc.action_type === 'agent_prompt') {
       if (!sendShortcutOverWs()) {
-        showToast('Sem conexão para solicitar a confirmação do atalho.', { isError: true });
+        showToast('No connection to request the shortcut confirmation.', { isError: true });
       }
       return;
     }
@@ -2390,7 +2390,7 @@
         const detailMessage =
           data.detail && typeof data.detail === 'object' ? data.detail.message : data.detail;
         showToast(
-          data.error || data.message || detailMessage || `Falha ao executar ${sc.title}`,
+          data.error || data.message || detailMessage || `Failed to run ${sc.title}`,
           {
             isError: true,
             durationMs: 4500,
@@ -2399,11 +2399,11 @@
         applyFaceEmotion('sad');
       }
     } catch {
-      showToast(`Erro de rede ao executar ${sc.title}`, { isError: true });
+      showToast(`Network error while running ${sc.title}`, { isError: true });
     }
   }
 
-  // Modal CRUD de Atalhos
+  // Shortcuts CRUD modal
   function updateShortcutPayloadVisibility() {
     const type = els.scActionType.value;
     els.scPayloadKeystroke.classList.toggle('hidden', type !== 'keystroke');
@@ -2436,7 +2436,7 @@
 
   function resetShortcutForm() {
     els.scId.value = '';
-    els.scFormHeading.textContent = 'Novo Atalho';
+    els.scFormHeading.textContent = 'New Shortcut';
     els.scTitle.value = '';
     els.scIcon.value = '⚡';
     els.scCategory.value = 'custom';
@@ -2457,7 +2457,7 @@
 
   function fillShortcutForm(sc) {
     els.scId.value = sc.id !== undefined ? String(sc.id) : sc.slug || '';
-    els.scFormHeading.textContent = `Editar: ${sc.title}`;
+    els.scFormHeading.textContent = `Edit: ${sc.title}`;
     els.scTitle.value = sc.title || '';
     els.scIcon.value = sc.icon || '⚡';
     els.scCategory.value = sc.category || 'custom';
@@ -2507,14 +2507,14 @@
     state.recordingShortcutKeys = !state.recordingShortcutKeys;
     els.btnRecordKeys.classList.toggle('is-active', state.recordingShortcutKeys);
     els.btnRecordKeys.textContent = state.recordingShortcutKeys
-      ? '🔴 Pressione a combinação...'
-      : '🎹 Gravar no Teclado';
+      ? '🔴 Press the combination...'
+      : '🎹 Record from Keyboard';
   }
 
   function stopRecordingKeys() {
     state.recordingShortcutKeys = false;
     els.btnRecordKeys.classList.remove('is-active');
-    els.btnRecordKeys.textContent = '🎹 Gravar no Teclado';
+    els.btnRecordKeys.textContent = '🎹 Record from Keyboard';
   }
 
   function normalizeRecordedKey(event) {
@@ -2576,14 +2576,14 @@
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        showToast(err.detail || 'Erro ao salvar atalho', { isError: true });
+        showToast(err.detail || 'Error saving shortcut', { isError: true });
         return;
       }
-      showToast(existingId ? '✓ Atalho atualizado' : '✓ Novo atalho criado');
+      showToast(existingId ? '✓ Shortcut updated' : '✓ New shortcut created');
       resetShortcutForm();
       await fetchShortcuts();
     } catch {
-      showToast('Erro de rede ao salvar atalho', { isError: true });
+      showToast('Network error while saving shortcut', { isError: true });
     }
   }
 
@@ -2594,13 +2594,13 @@
         method: 'DELETE',
       });
       if (!res.ok) return;
-      showToast('🗑️ Atalho removido');
+      showToast('🗑️ Shortcut removed');
       if (els.scId.value === String(idOrSlug)) {
         resetShortcutForm();
       }
       await fetchShortcuts();
     } catch {
-      showToast('Erro ao remover atalho', { isError: true });
+      showToast('Error removing shortcut', { isError: true });
     }
   }
 
@@ -2621,7 +2621,7 @@
         await fetchShortcuts();
       }
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -2629,11 +2629,11 @@
     try {
       const res = await fetch('/api/shortcuts/reset-defaults', { method: 'POST' });
       if (!res.ok) return;
-      showToast('↺ Atalhos restaurados para o padrão');
+      showToast('↺ Shortcuts restored to defaults');
       resetShortcutForm();
       await fetchShortcuts();
     } catch {
-      showToast('Erro ao restaurar atalhos', { isError: true });
+      showToast('Error restoring shortcuts', { isError: true });
     }
   }
 
@@ -2660,28 +2660,28 @@
       upBtn.type = 'button';
       upBtn.className = 'mini-icon-btn';
       upBtn.textContent = '↑';
-      upBtn.title = 'Subir';
+      upBtn.title = 'Move up';
       upBtn.addEventListener('click', () => moveShortcutOrder(index, -1));
 
       const downBtn = document.createElement('button');
       downBtn.type = 'button';
       downBtn.className = 'mini-icon-btn';
       downBtn.textContent = '↓';
-      downBtn.title = 'Descer';
+      downBtn.title = 'Move down';
       downBtn.addEventListener('click', () => moveShortcutOrder(index, 1));
 
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'mini-icon-btn';
       editBtn.textContent = '✏️';
-      editBtn.title = 'Editar';
+      editBtn.title = 'Edit';
       editBtn.addEventListener('click', () => fillShortcutForm(sc));
 
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'mini-icon-btn';
       delBtn.textContent = '🗑️';
-      delBtn.title = 'Remover';
+      delBtn.title = 'Remove';
       delBtn.addEventListener('click', () => deleteShortcutById(sc.id));
 
       btns.appendChild(upBtn);
@@ -2695,7 +2695,7 @@
     });
   }
 
-  // Pet Mode: relógio, Pomodoro e Tocando no Mac
+  // Pet Mode: clock, Pomodoro and Now Playing on the Mac
   function formatClockParts(date) {
     const hh = String(date.getHours()).padStart(2, '0');
     const mm = String(date.getMinutes()).padStart(2, '0');
@@ -2726,11 +2726,11 @@
     els.pomodoroTimer.textContent = label;
 
     if (!state.pomodoro.active) {
-      els.pomodoroPhaseLabel.textContent = 'Pronto';
+      els.pomodoroPhaseLabel.textContent = 'Ready';
     } else if (state.pomodoro.phase === 'break') {
-      els.pomodoroPhaseLabel.textContent = 'Pausa';
+      els.pomodoroPhaseLabel.textContent = 'Break';
     } else {
-      els.pomodoroPhaseLabel.textContent = 'Foco ativo';
+      els.pomodoroPhaseLabel.textContent = 'Focus active';
     }
     syncAccessoryForContext();
   }
@@ -2750,12 +2750,17 @@
         const aud = audioApi();
         if (aud && typeof aud.alert === 'function' && state.petSoundsEnabled) aud.alert();
         applyFaceEmotion('excited');
-        const msg =
+        // Lupin's spoken line stays in Brazilian Portuguese; the toast is UI text.
+        const spoken =
           endedPhase === 'break'
             ? 'Pausa do Pomodoro finalizada! Hora de voltar ao foco.'
             : 'Ciclo Pomodoro de foco concluído! Faça uma pausa.';
-        showToast(`🍅 ${msg}`, { durationMs: 5000 });
-        speakText(msg);
+        const toastText =
+          endedPhase === 'break'
+            ? 'Pomodoro break finished! Time to get back to focus.'
+            : 'Pomodoro focus cycle complete! Take a break.';
+        showToast(`🍅 ${toastText}`, { durationMs: 5000 });
+        speakText(spoken);
         return;
       }
       syncPomodoroUI();
@@ -2786,15 +2791,15 @@
       if (face && typeof face.setMusicPlaying === 'function') {
         face.setMusicPlaying(playing);
       }
-      els.nowPlayingState.textContent = playing ? 'Tocando' : 'Pausado';
-      els.nowPlayingTitle.textContent = np.track || np.title || 'Nenhuma mídia ativa';
+      els.nowPlayingState.textContent = playing ? 'Playing' : 'Paused';
+      els.nowPlayingTitle.textContent = np.track || np.title || 'No active media';
       els.nowPlayingArtist.textContent =
         [np.artist, np.app].filter(Boolean).join(' · ') || 'Spotify / Apple Music';
 
       syncAccessoryForContext();
       publishPetSnapshot();
     } catch {
-      // Silencia erro transitório
+      // Silence transient error
     }
   }
 
@@ -2805,18 +2810,18 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) {
-        showToast(data.error || data.message || data.detail || 'Falha no comando de mídia', {
+        showToast(data.error || data.message || data.detail || 'Media command failed', {
           isError: true,
           durationMs: 4000,
         });
       }
       window.setTimeout(fetchMacStatus, 450);
     } catch {
-      showToast('Erro de rede ao controlar mídia', { isError: true });
+      showToast('Network error while controlling media', { isError: true });
     }
   }
 
-  // Navegação por Gamepad D-Pad na Dock, Ajustes & Nathan OS
+  // Gamepad D-Pad navigation in the Dock, Settings & Nathan OS
   function getNavigableTiles() {
     if (state.pendingApprovalId) return getFocusableElements(els.approvalBanner);
     if (state.shortcutModalOpen) return getFocusableElements(els.shortcutModal);
@@ -2854,7 +2859,7 @@
     if (state.gamepadFocusIndex < 0) {
       state.gamepadFocusIndex = 0;
     } else if (inShortcutGrid && (direction === 'up' || direction === 'down')) {
-      // Grade 3x3: cima e baixo andam uma linha; nas bordas o foco fica onde está.
+      // 3x3 grid: up and down move one row; at the edges the focus stays where it is.
       const target = state.gamepadFocusIndex + step * 3;
       if (target >= 0 && target < items.length) state.gamepadFocusIndex = target;
     } else {
@@ -2882,7 +2887,7 @@
     }
   }
 
-  // Memória HTTP & Gaveta
+  // HTTP Memory & Drawer
   function renderMemoryState(facts, recentCount) {
     const safeFacts = Array.isArray(facts) ? facts : [];
     const safeCount = typeof recentCount === 'number' ? recentCount : 0;
@@ -2907,7 +2912,7 @@
       const catSpan = document.createElement('span');
       catSpan.className = 'fact-cat-tag';
       const catKey = item.category || 'general';
-      catSpan.textContent = CATEGORY_LABELS_PT[catKey] || catKey;
+      catSpan.textContent = CATEGORY_LABELS[catKey] || catKey;
 
       const textSpan = document.createElement('span');
       textSpan.className = 'fact-text';
@@ -2919,8 +2924,8 @@
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'fact-delete-btn';
-      delBtn.title = 'Remover este fato';
-      delBtn.setAttribute('aria-label', `Remover fato: ${item.fact || ''}`);
+      delBtn.title = 'Remove this fact';
+      delBtn.setAttribute('aria-label', `Remove fact: ${item.fact || ''}`);
       delBtn.textContent = '×';
       delBtn.addEventListener('click', () => deleteFact(item.id));
 
@@ -2937,7 +2942,7 @@
       const data = await res.json();
       renderMemoryState(data.facts, data.recent_messages_count);
     } catch {
-      // Falha silenciosa
+      // Silent failure
     }
   }
 
@@ -2957,7 +2962,7 @@
       els.factInput.value = '';
       await fetchMemory();
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -2970,7 +2975,7 @@
       if (!res.ok) return;
       await fetchMemory();
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -2985,9 +2990,9 @@
       const data = await res.json();
       renderMemoryState(data.facts, data.recent_messages_count);
       hideResetConfirmation();
-      setCaption(includeFacts ? 'Toda a memória foi resetada.' : 'Conversa atual limpa.');
+      setCaption(includeFacts ? 'All memory was reset.' : 'Current conversation cleared.');
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -3029,7 +3034,7 @@
     els.btnResetMemory.classList.remove('hidden');
   }
 
-  // Tela cheia & WakeLock
+  // Fullscreen & WakeLock
   async function requestWakeLock() {
     if (!('wakeLock' in navigator) || state.wakeLock) return;
     try {
@@ -3038,7 +3043,7 @@
         state.wakeLock = null;
       });
     } catch {
-      // Ignora erro de permissão
+      // Ignore permission error
     }
   }
 
@@ -3047,7 +3052,7 @@
     try {
       await state.wakeLock.release();
     } catch {
-      // Ignora erro
+      // Ignore error
     } finally {
       state.wakeLock = null;
     }
@@ -3063,12 +3068,12 @@
         await releaseWakeLock();
       }
     } catch {
-      // Ignora se fullscreen não for suportado
+      // Ignore if fullscreen is not supported
     }
   }
 
-  // Tela cheia automática: o navegador só aceita depois de um gesto do usuário, então
-  // pedimos uma vez no primeiro toque ou tecla. Se o usuário sair, não insistimos.
+  // Automatic fullscreen: the browser only accepts it after a user gesture, so
+  // we ask once on the first tap or key. If the user exits, we do not insist.
   function requestFullscreenOnce() {
     if (state.fullscreenRequested || document.fullscreenElement) return;
     state.fullscreenRequested = true;
@@ -3150,9 +3155,9 @@
 
   const SWIPE_MIN_VERTICAL_PX = 110;
 
-  // Deslize horizontal troca o Modo; vertical, no Dock, troca a página.
+  // Horizontal swipe switches the Mode; vertical, in the Dock, switches the page.
   function applySwipe(dx, dy, elapsedMs) {
-    if (elapsedMs > SWIPE_MAX_MS) return false; // arrastar devagar é carinho no rosto
+    if (elapsedMs > SWIPE_MAX_MS) return false; // dragging slowly is petting the face
     if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dy) <= SWIPE_MAX_OFF_AXIS_PX) {
       cycleHorizontally(dx < 0 ? 1 : -1);
       return true;
@@ -3197,7 +3202,7 @@
     );
   }
 
-  // Registro de eventos
+  // Event registration
   function bindEvents() {
     bindSwipe();
     ['pointerdown', 'touchstart', 'keydown'].forEach((evtName) => {
@@ -3216,7 +3221,7 @@
       );
     });
 
-    // Teclado no Mac: Gravador de atalhos, Escape (barge-in / fechar) e Espaço (PTT)
+    // Keyboard on the Mac: shortcut recorder, Escape (barge-in / close) and Space (PTT)
     document.addEventListener('keydown', (event) => {
 
       if (event.key === 'Tab' && trapDialogFocus(event)) return;
@@ -3278,7 +3283,7 @@
       }
     });
 
-    // Alternador dos 4 modos
+    // Switcher for the 4 modes
     if (els.btnSettings) {
       els.btnSettings.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
     }
@@ -3320,7 +3325,7 @@
 
     els.btnTtsMode.addEventListener('click', toggleTtsMode);
 
-    if (els.consentAgenda) els.consentAgenda.addEventListener('click', () => toggleDataConsent('agenda'));
+    if (els.consentCalendar) els.consentCalendar.addEventListener('click', () => toggleDataConsent('calendar'));
     if (els.consentEmail) els.consentEmail.addEventListener('click', () => toggleDataConsent('email'));
 
     els.btnCaption.addEventListener('click', () => {
@@ -3338,7 +3343,7 @@
       }
     });
 
-    // Push-to-Talk botão físico/toque
+    // Push-to-Talk physical button/touch
     els.btnPtt.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       startPtt();
@@ -3361,11 +3366,11 @@
       if (!state.typingActive) lookAtSafe(0, 0);
     });
 
-    // Aprovação rápida
+    // Quick approval
     els.btnApproveAction.addEventListener('click', () => resolveToolApproval(true));
     els.btnDenyAction.addEventListener('click', () => resolveToolApproval(false));
 
-    // Dock & Atalhos
+    // Dock & Shortcuts
     els.btnRefreshApps.addEventListener('click', fetchMacApps);
     if (els.btnSettingsNewShortcut) {
       els.btnSettingsNewShortcut.addEventListener('click', () => openShortcutModal(null));
@@ -3415,7 +3420,7 @@
     els.btnMediaPlay.addEventListener('click', () => triggerQuickMediaCommand('play_pause'));
     els.btnMediaNext.addEventListener('click', () => triggerQuickMediaCommand('next_track'));
 
-    // Memória
+    // Memory
     els.addFactForm.addEventListener('submit', addManualFact);
     els.btnClearChat.addEventListener('click', () => clearMemory({ includeFacts: false }));
     els.btnResetMemory.addEventListener('click', showResetConfirmation);
@@ -3434,7 +3439,7 @@
     const overlayOpen = () => state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen;
     const handlers = {
       onLook: (x, y) => lookAtSafe(x, y),
-      // No Dock, L2/R2 viram "página anterior/próxima"; fora dele seguem como Push-to-Talk.
+      // In the Dock, L2/R2 become "previous/next page"; outside it they remain Push-to-Talk.
       triggersAsPage: () => state.mode === 'dock' && !state.settingsOpen && !overlayOpen(),
       onPage: (dir) => pageDock(dir),
       onYPress: () => {
@@ -3457,7 +3462,7 @@
       onPttEnd: () => stopPttAndSend(),
       onModeCycle: (dir) => {
         if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen) return;
-        // Com os Ajustes abertos, L1/R1 trocam de seção; fora deles, de Modo.
+        // With Settings open, L1/R1 switch section; outside it, they switch Mode.
         if (state.settingsOpen) cycleSettingsTab(dir);
         else cycleMode(dir);
       },
@@ -3500,7 +3505,7 @@
         }
       },
     };
-    // Qualquer botão do gamepad conta como interação e cancela a volta automática do Pet.
+    // Any gamepad button counts as interaction and cancels the automatic return from Pet.
     Object.keys(handlers).forEach((name) => {
       if (name === 'onLook' || name === 'triggersAsPage') return;
       const original = handlers[name];

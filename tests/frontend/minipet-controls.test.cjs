@@ -161,7 +161,7 @@ function makeHarness({ mini = true, bridge = true } = {}) {
   };
 }
 
-test('mini-pet inicia só controles/hit-testing e não carrega módulos Cowork', () => {
+test('mini-pet starts only controls/hit-testing and does not load Cowork modules', () => {
   const harness = makeHarness();
 
   assert.equal(harness.body.classList.contains('is-minipet'), true);
@@ -171,7 +171,7 @@ test('mini-pet inicia só controles/hit-testing e não carrega módulos Cowork',
   assert.deepEqual(harness.calls.ignore, [true]);
 });
 
-test('hit-test acompanha o hitbox móvel e inclui a barra mesmo sem movimento', () => {
+test('hit-test follows the moving hitbox and includes the bar even without movement', () => {
   const harness = makeHarness();
   const controls = harness.elements['mini-pet-controls'];
 
@@ -196,7 +196,7 @@ test('hit-test acompanha o hitbox móvel e inclui a barra mesmo sem movimento', 
   assert.equal(harness.calls.ignore.at(-1), true);
 });
 
-test('foco da barra mantém controles visíveis e janela interativa sem ponteiro', () => {
+test('bar focus keeps controls visible and the window interactive without a pointer', () => {
   const harness = makeHarness();
   harness.document.activeElement = harness.elements['mini-pet-open'];
   harness.document.dispatch('focusin');
@@ -209,14 +209,14 @@ test('foco da barra mantém controles visíveis e janela interativa sem ponteiro
   assert.equal(harness.calls.ignore.at(-1), true);
 });
 
-test('arrastar termina no pointerup, cancel, perda de captura, blur e hide', () => {
+test('drag ends on pointerup, cancel, capture loss, blur and hide', () => {
   for (const ending of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur', 'hide']) {
     const harness = makeHarness();
     const drag = harness.elements['mini-pet-drag'];
     const down = drag.dispatch('pointerdown', { button: 0, isPrimary: true, pointerId: 7 });
 
-    assert.equal(down.defaultPrevented, true, `${ending}: pointerdown impedido`);
-    assert.equal(down.propagationStopped, true, `${ending}: pointerdown não propaga`);
+    assert.equal(down.defaultPrevented, true, `${ending}: pointerdown default prevented`);
+    assert.equal(down.propagationStopped, true, `${ending}: pointerdown does not propagate`);
     assert.deepEqual(drag.captureIds, [7]);
     assert.equal(harness.calls.begin, 1);
 
@@ -224,14 +224,14 @@ test('arrastar termina no pointerup, cancel, perda de captura, blur e hide', () 
     else if (ending === 'blur') harness.window.dispatch('blur');
     else drag.dispatch(ending);
 
-    assert.equal(harness.calls.end, 1, `${ending}: encerra o arraste uma vez`);
+    assert.equal(harness.calls.end, 1, `${ending}: ends the drag once`);
     if (ending === 'hide') assert.equal(harness.calls.hide, 1);
     drag.dispatch('lostpointercapture');
-    assert.equal(harness.calls.end, 1, `${ending}: evento posterior não duplica encerramento`);
+    assert.equal(harness.calls.end, 1, `${ending}: a later event does not duplicate the ending`);
   }
 });
 
-test('abrir, ocultar e mute não duplicam integração de app', () => {
+test('open, hide and mute do not duplicate app integration', () => {
   const harness = makeHarness();
   const openEvent = harness.elements['mini-pet-open'].dispatch('click');
   assert.equal(harness.calls.open, 1);
@@ -244,7 +244,7 @@ test('abrir, ocultar e mute não duplicam integração de app', () => {
   assert.equal(harness.calls.ignore.at(-1), true);
 });
 
-test('setas nudgem 10px ou 30px e Escape oculta o mini-pet', () => {
+test('arrow keys nudge 10px or 30px and Escape hides the mini-pet', () => {
   const harness = makeHarness();
   const dispatchKey = (key, values = {}) => harness.document.dispatch('keydown', {
     key,
@@ -269,7 +269,7 @@ test('setas nudgem 10px ou 30px e Escape oculta o mini-pet', () => {
   assert.equal(harness.intervalCallbacks.size, 0);
 });
 
-test('pausa hit-test e encerra arraste quando a página fica oculta', () => {
+test('pauses hit-test and ends drag when the page is hidden', () => {
   const harness = makeHarness();
   harness.elements['mini-pet-drag'].dispatch('pointerdown', { button: 0, isPrimary: true, pointerId: 2 });
   harness.document.hidden = true;
@@ -283,7 +283,7 @@ test('pausa hit-test e encerra arraste quando a página fica oculta', () => {
   assert.equal(harness.intervalCallbacks.size, 1);
 });
 
-test('mini-pet funciona em preview sem electronAPI', () => {
+test('mini-pet works in preview without electronAPI', () => {
   const harness = makeHarness({ bridge: false });
   harness.window.dispatch('pointermove', { clientX: 120, clientY: 120 });
   harness.elements['mini-pet-drag'].dispatch('pointerdown', { button: 0, isPrimary: true, pointerId: 1 });

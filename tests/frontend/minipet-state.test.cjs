@@ -168,7 +168,7 @@ const pref = {
   petSoundsEnabled: 'desk_assistant_pet_sounds_enabled',
 };
 
-test('mini-pet aplica o mute combinado e mantém estado acessível e PT-BR', () => {
+test('mini-pet applies the combined mute and keeps accessible state', () => {
   const harness = makeHarness({ href: 'http://localhost/?widget=minipet', elements: ['face-container', 'mini-pet-mute', 'btn-tts', 'btn-tts-mode', 'btn-pet-sounds'] });
   harness.app.init();
   const button = harness.elements.get('mini-pet-mute');
@@ -176,8 +176,8 @@ test('mini-pet aplica o mute combinado e mantém estado acessível e PT-BR', () 
   button.dispatch('click');
   assert.equal(harness.app.state.ttsEnabled, false);
   assert.equal(harness.app.state.petSoundsEnabled, false);
-  assert.equal(button.textContent, 'Ativar som');
-  assert.equal(button.title, 'Ativar som');
+  assert.equal(button.textContent, 'Unmute');
+  assert.equal(button.title, 'Unmute');
   assert.equal(button.getAttribute('aria-pressed'), 'true');
   assert.equal(harness.elements.get('btn-pet-sounds').getAttribute('aria-pressed'), 'false');
   assert.equal(harness.elements.get('btn-tts').getAttribute('aria-pressed'), 'false');
@@ -185,20 +185,20 @@ test('mini-pet aplica o mute combinado e mantém estado acessível e PT-BR', () 
   button.dispatch('click');
   assert.equal(harness.app.state.ttsEnabled, true);
   assert.equal(harness.app.state.petSoundsEnabled, true);
-  assert.equal(button.textContent, 'Silenciar');
-  assert.equal(button.title, 'Silenciar');
+  assert.equal(button.textContent, 'Mute');
+  assert.equal(button.title, 'Mute');
   assert.equal(button.getAttribute('aria-pressed'), 'false');
 
   harness.storage.set(pref.ttsEnabled, 'false');
   harness.storage.set(pref.petSoundsEnabled, 'false');
   harness.window.dispatchEvent({ type: 'storage', key: pref.ttsEnabled });
-  assert.equal(button.textContent, 'Ativar som');
+  assert.equal(button.textContent, 'Unmute');
   assert.equal(harness.elements.get('btn-pet-sounds').getAttribute('aria-pressed'), 'false');
-  assert.equal(harness.audio.muted, true, 'o widget não deve sintetizar áudio local');
+  assert.equal(harness.audio.muted, true, 'the widget must not synthesize local audio');
   assert.equal(harness.audio.chirps, 0);
 });
 
-test('storage sincroniza preferências e silencia fala e ronronar em andamento', () => {
+test('storage syncs preferences and silences ongoing speech and purring', () => {
   const harness = makeHarness({ elements: ['btn-tts', 'btn-tts-mode', 'btn-pet-sounds'] });
   harness.app.state.ttsPlaying = true;
   harness.storage.set(pref.ttsEnabled, 'false');
@@ -216,7 +216,7 @@ test('storage sincroniza preferências e silencia fala e ronronar em andamento',
   assert.equal(harness.elements.get('btn-pet-sounds').getAttribute('aria-pressed'), 'false');
 });
 
-test('mini-pet inicializa só face, áudio mudo, preferências, toque e sync; não abre serviços', () => {
+test('mini-pet initializes only face, muted audio, preferences, touch and sync; does not open services', () => {
   const harness = makeHarness({ href: 'http://localhost/?widget=minipet', elements: ['face-container', 'mini-pet-mute'] });
   harness.app.init();
 
@@ -229,7 +229,7 @@ test('mini-pet inicializa só face, áudio mudo, preferências, toque e sync; n�
   assert.equal(harness.app.state.ttsQueue.length, 0);
 });
 
-test('dashboard replica apenas snapshot visual; mini-pet não ecoa nem toca áudio duplicado', () => {
+test('dashboard mirrors only a visual snapshot; mini-pet neither echoes nor plays duplicate audio', () => {
   const bus = makeBroadcastBus();
   const dashboard = makeHarness({ bus });
   const widget = makeHarness({ href: 'http://localhost/?widget=minipet', bus, elements: ['face-container', 'mini-pet-mute'] });
@@ -246,7 +246,7 @@ test('dashboard replica apenas snapshot visual; mini-pet não ecoa nem toca áud
   assert.equal(widget.audio.chirps, 0);
   assert.equal(widget.app.state.ttsQueue.length, 0);
   assert.equal(widget.fetchCount, 0);
-  assert.equal(bus.messages.length, 3, 'widget envia pedido, mas não ecoa o snapshot recebido');
+  assert.equal(bus.messages.length, 3, 'widget sends a request but does not echo the received snapshot');
   assert.equal(bus.messages.filter(({ data }) => data.type === 'request').length, 1);
   assert.equal(bus.messages.filter(({ data }) => data.type === 'snapshot').length, 2);
 });

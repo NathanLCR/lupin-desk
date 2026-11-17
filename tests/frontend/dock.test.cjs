@@ -28,12 +28,12 @@ function setup({ shortcuts = makeShortcuts(11), active = true } = {}) {
 
 const runTimer = (harness, id) => {
   const cb = harness.timers.get(id);
-  assert.ok(cb, 'timer esperado');
+  assert.ok(cb, 'expected timer');
   harness.timers.delete(id);
   cb();
 };
 
-test('grade 3x3 pagina de 9 em 9 e a última página é Apps abertos', () => {
+test('3x3 grid paginates 9 at a time and the last page is Open apps', () => {
   const harness = setup();
   const { app, elements } = harness;
   app.renderDock();
@@ -45,12 +45,12 @@ test('grade 3x3 pagina de 9 em 9 e a última página é Apps abertos', () => {
   assert.ok(!elements.get('dock-apps-page').classList.contains('hidden'));
   assert.ok(elements.get('shortcuts-grid').classList.contains('hidden'));
   app.setDockPage(99);
-  assert.equal(app.state.dockPage, 2, 'não passa da última página');
+  assert.equal(app.state.dockPage, 2, 'does not go past the last page');
   app.setDockPage(-5);
   assert.equal(app.state.dockPage, 0);
 });
 
-test('só atalhos fixados entram na grade, ordenados por sort_order', () => {
+test('only pinned shortcuts enter the grid, ordered by sort_order', () => {
   const list = makeShortcuts(3);
   list[0].pinned_on_deck = 0;
   list[1].sort_order = 9;
@@ -62,16 +62,16 @@ test('só atalhos fixados entram na grade, ordenados por sort_order', () => {
   assert.ok(titles[0].startsWith('Atalho 3'));
 });
 
-test('sem atalhos fixados mostra a mensagem de estado vazio', () => {
+test('with no pinned shortcuts shows the empty-state message', () => {
   const harness = setup({ shortcuts: [] });
   harness.app.renderDock();
   const grid = harness.elements.get('shortcuts-grid');
   assert.equal(grid.children.length, 1);
-  assert.equal(grid.children[0].textContent, 'Nenhum atalho fixado. Escolha os atalhos no Mac.');
+  assert.equal(grid.children[0].textContent, 'No pinned shortcuts. Choose shortcuts on the Mac.');
   assert.equal(harness.app.dockPageCount(), 2);
 });
 
-test('L2/R2 mudam de página no Dock e L1/R1 mudam de Modo', () => {
+test('L2/R2 change page in the Dock and L1/R1 change Mode', () => {
   const harness = setup();
   const { app } = harness;
   let handlers;
@@ -85,10 +85,10 @@ test('L2/R2 mudam de página no Dock e L1/R1 mudam de Modo', () => {
   handlers.onModeCycle(1);
   assert.equal(app.state.mode, 'pet');
   assert.equal(app.state.dockPage, 0);
-  assert.equal(handlers.triggersAsPage(), false, 'fora do Dock os gatilhos continuam sendo Push-to-Talk');
+  assert.equal(handlers.triggersAsPage(), false, 'outside the Dock the triggers remain Push-to-Talk');
 });
 
-test('deslize vertical muda a página e o horizontal muda o Modo', () => {
+test('vertical swipe changes the page and horizontal changes the Mode', () => {
   const harness = setup();
   const { app } = harness;
   app.applySwipe(0, -200, 200);
@@ -99,28 +99,28 @@ test('deslize vertical muda a página e o horizontal muda o Modo', () => {
   assert.equal(app.state.mode, 'pet');
 });
 
-test('canto: Lupin pequeno no Active Body e "Falar com Lupin" nos outros', () => {
-  const ativo = setup({ active: true });
-  const a = ativo.app;
+test('corner: small Lupin in the Active Body and "Talk to Lupin" in the others', () => {
+  const active = setup({ active: true });
+  const a = active.app;
   a.syncDockCorner();
-  assert.ok(ativo.document.body.classList.contains('dock-lupin-corner'));
-  assert.ok(ativo.elements.get('btn-dock-talk').classList.contains('hidden'));
+  assert.ok(active.document.body.classList.contains('dock-lupin-corner'));
+  assert.ok(active.elements.get('btn-dock-talk').classList.contains('hidden'));
 
-  const outro = setup({ active: false });
-  outro.app.syncDockCorner();
-  assert.ok(!outro.document.body.classList.contains('dock-lupin-corner'));
-  const btn = outro.elements.get('btn-dock-talk');
+  const other = setup({ active: false });
+  other.app.syncDockCorner();
+  assert.ok(!other.document.body.classList.contains('dock-lupin-corner'));
+  const btn = other.elements.get('btn-dock-talk');
   assert.ok(!btn.classList.contains('hidden'));
-  assert.equal(btn.textContent, 'Falar com Lupin');
+  assert.equal(btn.textContent, 'Talk to Lupin');
 });
 
-test('tocar no Lupin pequeno abre o Pet Mode', () => {
+test('tapping the small Lupin opens Pet Mode', () => {
   const harness = setup();
   harness.app.handleFaceTap();
   assert.equal(harness.app.state.mode, 'pet');
 });
 
-test('"Falar com Lupin": toque abre o texto e segurar grava o microfone', async () => {
+test('"Talk to Lupin": tap opens the text input and holding records the microphone', async () => {
   const harness = setup({ active: false });
   const { app, elements, mediaRecorders } = harness;
   app.dockTalkDown();
@@ -141,7 +141,7 @@ function document_hasTextOpen(harness) {
   return harness.document.body.classList.contains('dock-text-open');
 }
 
-test('resposta curta fica no Dock com a fala em uma linha', () => {
+test('a short reply stays in the Dock with the speech on one line', () => {
   const harness = setup();
   const { app, elements } = harness;
   app.handleWsMessage({ type: 'sentence', text: 'Oi, tudo bem?' });
@@ -151,32 +151,32 @@ test('resposta curta fica no Dock com a fala em uma linha', () => {
   app.handleWsMessage({ type: 'done', text: 'Oi, tudo bem? Que bom te ver.' });
   assert.equal(app.state.mode, 'dock');
   assert.equal(app.state.dockSentenceCount, 0);
-  // a faixa some 4 s depois que a fala termina
+  // the strip disappears 4 s after the speech ends
   runTimer(harness, app.state.dockStripTimer);
   assert.equal(elements.get('dock-speech-strip').textContent, '');
 });
 
-test('a 3a frase vai para o Pet e volta ao Dock 5 s depois da fala', () => {
+test('the 3rd sentence goes to Pet and returns to the Dock 5 s after the speech', () => {
   const harness = setup();
   const { app } = harness;
   ['Um.', 'Dois.', 'Três.'].forEach((text) => app.handleWsMessage({ type: 'sentence', text }));
   assert.equal(app.state.mode, 'pet');
   assert.equal(app.state.autoPetFromDock, true);
   app.handleWsMessage({ type: 'done', text: 'Um. Dois. Três.' });
-  assert.equal(app.state.mode, 'pet', 'ainda não voltou');
+  assert.equal(app.state.mode, 'pet', 'has not returned yet');
   runTimer(harness, app.state.dockReturnTimer);
   assert.equal(app.state.mode, 'dock');
   assert.equal(app.state.autoPetFromDock, false);
 });
 
-test('First Wake vai para o Pet logo na primeira frase', () => {
+test('First Wake goes to Pet right on the first sentence', () => {
   const harness = setup();
   harness.app.handleWsMessage({ type: 'sentence', text: 'Bom dia!', first_wake: true });
   assert.equal(harness.app.state.mode, 'pet');
   assert.equal(harness.app.state.autoPetFromDock, true);
 });
 
-test('qualquer interação do usuário cancela a volta automática', () => {
+test('any user interaction cancels the automatic return', () => {
   const harness = setup();
   const { app } = harness;
   ['Um.', 'Dois.', 'Três.'].forEach((text) => app.handleWsMessage({ type: 'sentence', text }));
@@ -187,7 +187,7 @@ test('qualquer interação do usuário cancela a volta automática', () => {
   assert.equal(app.state.mode, 'pet');
 });
 
-test('quem foi ao Pet por conta própria não volta sozinho', () => {
+test('whoever went to Pet on their own does not return by themselves', () => {
   const harness = setup();
   const { app } = harness;
   app.setMode('pet');
@@ -198,7 +198,7 @@ test('quem foi ao Pet por conta própria não volta sozinho', () => {
   assert.equal(app.state.mode, 'pet');
 });
 
-test('mudar de modo manualmente também cancela a volta', () => {
+test('switching mode manually also cancels the return', () => {
   const harness = setup();
   const { app } = harness;
   ['Um.', 'Dois.', 'Três.'].forEach((text) => app.handleWsMessage({ type: 'sentence', text }));
@@ -206,7 +206,7 @@ test('mudar de modo manualmente também cancela a volta', () => {
   assert.equal(app.state.autoPetFromDock, false);
 });
 
-test('aparelho fora do Active Body só mostra texto, sem áudio nem troca de modo', () => {
+test('a device outside the Active Body only shows text, with no audio or mode switch', () => {
   const harness = setup({ active: false });
   const { app, elements } = harness;
   app.state.ttsMode = 'browser';
@@ -217,7 +217,7 @@ test('aparelho fora do Active Body só mostra texto, sem áudio nem troca de mod
   assert.equal(elements.get('dock-speech-strip').textContent, 'Quatro.');
 });
 
-test('lista nos Ajustes: só leitura fora do Mac, editor no Mac', () => {
+test('list in Settings: read-only off the Mac, editor on the Mac', () => {
   const harness = setup();
   const { app, elements } = harness;
   app.state.isMac = false;
@@ -228,7 +228,7 @@ test('lista nos Ajustes: só leitura fora do Mac, editor no Mac', () => {
   assert.ok(!elements.get('settings-dock-editor').classList.contains('hidden'));
 });
 
-test('a volta ao Dock só é agendada depois que a voz termina de tocar', () => {
+test('the return to the Dock is only scheduled after the voice finishes playing', () => {
   const harness = setup();
   const { app } = harness;
   ['Um.', 'Dois.', 'Três.'].forEach((text) => app.handleWsMessage({ type: 'sentence', text }));
@@ -240,25 +240,25 @@ test('a volta ao Dock só é agendada depois que a voz termina de tocar', () => 
   assert.notEqual(app.state.dockReturnTimer, null);
 });
 
-test('Data Consent: texto nomeia o receptor; editável só no Mac', () => {
+test('Data Consent: text names the receiver; editable only on the Mac', () => {
   const harness = setup();
   const { app, elements } = harness;
-  const agenda = harness.document.getElementById('btn-consent-agenda');
-  app.state.dataConsent = { agenda: true, email: false, receiver: 'Proxy Local (127.0.0.1:31415)', can_edit: false };
+  const calendar = harness.document.getElementById('btn-consent-calendar');
+  app.state.dataConsent = { calendar: true, email: false, receiver: 'Proxy Local (127.0.0.1:31415)', can_edit: false };
   app.renderDataConsent();
   assert.equal(
-    elements.get('consent-agenda-label').textContent,
-    'Permitir que Proxy Local (127.0.0.1:31415) veja sua agenda',
+    elements.get('consent-calendar-label').textContent,
+    'Let Proxy Local (127.0.0.1:31415) see your calendar',
   );
   assert.equal(
     elements.get('consent-email-label').textContent,
-    'Permitir que Proxy Local (127.0.0.1:31415) veja seus e-mails',
+    'Let Proxy Local (127.0.0.1:31415) see your emails',
   );
-  assert.equal(agenda.disabled, true);
-  assert.equal(agenda.textContent, 'Ligado');
+  assert.equal(calendar.disabled, true);
+  assert.equal(calendar.textContent, 'On');
   assert.ok(!elements.get('consent-note').classList.contains('hidden'));
   app.state.dataConsent.can_edit = true;
   app.renderDataConsent();
-  assert.equal(agenda.disabled, false);
+  assert.equal(calendar.disabled, false);
   assert.ok(elements.get('consent-note').classList.contains('hidden'));
 });

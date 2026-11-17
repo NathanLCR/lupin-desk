@@ -1,6 +1,6 @@
 /**
- * Rosto do Lupin (/static/lupin.css)
- * Palco 480x320 escalado pelo JS; camadas SVG empilhadas na mesma tela.
+ * Lupin face (/static/lupin.css)
+ * 480x320 stage scaled by JS; SVG layers stacked on the same screen.
  */
 .lupin-root {
   position: relative;
@@ -24,23 +24,23 @@
   transform-origin: center;
 }
 
-.lupin-respira,
-.lupin-grupo-cabeca,
-.lupin-camada {
+.lupin-breath,
+.lupin-head-group,
+.lupin-layer {
   position: absolute;
   inset: 0;
 }
 
-.lupin-respira {
+.lupin-breath {
   transform-origin: 240px 320px;
 }
 
-.lupin-grupo-cabeca {
+.lupin-head-group {
   transform-origin: 240px 270px;
 }
 
-.lupin-variante,
-.lupin-corpo {
+.lupin-variant,
+.lupin-body {
   position: absolute;
   inset: 0;
   width: 480px;
@@ -48,21 +48,21 @@
   pointer-events: none;
 }
 
-.lupin-variante[hidden],
-.lupin-corpo[hidden] {
+.lupin-variant[hidden],
+.lupin-body[hidden] {
   display: none;
 }
 
-/* Truque de corpo inteiro: o busto some enquanto os quadros do Truque rodam. */
-.lupin-corpo-inteiro .lupin-respira {
+/* Full-body Trick: the bust is hidden while the Trick frames play. */
+.lupin-full-body .lupin-breath {
   visibility: hidden;
 }
 
-.lupin-root[data-state="listening"] .lupin-grupo-cabeca {
+.lupin-root[data-state="listening"] .lupin-head-group {
   filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35));
 }
 
-.lupin-camada-colar {
+.lupin-layer-collar {
   transition: filter 120ms linear;
 }
 
@@ -71,14 +71,14 @@ body.is-minipet .lupin-root {
   background-color: transparent;
 }
 
-/* Efeitos dos Truques de busto (sing, meditate, celebrate) */
-.lupin-efeito {
+/* Effects for the bust Tricks (sing, meditate, celebrate) */
+.lupin-effect {
   position: absolute;
   display: block;
   pointer-events: none;
 }
 
-.lupin-efeito-notas {
+.lupin-effect-notes {
   left: calc(10% + var(--x) * 0.8%);
   bottom: 60%;
   width: 10px;
@@ -86,10 +86,10 @@ body.is-minipet .lupin-root {
   border-radius: 50%;
   background: #22d3ee;
   opacity: 0;
-  animation: lupin-sobe 2.4s ease-out calc(var(--i) * 0.35s) infinite;
+  animation: lupin-rise 2.4s ease-out calc(var(--i) * 0.35s) infinite;
 }
 
-.lupin-efeito-aneis {
+.lupin-effect-rings {
   left: 50%;
   top: 50%;
   width: 80px;
@@ -98,39 +98,39 @@ body.is-minipet .lupin-root {
   border: 2px solid #22d3ee;
   border-radius: 50%;
   opacity: 0;
-  animation: lupin-anel 2.4s ease-out calc(var(--i) * 0.6s) infinite;
+  animation: lupin-ring 2.4s ease-out calc(var(--i) * 0.6s) infinite;
 }
 
-.lupin-efeito-confete {
+.lupin-effect-confetti {
   left: calc(var(--x) * 1%);
   top: -8px;
   width: 7px;
   height: 12px;
   background: #22d3ee;
   opacity: 0;
-  animation: lupin-cai 1.8s ease-in calc(var(--i) * 0.07s) infinite;
+  animation: lupin-fall 1.8s ease-in calc(var(--i) * 0.07s) infinite;
 }
 
-.lupin-efeito-confete:nth-child(3n) { background: #f4f4f5; }
-.lupin-efeito-confete:nth-child(3n + 1) { background: #f9a8d4; }
+.lupin-effect-confetti:nth-child(3n) { background: #f4f4f5; }
+.lupin-effect-confetti:nth-child(3n + 1) { background: #f9a8d4; }
 
-@keyframes lupin-sobe {
+@keyframes lupin-rise {
   0% { transform: translateY(0); opacity: 0; }
   15% { opacity: 1; }
   100% { transform: translateY(-140px); opacity: 0; }
 }
 
-@keyframes lupin-anel {
+@keyframes lupin-ring {
   0% { transform: scale(0.6); opacity: 0.8; }
   100% { transform: scale(3.2); opacity: 0; }
 }
 
-@keyframes lupin-cai {
+@keyframes lupin-fall {
   0% { transform: translateY(0) rotate(0deg); opacity: 1; }
   100% { transform: translateY(340px) rotate(360deg); opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lupin-efeito { display: none; }
-  .lupin-camada-colar { transition: none; }
+  .lupin-effect { display: none; }
+  .lupin-layer-collar { transition: none; }
 }

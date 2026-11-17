@@ -1,7 +1,7 @@
 /**
- * Sintetizador de áudio procedural via Web Audio API (/static/audio_synth.js)
- * Gera o vocabulário sonoro emocional do pet (estilo Vector/Cozmo) 100% em tempo real,
- * sem arquivos MP3/WAV externos, expondo a API pública em window.EmoAudio.
+ * Procedural audio synthesizer via the Web Audio API (/static/audio_synth.js)
+ * Generates the pet's emotional sound vocabulary (Vector/Cozmo style) 100% in real time,
+ * with no external MP3/WAV files, exposing the public API on window.EmoAudio.
  */
 (function (global) {
   'use strict';
@@ -14,10 +14,10 @@
     initialized: false,
     unlocked: false,
 
-    // Envelopes ativos para sincronizar micro-pulsos nos olhos com AudioContext.currentTime
+    // Active envelopes, used to sync micro-pulses in the eyes with AudioContext.currentTime
     envelopes: [],
 
-    // Nós do ronronar contínuo (~60Hz com LFO)
+    // Nodes of the continuous purr (~60Hz with LFO)
     purr: {
       active: false,
       osc: null,
@@ -100,7 +100,7 @@
       internal.unlocked = true;
       return true;
     }
-    // Evita enfileirar bips antigos antes do primeiro gesto de desbloqueio
+    // Avoid queueing stale beeps before the first unlock gesture
     if (internal.unlocked && typeof ctx.resume === 'function') {
       ctx.resume().catch(() => {});
       return true;
@@ -115,7 +115,7 @@
     const rel = Math.max(0.02, releaseSec || 0.08);
     const amp = clamp(peak || 0.5, 0, 1);
 
-    // Limpa envelopes já encerrados para manter a lista enxuta
+    // Drop finished envelopes to keep the list small
     const cur = nowSec();
     internal.envelopes = internal.envelopes.filter(
       (env) => cur <= env.start + env.attack + env.hold + env.release + 0.05
@@ -130,7 +130,7 @@
   }
 
   /**
-   * Agenda um tom procedural com glide de frequência, filtro opcional e modulação FM.
+   * Schedules a procedural tone with frequency glide, optional filter and FM modulation.
    */
   function playTone(opts) {
     if (!canScheduleAudio()) {
@@ -161,7 +161,7 @@
       }
     }
 
-    // Modulação FM opcional para timbre robótico estilo Vector/Cozmo
+    // Optional FM modulation for a robotic Vector/Cozmo-style timbre
     let fmOsc = null;
     let fmGain = null;
     if (opts.fmFreq && opts.fmDepth) {
@@ -219,7 +219,7 @@
         if (fmOsc) fmOsc.disconnect();
         if (fmGain) fmGain.disconnect();
       } catch {
-        // Ignora desconexão redundante
+        // Ignore redundant disconnect
       }
     };
 
@@ -246,12 +246,12 @@
           node.stop();
         }
       } catch {
-        // Nó já parado
+        // Node already stopped
       }
       try {
         node.disconnect();
       } catch {
-        // Nó já desconectado
+        // Node already disconnected
       }
     });
     p.osc = null;
@@ -285,7 +285,7 @@
 
     cleanupPurrNodes();
 
-    // Oscilador principal ~60Hz com harmônico suave
+    // Main oscillator ~60Hz with a soft harmonic
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(60, t);
@@ -306,7 +306,7 @@
     baseGain.gain.setValueAtTime(0.0001, t);
     baseGain.gain.linearRampToValueAtTime(0.14, t + 0.22);
 
-    // LFO de vibração do ronronar (~22Hz) + LFO lento de respiração (~1.3Hz)
+    // Purr vibration LFO (~22Hz) + slow breathing LFO (~1.3Hz)
     const lfo = ctx.createOscillator();
     lfo.type = 'sine';
     lfo.frequency.setValueAtTime(22, t);
@@ -370,7 +370,7 @@
         p.baseGain.gain.setValueAtTime(Math.max(0.0001, p.baseGain.gain.value), t);
         p.baseGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
       } catch {
-        // Ignora erro ao encerrar rampa
+        // Ignore error when ending the ramp
       }
       p.cleanupTimer = setTimeout(() => {
         p.cleanupTimer = null;
@@ -383,7 +383,7 @@
     }
   }
 
-  // API pública window.EmoAudio
+  // Public API window.EmoAudio
   const EmoAudio = {
     init() {
       ensureContext();
@@ -427,20 +427,20 @@
     },
 
     /**
-     * Emite um chirp emocional procedural estilo Vector/Cozmo.
+     * Emits a procedural emotional chirp in the Vector/Cozmo style.
      */
     chirp(emotion) {
       const key = typeof emotion === 'string' ? emotion.toLowerCase() : 'neutral';
       switch (key) {
         case 'happy':
-          // Arpejo curto ascendente alegre
+          // Short, cheerful rising arpeggio
           playTone({ type: 'triangle', startFreq: 523, endFreq: 587, duration: 0.065, delay: 0, gain: 0.16, fmFreq: 18, fmDepth: 12 });
           playTone({ type: 'triangle', startFreq: 659, endFreq: 720, duration: 0.065, delay: 0.065, gain: 0.18, fmFreq: 20, fmDepth: 14 });
           playTone({ type: 'sine', startFreq: 784, endFreq: 932, duration: 0.11, delay: 0.13, gain: 0.2, fmFreq: 24, fmDepth: 16 });
           break;
 
         case 'excited':
-          // Arpejo rápido e brilhante em 4 notas
+          // Fast, bright 4-note arpeggio
           playTone({ type: 'triangle', startFreq: 587, endFreq: 640, duration: 0.055, delay: 0, gain: 0.17, fmFreq: 32, fmDepth: 18 });
           playTone({ type: 'triangle', startFreq: 740, endFreq: 790, duration: 0.055, delay: 0.052, gain: 0.19, fmFreq: 36, fmDepth: 22 });
           playTone({ type: 'sine', startFreq: 880, endFreq: 960, duration: 0.06, delay: 0.104, gain: 0.2, fmFreq: 42, fmDepth: 24 });
@@ -448,7 +448,7 @@
           break;
 
         case 'curious':
-          // Chirp ascendente característico 450Hz -> 950Hz
+          // Characteristic rising chirp 450Hz -> 950Hz
           playTone({
             type: 'triangle',
             startFreq: 450,
@@ -470,7 +470,7 @@
           break;
 
         case 'sad':
-          // Glide descendente suave
+          // Soft falling glide
           playTone({
             type: 'triangle',
             startFreq: 520,
@@ -483,7 +483,7 @@
           break;
 
         case 'sleepy':
-          // Suspiro grave filtrado descendente
+          // Low, filtered, falling sigh
           playTone({
             type: 'sine',
             startFreq: 310,
@@ -496,7 +496,7 @@
           break;
 
         case 'angry':
-          // Duplo bip grave metálico irritado
+          // Angry low metallic double beep
           playTone({
             type: 'sawtooth',
             startFreq: 230,
@@ -522,7 +522,7 @@
           break;
 
         case 'error':
-          // Dois bips metálicos curtos de alerta/erro
+          // Two short metallic alert/error beeps
           playTone({
             type: 'square',
             startFreq: 340,
@@ -548,7 +548,7 @@
           break;
 
         case 'love':
-          // Tom suave e acolhedor com harmônico quente
+          // Soft, welcoming tone with a warm harmonic
           playTone({
             type: 'sine',
             startFreq: 440,
@@ -571,7 +571,7 @@
           break;
 
         case 'surprised':
-          // Pop rápido agudo
+          // Quick high pop
           playTone({
             type: 'sine',
             startFreq: 510,
@@ -584,13 +584,13 @@
           break;
 
         case 'wink':
-          // Blip brincalhão de dois toques rápidos
+          // Playful two-tap quick blip
           playTone({ type: 'sine', startFreq: 660, endFreq: 740, duration: 0.048, delay: 0, gain: 0.15 });
           playTone({ type: 'sine', startFreq: 880, endFreq: 980, duration: 0.065, delay: 0.055, gain: 0.17 });
           break;
 
         case 'dizzy':
-          // Glide oscilante tonto
+          // Wobbling dizzy glide
           playTone({
             type: 'triangle',
             startFreq: 620,
@@ -614,7 +614,7 @@
           break;
 
         case 'skeptical':
-          // Inflexão curta interrogativa/cética
+          // Short questioning/skeptical inflection
           playTone({
             type: 'triangle',
             startFreq: 480,
@@ -649,7 +649,7 @@
     },
 
     /**
-     * Ativa ou encerra suavemente o ronronar (~60Hz com LFO) durante carinho.
+     * Starts or gently stops the purr (~60Hz with LFO) while being petted.
      */
     purr(active) {
       if (active) {
@@ -660,7 +660,7 @@
     },
 
     /**
-     * Clique tátil curto para toques e UI.
+     * Short tactile click for touches and UI.
      */
     click() {
       playTone({
@@ -675,7 +675,7 @@
     },
 
     /**
-     * Som curto de atenção/alerta limpo.
+     * Short, clean attention/alert sound.
      */
     alert() {
       playTone({
@@ -699,7 +699,7 @@
     },
 
     /**
-     * Som amigável de despertar do assistente.
+     * Friendly wake-up sound for the assistant.
      */
     wake() {
       playTone({ type: 'sine', startFreq: 440, endFreq: 494, duration: 0.07, delay: 0, gain: 0.14 });
@@ -708,7 +708,7 @@
     },
 
     /**
-     * Sequências sonoras procedurais para truques interativos do pet.
+     * Procedural sound sequences for the pet's interactive tricks.
      */
     playTrick(trickId) {
       const id = typeof trickId === 'string' ? trickId.toLowerCase() : '';
@@ -747,7 +747,7 @@
     },
 
     /**
-     * Retorna o nível atual (0..1) do envelope sonoro sincronizado com AudioContext.currentTime.
+     * Returns the current level (0..1) of the sound envelope, synced with AudioContext.currentTime.
      */
     getPulseLevel() {
       if (internal.muted) {

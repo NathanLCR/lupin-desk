@@ -102,7 +102,7 @@ function makeHarness({ displays, position, readError, writeError } = {}) {
   const fsMock = {
     readFileSync(filePath) {
       if (readError) throw readError;
-      if (!fsFiles.has(filePath)) throw new Error('Arquivo ausente');
+      if (!fsFiles.has(filePath)) throw new Error('File not found');
       return fsFiles.get(filePath);
     },
     writeFileSync(filePath, content) {
@@ -127,11 +127,11 @@ function makeHarness({ displays, position, readError, writeError } = {}) {
   };
   const mockRequire = (name) => {
     if (name === 'electron') return electron;
-    if (name === 'child_process') return { spawn() { throw new Error('sidecar não deve ser iniciado'); } };
+    if (name === 'child_process') return { spawn() { throw new Error('sidecar must not be started'); } };
     if (name === 'fs') return fsMock;
     if (name === 'http') return http;
     if (name === 'path') return path;
-    throw new Error(`Módulo inesperado: ${name}`);
+    throw new Error(`Unexpected module: ${name}`);
   };
   const context = {
     require: mockRequire,
@@ -163,21 +163,21 @@ function makeHarness({ displays, position, readError, writeError } = {}) {
   };
 }
 
-test('mini-pet usa 420×300 e se ajusta a uma área de trabalho pequena', async () => {
+test('mini-pet uses 420×300 and fits a small work area', async () => {
   const harness = makeHarness({ displays: [{ workArea: { x: -200, y: 60, width: 360, height: 240 } }] });
   await harness.ready();
 
   assert.deepEqual(harness.miniPet().getBounds(), { x: -200, y: 60, width: 360, height: 240 });
   assert.equal(harness.miniPet().url, 'http://127.0.0.1:8000/?widget=minipet');
-  const showItem = harness.trayTemplate().find((item) => item.label.startsWith('Mostrar Mini-Pet'));
+  const showItem = harness.trayTemplate().find((item) => item.label.startsWith('Show Mini-Pet'));
   assert.equal(showItem.accelerator, 'CommandOrControl+Shift+L');
   assert.equal(harness.shortcuts.has('CommandOrControl+Shift+Space'), true);
   showItem.click();
   assert.equal(harness.miniPet().focusCalls, 1);
 });
 
-test('posição salva é restaurada na tela conectada e limitada quando o monitor foi removido', async (t) => {
-  await t.test('restaura a posição na tela secundária conectada', async () => {
+test('saved position is restored on the connected display and clamped when the monitor was removed', async (t) => {
+  await t.test('restores the position on the connected secondary display', async () => {
     const harness = makeHarness({
       displays: [
         { workArea: { x: 0, y: 0, width: 1000, height: 800 } },
@@ -189,14 +189,14 @@ test('posição salva é restaurada na tela conectada e limitada quando o monito
     assert.deepEqual(harness.miniPet().getBounds(), { x: 1200, y: 250, width: 420, height: 300 });
   });
 
-  await t.test('usa a tela principal quando a coordenada salva não intersecta nenhuma tela', async () => {
+  await t.test('uses the primary display when the saved coordinate intersects no display', async () => {
     const harness = makeHarness({ position: { x: 5000, y: 5000 } });
     await harness.ready();
     assert.deepEqual(harness.miniPet().getBounds(), { x: 580, y: 500, width: 420, height: 300 });
   });
 });
 
-test('arraste nativo acompanha o cursor do sistema, encerra e persiste somente x/y', async () => {
+test('native drag follows the system cursor, ends and persists only x/y', async () => {
   const harness = makeHarness({ position: { x: 200, y: 150 } });
   await harness.ready();
   const win = harness.miniPet();
@@ -219,7 +219,7 @@ test('arraste nativo acompanha o cursor do sistema, encerra e persiste somente x
   assert.equal(harness.writes.at(-1).filePath, '/mock-user-data/minipet-position.json');
 });
 
-test('nudge aceita apenas deltas finitos limitados e respeita os limites da tela', async () => {
+test('nudge accepts only finite bounded deltas and respects display limits', async () => {
   const harness = makeHarness({ position: { x: 20, y: 30 } });
   await harness.ready();
   const win = harness.miniPet();
@@ -233,7 +233,7 @@ test('nudge aceita apenas deltas finitos limitados e respeita os limites da tela
   assert.equal(harness.writes.length, writeCount);
 });
 
-test('para o arraste em blur, ocultação idempotente e fechamento da janela', async () => {
+test('stops the drag on blur, idempotent hide and window close', async () => {
   const harness = makeHarness({ position: { x: 100, y: 100 } });
   await harness.ready();
   const win = harness.miniPet();
@@ -259,7 +259,7 @@ test('para o arraste em blur, ocultação idempotente e fechamento da janela', a
   assert.equal(closeTimer.cleared, true);
 });
 
-test('remetentes dashboard, iframe e remoto não podem mover nem ocultar o mini-pet', async () => {
+test('dashboard, iframe and remote senders cannot move or hide the mini-pet', async () => {
   const harness = makeHarness({ position: { x: 200, y: 200 } });
   await harness.ready();
   const win = harness.miniPet();
@@ -287,14 +287,14 @@ test('remetentes dashboard, iframe e remoto não podem mover nem ocultar o mini-
   assert.equal(harness.writes.length, 0);
 });
 
-test('falhas ao carregar ou gravar a posição não impedem abrir nem arrastar', async (t) => {
-  await t.test('arquivo inválido usa posição padrão', async () => {
+test('failures loading or saving the position do not prevent opening or dragging', async (t) => {
+  await t.test('invalid file uses the default position', async () => {
     const harness = makeHarness({ readError: new Error('leitura negada') });
     await harness.ready();
     assert.deepEqual(harness.miniPet().getBounds(), { x: 290, y: 500, width: 420, height: 300 });
   });
 
-  await t.test('falha de gravação é absorvida com segurança', async () => {
+  await t.test('write failure is absorbed safely', async () => {
     const harness = makeHarness({ position: { x: 200, y: 150 }, writeError: new Error('disco cheio') });
     await harness.ready();
     const win = harness.miniPet();
@@ -305,7 +305,7 @@ test('falhas ao carregar ou gravar a posição não impedem abrir nem arrastar',
   });
 });
 
-test('preload mantém a API existente e expõe os controles nativos do mini-pet', () => {
+test('preload keeps the existing API and exposes the native mini-pet controls', () => {
   let exposed;
   const sent = [];
   const listeners = [];
@@ -322,7 +322,7 @@ test('preload mantém a API existente e expõe os controles nativos do mini-pet'
   vm.runInNewContext(preloadSource, context, { filename: 'electron/preload.js' });
 
   for (const method of ['openDashboard', 'beginPetDrag', 'endPetDrag', 'nudgePet', 'hideMiniPet', 'setPetIgnoreMouse']) {
-    assert.equal(typeof exposed[method], 'function', `${method} deve estar exposto`);
+    assert.equal(typeof exposed[method], 'function', `${method} must be exposed`);
   }
   exposed.openDashboard();
   exposed.beginPetDrag();

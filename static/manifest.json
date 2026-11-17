@@ -1,14 +1,14 @@
 {
   "name": "Desk Assistant",
   "short_name": "EMO Desk",
-  "description": "Pet de mesa vivo com copiloto LLM, Dock Viva e Stream Deck do Mac",
+  "description": "Live desk pet with an LLM copilot, a live Dock and the Mac's Stream Deck",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "lang": "pt-BR",
+  "lang": "en",
   "icons": [
     {
       "src": "/static/icon.svg",

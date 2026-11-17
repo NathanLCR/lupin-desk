@@ -1,6 +1,6 @@
 /**
- * Painel de Skills do Pet (/static/skills.js -> window.DeskSkills)
- * Permite acionar truques interativos do pet e ativar/desativar pacotes de habilidades do agente.
+ * Pet Skills panel (/static/skills.js -> window.DeskSkills)
+ * Lets the user trigger the pet's interactive tricks and enable/disable agent skill packs.
  */
 (function (global) {
   'use strict';
@@ -26,11 +26,11 @@
       <div class="skills-layout">
         <section class="panel-card skills-section">
           <div class="panel-head">
-            <h2>🎭 Truques Interativos do Pet</h2>
-            <span class="diag-pill is-ok">${tricks.length} truques</span>
+            <h2>🎭 Pet Interactive Tricks</h2>
+            <span class="diag-pill is-ok">${tricks.length} tricks</span>
           </div>
           <p class="diag-hint">
-            Toque para o pet executar na hora, ou peça por voz/chat.
+            Tap to make the pet do it right away, or ask by voice/chat.
           </p>
           <div class="trick-grid">
             ${tricks
@@ -56,11 +56,11 @@
 
         <section class="panel-card skills-section">
           <div class="panel-head">
-            <h2>✨ Pacotes de Habilidades do Agente</h2>
-            <span class="diag-pill">${(cachedData.enabled_ids || []).length}/${packs.length} ativas</span>
+            <h2>✨ Agent Skill Packs</h2>
+            <span class="diag-pill">${(cachedData.enabled_ids || []).length}/${packs.length} active</span>
           </div>
           <p class="diag-hint">
-            Ative ou desative módulos de comportamento injetados no copiloto.
+            Enable or disable behavior modules injected into the copilot.
           </p>
           <div class="skills-grid">
             ${packs
@@ -78,9 +78,9 @@
                         data-skill-id="${escapeHtml(pack.id)}"
                         data-enabled="${pack.enabled ? 'true' : 'false'}"
                         aria-pressed="${pack.enabled ? 'true' : 'false'}"
-                        aria-label="${escapeHtml(pack.name)}: ${pack.enabled ? 'Ativa' : 'Inativa'}"
+                        aria-label="${escapeHtml(pack.name)}: ${pack.enabled ? 'Active' : 'Inactive'}"
                       >
-                        ${pack.enabled ? 'Ativa' : 'Inativa'}
+                        ${pack.enabled ? 'Active' : 'Inactive'}
                       </button>
                     </div>
                     <p class="skill-desc">${escapeHtml(pack.description)}</p>
@@ -114,7 +114,7 @@
       cachedData = await res.json();
       render();
     } catch {
-      // Mantém estado atual em caso de falha transitória
+      // Keep the current state on a transient failure
     }
   }
 
@@ -130,7 +130,7 @@
       cachedData = await res.json();
       render();
     } catch {
-      // Silencioso
+      // Silent
     }
   }
 
@@ -142,7 +142,7 @@
     try {
       await fetch(`/api/skills/tricks/${encodeURIComponent(trickId)}`, { method: 'POST' });
     } catch {
-      // Truque visual/sonoro já foi executado localmente
+      // The visual/sound trick already ran locally
     }
   }
 

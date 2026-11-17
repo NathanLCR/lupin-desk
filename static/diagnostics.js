@@ -1,8 +1,8 @@
 /**
- * Estúdio de Diagnóstico (/static/diagnostics.js -> window.DeskDiagnostics)
- * Verifica contexto seguro, lista microfones, mede nível em tempo real,
- * executa loopback de 3s, inspeciona vozes TTS (Browser vs Servidor Mac),
- * exibe Gamepad RG406H ao vivo e sensores de movimento (com iOS permission).
+ * Diagnostics Studio (/static/diagnostics.js -> window.DeskDiagnostics)
+ * Checks the secure context, lists microphones, measures level in real time,
+ * runs a 3s loopback, inspects TTS voices (Browser vs Mac server),
+ * shows the live RG406H gamepad and motion sensors (with iOS permission).
  */
 (function (global) {
   'use strict';
@@ -13,7 +13,7 @@
   let options = {};
   let active = false;
 
-  // Estado de microfone / WebAudio
+  // Microphone / WebAudio state
   let micStream = null;
   let audioCtx = null;
   let analyserNode = null;
@@ -25,12 +25,12 @@
   let micRequestId = 0;
   let micStarting = false;
 
-  // Estado de inspetor de Gamepad e sensores
+  // Gamepad inspector and sensors state
   let gamepadIntervalId = null;
   let motionBound = false;
   let lastMotion = { ax: 0, ay: 0, az: 0, alpha: 0, beta: 0, gamma: 0, supported: false };
 
-  // Estado do seletor de provedor e modelo LLM
+  // LLM provider and model selector state
   let llmPresets = [];
   let llmActive = null;
 
@@ -53,154 +53,154 @@
 
     containerEl.innerHTML = `
       <div class="diag-grid">
-        <!-- Card 1: Ambiente Seguro & Backend -->
+        <!-- Card 1: Secure Context & Backend -->
         <section class="diag-card">
           <div class="diag-card-head">
-            <h3>🔒 Contexto Seguro & Servidor</h3>
+            <h3>🔒 Secure Context & Server</h3>
             <span class="diag-pill ${isSecure ? 'is-ok' : 'is-err'}">
-              ${isSecure ? 'isSecureContext: OK' : 'Sem HTTPS/Localhost'}
+              ${isSecure ? 'isSecureContext: OK' : 'No HTTPS/Localhost'}
             </span>
           </div>
           <p class="diag-hint">
-            Origem atual: <code>${escapeHtml(originText)}</code>.
+            Current origin: <code>${escapeHtml(originText)}</code>.
             ${
               isSecure
-                ? 'Microfone, WakeLock e Gamepad liberados.'
-                : 'Microfone exige HTTPS (porta 8443) ou túnel ADB (http://localhost:8000).'
+                ? 'Microphone, WakeLock and Gamepad available.'
+                : 'The microphone requires HTTPS (port 8443) or an ADB tunnel (http://localhost:8000).'
             }
           </p>
           <div id="diag-server-info" class="diag-kv-list">
-            <div class="diag-kv"><span>Status API:</span><strong>Carregando...</strong></div>
+            <div class="diag-kv"><span>API status:</span><strong>Loading...</strong></div>
           </div>
           <button id="diag-btn-refresh-server" type="button" class="btn-secondary diag-btn-sm">
-            ↻ Atualizar Diagnóstico do Servidor
+            ↻ Refresh Server Diagnostics
           </button>
         </section>
 
-        <!-- Card 1b: Provedor & Modelo LLM -->
+        <!-- Card 1b: LLM Provider & Model -->
         <section class="diag-card">
           <div class="diag-card-head">
-            <h3>🧠 Provedor & Modelo LLM</h3>
-            <span id="diag-llm-key-badge" class="diag-pill">Carregando...</span>
+            <h3>🧠 LLM Provider & Model</h3>
+            <span id="diag-llm-key-badge" class="diag-pill">Loading...</span>
           </div>
-          <label class="diag-field-label" for="diag-llm-provider">Provedor (OpenAI-compat)</label>
-          <select id="diag-llm-provider" class="diag-select" aria-label="Selecionar provedor LLM">
-            <option value="local_proxy">Proxy Local</option>
+          <label class="diag-field-label" for="diag-llm-provider">Provider (OpenAI-compatible)</label>
+          <select id="diag-llm-provider" class="diag-select" aria-label="Select LLM provider">
+            <option value="local_proxy">Local Proxy</option>
           </select>
-          <label class="diag-field-label" for="diag-llm-base-url">URL Base</label>
+          <label class="diag-field-label" for="diag-llm-base-url">Base URL</label>
           <input
             id="diag-llm-base-url"
             type="url"
             class="diag-input"
             placeholder="http://127.0.0.1:31415/v1"
-            aria-label="URL base do provedor LLM"
+            aria-label="LLM provider base URL"
           />
-          <label class="diag-field-label" for="diag-llm-model-select">Modelo</label>
+          <label class="diag-field-label" for="diag-llm-model-select">Model</label>
           <div class="diag-row">
-            <select id="diag-llm-model-select" class="diag-select" aria-label="Selecionar modelo LLM">
-              <option value="">Carregando modelos...</option>
+            <select id="diag-llm-model-select" class="diag-select" aria-label="Select LLM model">
+              <option value="">Loading models...</option>
             </select>
-            <button id="diag-btn-fetch-models" type="button" class="btn-secondary diag-btn-sm" aria-label="Atualizar lista de modelos LLM">
-              ↻ Listar
+            <button id="diag-btn-fetch-models" type="button" class="btn-secondary diag-btn-sm" aria-label="Refresh LLM model list">
+              ↻ List
             </button>
           </div>
           <input
             id="diag-llm-model-custom"
             type="text"
             class="diag-input"
-            placeholder="Ou digite um ID de modelo manualmente"
-            aria-label="ID do modelo LLM"
+            placeholder="Or type a model ID manually"
+            aria-label="LLM model ID"
           />
           <div class="diag-btn-group">
             <button id="diag-btn-save-llm" type="button" class="btn-primary">
-              💾 Salvar & Aplicar
+              💾 Save & Apply
             </button>
           </div>
           <p id="diag-llm-status" class="diag-hint">
-            Chaves de API são lidas apenas do <code>.env</code> do servidor.
+            API keys are read only from the server's <code>.env</code>.
           </p>
         </section>
 
-        <!-- Card 2: Microfone & Loopback 3s -->
+        <!-- Card 2: Microphone & 3s Loopback -->
         <section class="diag-card">
           <div class="diag-card-head">
-            <h3>🎙️ Microfone & Loopback</h3>
-            <span id="diag-mic-badge" class="diag-pill">Parado</span>
+            <h3>🎙️ Microphone & Loopback</h3>
+            <span id="diag-mic-badge" class="diag-pill">Stopped</span>
           </div>
           <div class="diag-row">
-            <select id="diag-mic-select" class="diag-select" aria-label="Selecionar microfone">
-              <option value="">Microfone padrão do sistema</option>
+            <select id="diag-mic-select" class="diag-select" aria-label="Select microphone">
+              <option value="">System default microphone</option>
             </select>
-            <button id="diag-btn-list-mics" type="button" class="btn-secondary diag-btn-sm" aria-label="Atualizar lista de microfones">
-              ↻ Listar
+            <button id="diag-btn-list-mics" type="button" class="btn-secondary diag-btn-sm" aria-label="Refresh microphone list">
+              ↻ List
             </button>
           </div>
-          <div class="diag-meter-wrap" aria-label="Nível de entrada do microfone">
+          <div class="diag-meter-wrap" aria-label="Microphone input level">
             <div id="diag-mic-meter-fill" class="diag-meter-fill"></div>
           </div>
           <div class="diag-btn-group">
             <button id="diag-btn-mic-toggle" type="button" class="btn-secondary">
-              🎧 Monitorar Nível
+              🎧 Monitor Level
             </button>
             <button id="diag-btn-loopback" type="button" class="btn-primary">
-              ⏺️ Gravar 3s e reproduzir
+              ⏺️ Record 3s and play back
             </button>
           </div>
           <p id="diag-loopback-status" class="diag-hint">
-            Use o loopback para confirmar microfone interno, USB-C ou Bluetooth no RG406H/Mac/iPhone.
+            Use the loopback to confirm the built-in, USB-C or Bluetooth microphone on the RG406H/Mac/iPhone.
           </p>
           <audio id="diag-loopback-audio" class="diag-audio-player hidden" controls playsinline></audio>
         </section>
 
-        <!-- Card 3: Inspetor de Vozes TTS -->
+        <!-- Card 3: TTS Voice Inspector -->
         <section class="diag-card">
           <div class="diag-card-head">
-            <h3>🗣️ Vozes TTS (Híbrido)</h3>
+            <h3>🗣️ TTS Voices (Hybrid)</h3>
             <span id="diag-tts-mode-badge" class="diag-pill is-ok">Browser</span>
           </div>
           <div class="diag-btn-group">
             <button id="diag-btn-test-browser-tts" type="button" class="btn-secondary">
-              🔊 Testar Browser
+              🔊 Test Browser
             </button>
             <button id="diag-btn-test-server-tts" type="button" class="btn-primary">
-              🖥️ Testar Servidor Mac
+              🖥️ Test Mac Server
             </button>
           </div>
           <div class="diag-voices-columns">
             <div>
-              <div class="diag-sublabel">Navegador (speechSynthesis)</div>
+              <div class="diag-sublabel">Browser (speechSynthesis)</div>
               <ul id="diag-browser-voices" class="diag-mini-list"></ul>
             </div>
             <div>
-              <div class="diag-sublabel">Servidor Mac (/api/tts/voices)</div>
+              <div class="diag-sublabel">Mac server (/api/tts/voices)</div>
               <ul id="diag-server-voices" class="diag-mini-list"></ul>
             </div>
           </div>
         </section>
 
-        <!-- Card 4: Inspetor ao Vivo Gamepad RG406H -->
+        <!-- Card 4: Live RG406H Gamepad Inspector -->
         <section class="diag-card">
           <div class="diag-card-head">
-            <h3>🎮 Gamepad RG406H ao Vivo</h3>
-            <span id="diag-pad-status" class="diag-pill">Aguardando</span>
+            <h3>🎮 Live RG406H Gamepad</h3>
+            <span id="diag-pad-status" class="diag-pill">Waiting</span>
           </div>
-          <p id="diag-pad-id" class="diag-hint">Pressione qualquer botão ou mova o analógico no controle.</p>
+          <p id="diag-pad-id" class="diag-hint">Press any button or move the analog stick on the controller.</p>
           <div id="diag-pad-axes" class="diag-axes-grid"></div>
           <div id="diag-pad-buttons" class="diag-pad-buttons"></div>
-          <div id="diag-pad-last" class="diag-hint">Última ação: —</div>
+          <div id="diag-pad-last" class="diag-hint">Last action: —</div>
         </section>
 
-        <!-- Card 5: Giroscópio & Acelerômetro -->
+        <!-- Card 5: Gyroscope & Accelerometer -->
         <section class="diag-card diag-card-wide">
           <div class="diag-card-head">
-            <h3>🧭 Giroscópio & Acelerômetro</h3>
+            <h3>🧭 Gyroscope & Accelerometer</h3>
             <button id="diag-btn-motion-perm" type="button" class="btn-secondary diag-btn-sm">
-              📱 Ativar Sensores (iOS / Movimento)
+              📱 Enable Sensors (iOS / Motion)
             </button>
           </div>
           <div id="diag-motion-readout" class="diag-motion-grid">
-            <div class="diag-kv"><span>Orientação (α / β / γ):</span><strong id="diag-orient-val">0° / 0° / 0°</strong></div>
-            <div class="diag-kv"><span>Aceleração (X / Y / Z):</span><strong id="diag-accel-val">0.0 / 0.0 / 0.0</strong></div>
+            <div class="diag-kv"><span>Orientation (α / β / γ):</span><strong id="diag-orient-val">0° / 0° / 0°</strong></div>
+            <div class="diag-kv"><span>Acceleration (X / Y / Z):</span><strong id="diag-accel-val">0.0 / 0.0 / 0.0</strong></div>
           </div>
         </section>
       </div>
@@ -282,7 +282,7 @@
     try {
       const res = await fetch('/api/diagnostics');
       if (!res.ok) {
-        target.innerHTML = `<div class="diag-kv"><span>Erro HTTP:</span><strong>${res.status}</strong></div>`;
+        target.innerHTML = `<div class="diag-kv"><span>HTTP error:</span><strong>${res.status}</strong></div>`;
         return;
       }
       const data = await res.json();
@@ -290,16 +290,16 @@
       const ttsInfo = data.tts || {};
       const sttOk = Boolean(sttInfo.available ?? data.stt_available);
       const ttsOk = Boolean(ttsInfo.available ?? data.tts_available);
-      const engineName = sttInfo.engine || data.stt_engine || (sttOk ? 'ativo' : 'indisponível');
+      const engineName = sttInfo.engine || data.stt_engine || (sttOk ? 'active' : 'unavailable');
 
       target.innerHTML = `
-        <div class="diag-kv"><span>STT Local:</span><strong>${sttOk ? `Disponível (${escapeHtml(engineName)})` : 'Indisponível'}</strong></div>
-        <div class="diag-kv"><span>TTS Servidor Mac:</span><strong>${ttsOk ? 'Disponível (say + afconvert)' : 'Indisponível'}</strong></div>
-        <div class="diag-kv"><span>Modelo LLM:</span><strong>${escapeHtml(data.llm_model || data.model || '—')}</strong></div>
-        <div class="diag-kv"><span>Porta HTTPS:</span><strong>${escapeHtml(data.https_port || 8443)}</strong></div>
+        <div class="diag-kv"><span>Local STT:</span><strong>${sttOk ? `Available (${escapeHtml(engineName)})` : 'Unavailable'}</strong></div>
+        <div class="diag-kv"><span>Mac server TTS:</span><strong>${ttsOk ? 'Available (say + afconvert)' : 'Unavailable'}</strong></div>
+        <div class="diag-kv"><span>LLM model:</span><strong>${escapeHtml(data.llm_model || data.model || '—')}</strong></div>
+        <div class="diag-kv"><span>HTTPS port:</span><strong>${escapeHtml(data.https_port || 8443)}</strong></div>
       `;
     } catch {
-      target.innerHTML = '<div class="diag-kv"><span>Servidor:</span><strong>Offline / Reconectando</strong></div>';
+      target.innerHTML = '<div class="diag-kv"><span>Server:</span><strong>Offline / Reconnecting</strong></div>';
     }
   }
 
@@ -320,10 +320,10 @@
       badge.textContent = `🔑 ${envName} OK`;
     } else if (requiresKey) {
       badge.classList.add('is-err');
-      badge.textContent = `⚠️ Falta ${envName}`;
+      badge.textContent = `⚠️ Missing ${envName}`;
     } else {
       badge.classList.add('is-warn');
-      badge.textContent = `Sem chave (${envName})`;
+      badge.textContent = `No key (${envName})`;
     }
   }
 
@@ -341,7 +341,7 @@
     if (list.length === 0) {
       const opt = document.createElement('option');
       opt.value = '';
-      opt.textContent = 'Nenhum modelo listado — digite abaixo';
+      opt.textContent = 'No models listed — type one below';
       select.appendChild(opt);
     } else {
       list.forEach((modelId) => {
@@ -392,7 +392,7 @@
       await fetchLlmModels(false);
     } catch {
       if (statusEl) {
-        statusEl.textContent = 'Não foi possível carregar os provedores LLM do servidor.';
+        statusEl.textContent = 'Could not load the LLM providers from the server.';
       }
     }
   }
@@ -440,12 +440,12 @@
       if (showFeedback && statusEl) {
         statusEl.textContent =
           data.source === 'remote'
-            ? `✓ ${data.models.length} modelos carregados de /models.`
-            : `Usando lista sugerida (${data.error || 'endpoint /models indisponível'}).`;
+            ? `✓ ${data.models.length} models loaded from /models.`
+            : `Using suggested list (${data.error || '/models endpoint unavailable'}).`;
       }
     } catch (err) {
       if (showFeedback && statusEl) {
-        statusEl.textContent = `Erro ao listar modelos: ${err.message || err}`;
+        statusEl.textContent = `Error listing models: ${err.message || err}`;
       }
     } finally {
       if (btn) btn.disabled = false;
@@ -485,12 +485,12 @@
       llmActive = data.active || null;
       updateLlmKeyBadge(findPresetById(providerSelect.value), llmActive);
       if (statusEl && llmActive) {
-        statusEl.textContent = `✓ Aplicado e salvo: ${llmActive.model} (${llmActive.base_url}).`;
+        statusEl.textContent = `✓ Applied and saved: ${llmActive.model} (${llmActive.base_url}).`;
       }
       await fetchServerDiagnostics();
     } catch (err) {
       if (statusEl) {
-        statusEl.textContent = `Erro ao salvar provedor: ${err.message || err}`;
+        statusEl.textContent = `Error saving provider: ${err.message || err}`;
       }
     } finally {
       if (btn) btn.disabled = false;
@@ -522,7 +522,7 @@
       if (inputs.length === 0) {
         const opt = document.createElement('option');
         opt.value = '';
-        opt.textContent = 'Nenhum microfone detectado';
+        opt.textContent = 'No microphone detected';
         select.appendChild(opt);
         return;
       }
@@ -530,7 +530,7 @@
       inputs.forEach((dev, idx) => {
         const opt = document.createElement('option');
         opt.value = dev.deviceId || '';
-        opt.textContent = dev.label || `Microfone ${idx + 1}`;
+        opt.textContent = dev.label || `Microphone ${idx + 1}`;
         select.appendChild(opt);
       });
 
@@ -540,7 +540,7 @@
     } catch (err) {
       const status = qs('diag-loopback-status');
       if (active && requestId === micRequestId && status) {
-        status.textContent = `Permissão de microfone recusada ou bloqueada: ${err.message || err}. Verifique a permissão e tente novamente.`;
+        status.textContent = `Microphone permission denied or blocked: ${err.message || err}. Check the permission and try again.`;
       }
     }
   }
@@ -556,7 +556,7 @@
     const status = qs('diag-loopback-status');
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      if (status) status.textContent = 'API de microfone indisponível neste navegador/origem.';
+      if (status) status.textContent = 'Microphone API unavailable in this browser/origin.';
       micStarting = false;
       return false;
     }
@@ -593,14 +593,14 @@
       }
 
       if (badge) {
-        badge.textContent = 'Ouvindo';
+        badge.textContent = 'Listening';
         badge.classList.add('is-ok');
       }
-      if (toggleBtn) toggleBtn.textContent = '⏹️ Parar Monitor';
+      if (toggleBtn) toggleBtn.textContent = '⏹️ Stop Monitor';
       return true;
     } catch (err) {
       if (requestId === micRequestId && status) {
-        status.textContent = `Falha ao abrir microfone: ${err.message || err}. Verifique a permissão e tente novamente.`;
+        status.textContent = `Failed to open microphone: ${err.message || err}. Check the permission and try again.`;
       }
       if (requestId === micRequestId) stopMicMonitor();
       return false;
@@ -656,13 +656,13 @@
     if (fill) fill.style.width = '0%';
     const badge = qs('diag-mic-badge');
     if (badge) {
-      badge.textContent = 'Parado';
+      badge.textContent = 'Stopped';
       badge.classList.remove('is-ok');
     }
     const toggleBtn = qs('diag-btn-mic-toggle');
     if (toggleBtn) {
       toggleBtn.disabled = false;
-      toggleBtn.textContent = '🎧 Monitorar Nível';
+      toggleBtn.textContent = '🎧 Monitor Level';
     }
     const loopbackBtn = qs('diag-btn-loopback');
     if (loopbackBtn) loopbackBtn.disabled = false;
@@ -685,13 +685,13 @@
     const ok = await startMicMonitor();
     if (!ok || !micStream) return;
     if (typeof global.MediaRecorder === 'undefined') {
-      if (status) status.textContent = 'MediaRecorder não suportado neste navegador.';
+      if (status) status.textContent = 'MediaRecorder is not supported in this browser.';
       return;
     }
 
     loopbackRecording = true;
     if (btn) btn.disabled = true;
-    if (status) status.textContent = 'Gravando 3 segundos... fale próximo ao microfone!';
+    if (status) status.textContent = 'Recording 3 seconds... speak close to the microphone!';
 
     const chunks = [];
     const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
@@ -719,7 +719,7 @@
         audioEl.classList.remove('hidden');
         audioEl.play().catch(() => {});
       }
-      if (status) status.textContent = `Loopback pronto (${Math.round(blob.size / 1024)} KB). Reproduzindo...`;
+      if (status) status.textContent = `Loopback ready (${Math.round(blob.size / 1024)} KB). Playing back...`;
     };
 
     recorder.start();
@@ -737,7 +737,7 @@
 
     if (modeBadge && typeof options.getTtsMode === 'function') {
       const m = options.getTtsMode();
-      modeBadge.textContent = m === 'server' ? 'Servidor Mac' : 'Browser';
+      modeBadge.textContent = m === 'server' ? 'Mac server' : 'Browser';
     }
 
     if (browserList) {
@@ -747,7 +747,7 @@
         const ptVoices = voices.filter((v) => /^pt/i.test(v.lang));
         const shown = (ptVoices.length > 0 ? ptVoices : voices).slice(0, 8);
         if (shown.length === 0) {
-          browserList.innerHTML = '<li>Nenhuma voz listada ainda</li>';
+          browserList.innerHTML = '<li>No voices listed yet</li>';
         } else {
           shown.forEach((v) => {
             const li = document.createElement('li');
@@ -756,7 +756,7 @@
           });
         }
       } else {
-        browserList.innerHTML = '<li>speechSynthesis indisponível</li>';
+        browserList.innerHTML = '<li>speechSynthesis unavailable</li>';
       }
     }
 
@@ -764,25 +764,25 @@
       try {
         const res = await fetch('/api/tts/voices');
         if (!res.ok) {
-          serverList.innerHTML = '<li>Erro ao consultar /api/tts/voices</li>';
+          serverList.innerHTML = '<li>Error querying /api/tts/voices</li>';
           return;
         }
         const data = await res.json();
         const voices = Array.isArray(data) ? data : data.voices || [];
         serverList.innerHTML = '';
         if (voices.length === 0) {
-          serverList.innerHTML = '<li>Nenhuma voz do Mac encontrada</li>';
+          serverList.innerHTML = '<li>No Mac voices found</li>';
           return;
         }
         voices.slice(0, 8).forEach((v) => {
           const li = document.createElement('li');
-          const name = typeof v === 'string' ? v : v.name || v.voice || 'Voz';
+          const name = typeof v === 'string' ? v : v.name || v.voice || 'Voice';
           const lang = typeof v === 'object' && v.lang ? ` (${v.lang})` : '';
           li.textContent = `${name}${lang}`;
           serverList.appendChild(li);
         });
       } catch {
-        serverList.innerHTML = '<li>Servidor indisponível</li>';
+        serverList.innerHTML = '<li>Server unavailable</li>';
       }
     }
   }
@@ -797,16 +797,16 @@
     const lastEl = qs('diag-pad-last');
 
     if (statusEl) {
-      statusEl.textContent = snap.connected ? 'Conectado' : 'Desconectado';
+      statusEl.textContent = snap.connected ? 'Connected' : 'Disconnected';
       statusEl.classList.toggle('is-ok', snap.connected);
     }
     if (idEl) {
       idEl.textContent = snap.connected
         ? `${snap.id} (mapping: ${snap.mapping})`
-        : 'Pressione qualquer botão no controle RG406H para acordar a Gamepad API.';
+        : 'Press any button on the RG406H controller to wake the Gamepad API.';
     }
     if (lastEl) {
-      lastEl.textContent = `Última ação: ${snap.lastAction || '—'}`;
+      lastEl.textContent = `Last action: ${snap.lastAction || '—'}`;
     }
 
     if (axesEl) {
@@ -874,9 +874,9 @@
         await global.DeviceOrientationEvent.requestPermission();
       }
       bindMotionListeners();
-      if (btn) btn.textContent = '✓ Sensores Ativos';
+      if (btn) btn.textContent = '✓ Sensors Active';
     } catch {
-      if (btn) btn.textContent = '⚠️ Permissão Negada';
+      if (btn) btn.textContent = '⚠️ Permission Denied';
     }
   }
 

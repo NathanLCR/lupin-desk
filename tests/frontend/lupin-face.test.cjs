@@ -6,8 +6,8 @@ const vm = require('node:vm');
 
 const sourcePath = path.join(__dirname, '../../static/lupin.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
-const tabela = JSON.parse(
-  fs.readFileSync(path.join(__dirname, '../../static/lupin/expressoes.json'), 'utf8'),
+const table = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../../static/lupin/expressions.json'), 'utf8'),
 );
 
 class FakeElement {
@@ -58,7 +58,7 @@ function makeHarness({ reducedMotion = false } = {}) {
     matchMedia: () => motionQuery,
     requestAnimationFrame(cb) { const id = ++nextRaf; rafs.set(id, cb); return id; },
     cancelAnimationFrame(id) { rafs.delete(id); },
-    fetch: async () => ({ ok: true, json: async () => tabela }),
+    fetch: async () => ({ ok: true, json: async () => table }),
     EmoAudio: null,
     document: { createElement: (tag) => new FakeElement(tag), body: new FakeElement('body') },
   };
@@ -81,82 +81,82 @@ function makeHarness({ reducedMotion = false } = {}) {
     tick(ts) {
       now = ts;
       const frame = rafs.entries().next().value;
-      assert.ok(frame, 'um quadro de animação deve estar agendado');
+      assert.ok(frame, 'an animation frame must be scheduled');
       rafs.delete(frame[0]);
       frame[1](ts);
     },
     runTimers() {
-      const pendentes = [...timers.entries()];
+      const pending = [...timers.entries()];
       timers.clear();
-      pendentes.forEach(([, t]) => t.cb());
+      pending.forEach(([, t]) => t.cb());
     },
   };
 }
 
-async function iniciar(opts) {
+async function start(opts) {
   const h = makeHarness(opts);
   h.api.init(h.container);
   await new Promise((resolve) => setImmediate(resolve));
   return h;
 }
 
-function visiveis(h) {
+function visible(h) {
   const root = h.container.children[0];
-  const camadas = {};
-  const achar = (el) => {
-    if (el.dataset && el.dataset.camada) {
-      const ativa = el.children.filter((img) => !img.hidden);
-      camadas[el.dataset.camada] = ativa.map((img) => img.getAttribute('src').split('/').pop().replace('.svg', ''));
+  const layers = {};
+  const find = (el) => {
+    if (el.dataset && el.dataset.layer) {
+      const active = el.children.filter((img) => !img.hidden);
+      layers[el.dataset.layer] = active.map((img) => img.getAttribute('src').split('/').pop().replace('.svg', ''));
     }
-    el.children.forEach(achar);
+    el.children.forEach(find);
   };
-  achar(root);
-  return camadas;
+  find(root);
+  return layers;
 }
 
-test('a tabela cobre as 12 expressões e os 5 estados com variantes que existem', () => {
+test('the table covers the 12 expressions and 5 states with variants that exist', () => {
   const { api } = makeHarness();
   assert.equal(api.getSupportedEmotions().length, 12);
-  for (const emocao of api.getSupportedEmotions()) {
-    assert.ok(tabela.expressoes[emocao], `expressão ${emocao} sem linha na tabela`);
-    const r = api.resolverCamadas(tabela, { emocao, estado: 'idle', piscando: false, nivelAudio: 0 });
-    for (const [camada, variante] of Object.entries(r.camadas)) {
-      assert.ok(tabela.camadas[camada].includes(variante), `${emocao}: ${camada}/${variante} não existe`);
+  for (const emotion of api.getSupportedEmotions()) {
+    assert.ok(table.expressions[emotion], `expression ${emotion} has no row in the table`);
+    const r = api.resolveLayers(table, { emotion, state: 'idle', blinking: false, audioLevel: 0 });
+    for (const [layer, variant] of Object.entries(r.layers)) {
+      assert.ok(table.layers[layer].includes(variant), `${emotion}: ${layer}/${variant} does not exist`);
     }
   }
-  for (const estado of api.getSupportedStates()) {
-    assert.ok(tabela.estados[estado], `estado ${estado} sem linha na tabela`);
+  for (const state of api.getSupportedStates()) {
+    assert.ok(table.states[state], `state ${state} has no row in the table`);
   }
 });
 
-test('cada camada mostra uma única variante e a expressão troca a pose', async () => {
-  const h = await iniciar();
-  let v = visiveis(h);
-  assert.deepEqual(v.pose, ['neutro']);
+test('each layer shows a single variant and the expression switches the pose', async () => {
+  const h = await start();
+  let v = visible(h);
+  assert.deepEqual(v.pose, ['neutral']);
   h.api.setEmotion('love');
-  assert.deepEqual(visiveis(h).pose, ['apaixonado']);
+  assert.deepEqual(visible(h).pose, ['in-love']);
   h.api.setEmotion('angry');
-  v = visiveis(h);
-  assert.deepEqual(v.pose, ['bravo']);
+  v = visible(h);
+  assert.deepEqual(v.pose, ['angry']);
   for (const lista of Object.values(v)) assert.equal(lista.length, 1);
 });
 
-test('emoção temporária volta ao neutro depois do tempo', async () => {
-  const h = await iniciar();
+test('a temporary emotion returns to neutral after the timeout', async () => {
+  const h = await start();
   h.api.setEmotion('surprised', { durationMs: 900 });
   assert.equal(h.api.getEmotion(), 'surprised');
   h.runTimers();
   assert.equal(h.api.getEmotion(), 'neutral');
-  assert.deepEqual(visiveis(h).pose, ['neutro']);
+  assert.deepEqual(visible(h).pose, ['neutral']);
 });
 
-test('valores desconhecidos de estado e emoção são ignorados', async () => {
-  const h = await iniciar();
+test('unknown state and emotion values are ignored', async () => {
+  const h = await start();
   const aviso = console.warn;
   console.warn = () => {};
   try {
-    h.api.setEmotion('feliz-demais');
-    h.api.setState('voando');
+    h.api.setEmotion('too-happy');
+    h.api.setState('flying');
   } finally {
     console.warn = aviso;
   }
@@ -164,71 +164,71 @@ test('valores desconhecidos de estado e emoção são ignorados', async () => {
   assert.equal(h.api.getState(), 'idle');
 });
 
-test('falando acende a onda da coleira e abre a boca conforme o nível de áudio', async () => {
-  const h = await iniciar();
-  assert.deepEqual(visiveis(h).colar, ['apagado']);
+test('speaking lights the collar wave and opens the mouth according to the audio level', async () => {
+  const h = await start();
+  assert.deepEqual(visible(h).collar, ['off']);
   h.api.setState('speaking');
-  assert.deepEqual(visiveis(h).colar, ['aceso']);
+  assert.deepEqual(visible(h).collar, ['lit']);
   h.api.setAudioLevel(0.8);
   h.tick(100);
-  assert.deepEqual(visiveis(h).pose, ['feliz']);
+  assert.deepEqual(visible(h).pose, ['happy']);
   h.api.setAudioLevel(0.02);
   h.tick(300);
-  assert.deepEqual(visiveis(h).pose, ['neutro']);
+  assert.deepEqual(visible(h).pose, ['neutral']);
   h.api.setState('idle');
-  assert.deepEqual(visiveis(h).colar, ['apagado']);
+  assert.deepEqual(visible(h).collar, ['off']);
 });
 
-test('piscar usa a pose de olhos fechados quando a tabela tiver uma', () => {
+test('blink uses the closed-eyes pose when the table has one', () => {
   const { api } = makeHarness();
-  const t = JSON.parse(JSON.stringify(tabela));
-  t.piscada = { neutro: 'sonolento' };
-  const r = api.resolverCamadas(t, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
-  assert.equal(r.camadas.pose, 'sonolento');
-  t.piscada = {};
-  const sem = api.resolverCamadas(t, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
-  assert.equal(sem.camadas.pose, 'neutro');
-  const real = api.resolverCamadas(tabela, { emocao: 'neutral', estado: 'idle', piscando: true, nivelAudio: 0 });
-  assert.equal(real.camadas.pose, 'piscar');
+  const t = JSON.parse(JSON.stringify(table));
+  t.blink = { neutral: 'sleepy' };
+  const r = api.resolveLayers(t, { emotion: 'neutral', state: 'idle', blinking: true, audioLevel: 0 });
+  assert.equal(r.layers.pose, 'sleepy');
+  t.blink = {};
+  const sem = api.resolveLayers(t, { emotion: 'neutral', state: 'idle', blinking: true, audioLevel: 0 });
+  assert.equal(sem.layers.pose, 'neutral');
+  const real = api.resolveLayers(table, { emotion: 'neutral', state: 'idle', blinking: true, audioLevel: 0 });
+  assert.equal(real.layers.pose, 'blink');
 });
 
-test('Truque de corpo inteiro troca o busto pelos quadros e volta no fim', async () => {
-  const h = await iniciar();
+test('full-body Trick swaps the bust for the frames and returns at the end', async () => {
+  const h = await start();
   const root = h.container.children[0];
   assert.equal(h.api.playTrick('dance'), true);
-  assert.ok(root.classes.has('lupin-corpo-inteiro'));
+  assert.ok(root.classes.has('lupin-full-body'));
   assert.ok(h.api.isTrickPlaying());
   const stage = root.children[0];
-  const corpo = stage.children.find((c) => c.className === 'lupin-corpo');
-  assert.equal(corpo.hidden, false);
-  assert.match(corpo.getAttribute('src'), /corpo\/acenar-1\.svg$/);
+  const body = stage.children.find((c) => c.className === 'lupin-body');
+  assert.equal(body.hidden, false);
+  assert.match(body.getAttribute('src'), /body\/wave-1\.svg$/);
   h.runTimers();
-  assert.equal(corpo.hidden, true);
-  assert.ok(!root.classes.has('lupin-corpo-inteiro'));
+  assert.equal(body.hidden, true);
+  assert.ok(!root.classes.has('lupin-full-body'));
   assert.equal(h.api.isTrickPlaying(), false);
 });
 
-test('Truques de busto não usam corpo inteiro', async () => {
-  const h = await iniciar();
+test('bust Tricks do not use the full body', async () => {
+  const h = await start();
   const root = h.container.children[0];
   for (const id of ['sing', 'meditate', 'celebrate']) {
     assert.equal(h.api.playTrick(id), true);
-    assert.ok(!root.classes.has('lupin-corpo-inteiro'), id);
+    assert.ok(!root.classes.has('lupin-full-body'), id);
   }
-  assert.equal(h.api.playTrick('voar'), false);
+  assert.equal(h.api.playTrick('fly'), false);
 });
 
-test('movimento reduzido assenta o rosto e pula a coreografia de corpo', async () => {
-  const h = await iniciar({ reducedMotion: true });
+test('reduced motion settles the face and skips the body choreography', async () => {
+  const h = await start({ reducedMotion: true });
   const root = h.container.children[0];
   h.api.blink();
-  assert.deepEqual(visiveis(h).pose, ['neutro']);
+  assert.deepEqual(visible(h).pose, ['neutral']);
   assert.equal(h.api.playTrick('nap'), true);
-  assert.ok(!root.classes.has('lupin-corpo-inteiro'));
+  assert.ok(!root.classes.has('lupin-full-body'));
   assert.equal(h.api.getEmotion(), 'sleepy');
 });
 
-test('reinit mantém só um listener de preferência de movimento', async () => {
+test('reinit keeps only one motion-preference listener', async () => {
   const h = makeHarness();
   h.api.init(h.container);
   assert.equal(h.listenerCount, 1);
