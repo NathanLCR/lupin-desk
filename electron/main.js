@@ -1,3 +1,4 @@
+// Frozen per ADR 0001 / issue 01: no new work.
 const { app, BrowserWindow, Menu, Tray, dialog, globalShortcut, ipcMain, nativeImage, screen } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -278,13 +279,6 @@ function createTray() {
     { label: 'Open Dashboard (Cmd+Shift+Space)', click: () => createDashboardWindow() },
     { label: 'Show Mini-Pet (Cmd+Shift+L)', accelerator: 'CommandOrControl+Shift+L', click: () => showMiniPetWindow() },
     { label: 'Toggle Floating Mini-Pet', click: () => createMiniPetWindow() },
-    {
-      label: 'Look at Screen (Jarvis On Demand)',
-      click: () => {
-        const win = createDashboardWindow();
-        win.webContents.send('shortcut-trigger', 'vision');
-      },
-    },
     { type: 'separator' },
     {
       label: 'Quit',

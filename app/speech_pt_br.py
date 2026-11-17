@@ -77,8 +77,7 @@ SKILL_PROMPT_INSTRUCTIONS: dict[str, str] = {
         "consulte o contexto do Cowork/clima e, se útil, emita [action:today:brief]."
     ),
     "coding_buddy": (
-        "Skill Parceiro de Código ativa: dê respostas técnicas diretas e concisas; use "
-        "[action:vision:screen] ou [action:vision:clipboard] quando o usuário pedir para olhar tela/clipboard."
+        "Skill Parceiro de Código ativa: dê respostas técnicas diretas e concisas."
     ),
     "wellness_breaks": (
         "Skill Bem-Estar & Pausas ativa: sugira pausas breves de água, postura e respiração "

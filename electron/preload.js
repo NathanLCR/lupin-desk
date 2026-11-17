@@ -10,8 +10,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hideMiniPet: () => ipcRenderer.send('hide-minipet'),
   setPetIgnoreMouse: (ignore) => ipcRenderer.send('pet-ignore-mouse', Boolean(ignore)),
   updateTrayStatus: (status) => ipcRenderer.send('tray-update', status),
-  onShortcutTrigger: (callback) => {
-    if (typeof callback !== 'function') return;
-    ipcRenderer.on('shortcut-trigger', (_event, kind) => callback(kind));
-  },
 });

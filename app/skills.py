@@ -66,7 +66,7 @@ SKILL_PACKS: tuple[SkillPack, ...] = (
         id="coding_buddy",
         icon="💻",
         name="Coding Buddy",
-        description="Helps with debugging, architecture and quick inspection of the screen or clipboard.",
+        description="Helps with debugging and architecture questions with direct, concise technical answers.",
         default_enabled=True,
     ),
     SkillPack(
