@@ -64,6 +64,8 @@ class Settings:
     weather_city: str = _DEFAULT_WEATHER_CITY
     cowork_workspace_path: Path = _DEFAULT_COWORK_WORKSPACE_PATH
     desk_access_token: str = ""
+    # Só para desenvolvimento: desliga o token de acesso para clientes da LAN.
+    desk_dev_sem_token: bool = False
 
 
 def _parse_int(raw: str | None, default: int) -> int:
@@ -77,6 +79,11 @@ def _parse_int(raw: str | None, default: int) -> int:
         return int(cleaned)
     except ValueError:
         return default
+
+
+def _parse_bool(raw: str | None) -> bool:
+    """Liga só com valor explícito (1, true, sim, yes, on); qualquer outro valor desliga."""
+    return (raw or "").strip().lower() in {"1", "true", "sim", "yes", "on"}
 
 
 def _parse_float(raw: str | None, default: float) -> float:
@@ -145,6 +152,7 @@ def load_settings(env_path: Path | None = None) -> Settings:
         os.getenv("COWORK_WORKSPACE_PATH"), _DEFAULT_COWORK_WORKSPACE_PATH
     )
     desk_access_token = os.getenv("DESK_ACCESS_TOKEN", "").strip()
+    desk_dev_sem_token = _parse_bool(os.getenv("DESK_DEV_SEM_TOKEN"))
 
     return Settings(
         llm_base_url=base_url,
@@ -166,11 +174,14 @@ def load_settings(env_path: Path | None = None) -> Settings:
         weather_city=weather_city,
         cowork_workspace_path=cowork_workspace_path,
         desk_access_token=desk_access_token,
+        desk_dev_sem_token=desk_dev_sem_token,
     )
 
 
 def resolve_runtime_access_token(settings: Settings) -> tuple[str, bool]:
     """Retorna `(token, gerado_automaticamente)` para autenticar clientes não-loopback."""
+    if settings.desk_dev_sem_token:
+        return "", False
     configured = (settings.desk_access_token or "").strip()
     if configured:
         return configured, False
