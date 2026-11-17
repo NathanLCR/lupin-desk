@@ -27,3 +27,9 @@ The architecture follows the "physical Taby" model. The **Brain** is the server 
 Rejected: answering on the device that asked (Lupin would appear in two Bodies) and refusing to talk from a device that isn't the Active Body (the user would have to walk to the ESP32 to ask anything).
 
 Consequence: the Brain routes a turn's voice and Expression to the Active Body, which may be a different connection from the one that sent the text or audio.
+
+## Addendum (2026-11-17): positioning, and the portfolio adds no features
+
+A market survey (`docs/pesquisa-de-mercado.md`) found two crowded camps. Companion robots (EMO, Loona, Eilik, Vector) have a body and a personality but do no real work. Assistants (Taby, the Autonomous Lamp, Mac assistants) do real work but have a thin character or none. Lupin sits where they meet: **a desk companion that actually works**. He has a body and a Mood, he acts on the user's Mac and Cowork, and the user's calendar and email reach an LLM provider only through explicit Data Consent. This sentence is the test for any new feature: a feature that only makes Lupin cuter, or only makes him more useful without going through Lupin, needs a reason.
+
+The project is also a portfolio piece. The portfolio gets **presentation only** (README, video, write-ups), never features of its own. Features still come one at a time, from daily use. Rejected: picking features because they demo well (camera, physical movement), which is how the project got wide in the first place.
