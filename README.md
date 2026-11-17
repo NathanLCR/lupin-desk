@@ -2,7 +2,7 @@
 
 Assistente de mesa carismático estilo **EMO / Vector / Cozmo** em tela cheia sobre fundo preto `#000000`, projetado nativamente para **Anbernic RG406H** (Android 13, `960×720`, Gamepad API), **macOS** (Desktop / tela externa) e **iPhone** (iOS Safari / PWA).
 
-Combina um **pet de mesa vivo** (rosto SVG + partículas em Canvas + áudio procedural 100% Web Audio API), **copiloto LLM com memória cognitiva em SQLite**, **voz bidirecional com barge-in**, **Dock Viva do macOS** e um **Stream Deck de atalhos configuráveis** acionável por toque, controle físico ou voz.
+Combina um **pet de mesa vivo** (Lupin, um husky em camadas SVG + áudio procedural 100% Web Audio API), **copiloto LLM com memória cognitiva em SQLite**, **voz bidirecional com barge-in**, **Dock Viva do macOS** e um **Stream Deck de atalhos configuráveis** acionável por toque, controle físico ou voz.
 
 ---
 
@@ -32,7 +32,8 @@ Combina um **pet de mesa vivo** (rosto SVG + partículas em Canvas + áudio proc
 
 ### Frontend (`static/`)
 - **`static/audio_synth.js` (`window.EmoAudio`)**: sintetizador procedural via Web Audio API (0 KB de MP3/WAV) para `chirp(emotion)`, `purr(active)` (~60Hz com LFO), `click()`, `alert()`, `wake()` e `getPulseLevel()`.
-- **`static/face.js` & `static/face.css` (`window.EmoFace`)**: rosto SVG em 60fps + camada `<canvas class="emo-particles-canvas">` com física *squash-and-stretch*, curiosidade direcional (`|lookX| > 0.6`), micro-eventos autônomos em `idle` (inseto virtual, bocejo, espiar canto) antes de `sleepy` aos 90s, toque direto `reactToTouch('poke' | 'pet', nx, ny)`, acessórios (`none`, `sunglasses`, `headphones`, `pomodoro`, `blush`), clima (`rain`, `snow`, `sun`), gotinha de suor (`setSweat`) e modo compacto (`.emo-compact`).
+- **`static/lupin.js` & `static/lupin.css` (`window.LupinFace`)**: husky de desenho preto e branco desenhado por camadas (peito, coleira, orelhas, cabeça, olhos, pontos ciano, boca) a partir dos SVGs em `static/lupin/camadas/`. A tabela `static/lupin/expressoes.json` mapeia as 12 Expressões e os 5 Estados para uma variante por camada e é a mesma que o Corpo ESP32 vai usar. Piscar e olhar em volta são do Corpo; a onda da coleira acende quando Lupin fala; `playTrick` usa corpo inteiro só em `dance`, `stretch` e `nap`. `reactToTouch('poke' | 'pet', nx, ny)`, `setAudioLevel`, `lookAt` e `setCompactMode` continuam na API.
+- **`scripts/gerar_png_lupin.py`**: gera os PNGs 480x320 (transparentes, 8 bits indexados) para o ESP32 a partir dos SVGs e falha se algum passar de 20 KB. Precisa de `pip install pillow resvg-py` (só desenvolvimento).
 - **`static/gamepad.js` (`window.DeskGamepad`)**: suporte nativo ao controle do **Anbernic RG406H** via Gamepad API com *haptics* (`navigator.vibrate`) e snapshot ao vivo.
 - **`static/skills.js`**: gerenciamento visual de Skills/Truques do Lupin e integração com Cowork/Today/Actions.
 - **Protocolo Brain↔Body**: o WebSocket `/ws` é o único canal de um Body; veja [`docs/protocolo-cerebro-corpo.md`](docs/protocolo-cerebro-corpo.md).
@@ -95,7 +96,7 @@ A cada turno, o catálogo atual do SQLite e os apps abertos são injetados no *s
 
 | Controle RG406H | Ação no Desk Assistant |
 | :--- | :--- |
-| **Analógico Esquerdo** | Move o olhar do pet (`EmoFace.lookAt`) |
+| **Analógico Esquerdo** | Move o olhar do pet (`LupinFace.lookAt`) |
 | **Segurar `L2` ou `R2`** | **Push-to-Talk** (segurar grava, soltar envia áudio + vibração háptica) |
 | **`L1` / `R1`** | Alterna entre os Modos `Pet` e `Dock` (dentro dos Ajustes, troca de seção). Deslizar rápido na tela ou `Alt`+setas fazem o mesmo |
 | **`D-Pad`** | Navega pelos apps da Dock Viva e tiles do Stream Deck / Display |

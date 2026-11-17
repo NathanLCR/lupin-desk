@@ -233,7 +233,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
     clearInterval(id) { timers.delete(id); },
     addEventListener() {},
     dispatchEvent() {},
-    EmoFace: null,
+    LupinFace: null,
     EmoAudio: null,
   };
   if (speech) {

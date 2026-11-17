@@ -63,8 +63,8 @@
       point.y >= rect.top - pad && point.y <= rect.bottom + pad
     );
     const faceRect = () => (
-      window.EmoFace && typeof window.EmoFace.getHitboxRect === 'function'
-        ? window.EmoFace.getHitboxRect()
+      window.LupinFace && typeof window.LupinFace.getHitboxRect === 'function'
+        ? window.LupinFace.getHitboxRect()
         : null
     );
     const hasControlFocus = () => Boolean(

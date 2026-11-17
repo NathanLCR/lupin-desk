@@ -12,7 +12,7 @@ The architecture follows the "physical Taby" model. The **Brain** is the server 
 
 ## Consequences
 
-- The main Body runs native firmware (Arduino + LVGL via PlatformIO) and draws Lupin's face itself. The web face (`static/face.js`, `audio_synth.js`) doesn't run there, so Lupin's look gets redone for 480×320.
+- The main Body runs native firmware (Arduino + LVGL via PlatformIO) and draws Lupin's face itself. The web face (`static/lupin.js`, `audio_synth.js`) doesn't run there, so Lupin's look gets redone for 480×320.
 - Brain and Body talk over a single WebSocket opened by the Body: JSON events (Expression, Mood, the sentence being spoken, touch) and audio chunks for the voice. This protocol is a contract that both sides follow.
 - Lupin lives in only one Body at a time (the Active Body): the ESP32 whenever it is connected, otherwise the RG406H. While the ESP32 is active, the RG406H is just the Dock.
 - The RG406H web Body talks to the Brain **only** through the same protocol the ESP32 will use, so porting to the ESP32 is just writing firmware.

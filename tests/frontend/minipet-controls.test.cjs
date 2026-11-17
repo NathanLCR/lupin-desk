@@ -101,7 +101,7 @@ function makeHarness({ mini = true, bridge = true } = {}) {
   const window = {
     location: { search: mini ? '?widget=minipet' : '' },
     electronAPI,
-    EmoFace: { getHitboxRect: () => faceRect },
+    LupinFace: { getHitboxRect: () => faceRect },
     addEventListener(type, callback) {
       const handlers = windowListeners.get(type) || [];
       handlers.push(callback);

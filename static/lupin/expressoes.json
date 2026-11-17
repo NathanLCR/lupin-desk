@@ -1,0 +1,224 @@
+{
+  "versao": 1,
+  "tela": {
+    "largura": 480,
+    "altura": 320
+  },
+  "ordemCamadas": [
+    "peito",
+    "colar",
+    "orelhas",
+    "cabeca",
+    "olhos",
+    "sobrancelhas",
+    "boca"
+  ],
+  "grupoCabeca": [
+    "orelhas",
+    "cabeca",
+    "olhos",
+    "sobrancelhas",
+    "boca"
+  ],
+  "camadas": {
+    "peito": [
+      "unico"
+    ],
+    "colar": [
+      "apagado",
+      "aceso"
+    ],
+    "orelhas": [
+      "eretas",
+      "atras",
+      "curiosa",
+      "baixas"
+    ],
+    "cabeca": [
+      "unico"
+    ],
+    "olhos": [
+      "aberto",
+      "brilho",
+      "surpreso",
+      "meio",
+      "fechado",
+      "feliz",
+      "coracao",
+      "x",
+      "espiral",
+      "piscada",
+      "bravo",
+      "triste",
+      "cetico"
+    ],
+    "sobrancelhas": [
+      "neutro",
+      "alto",
+      "bravo",
+      "triste",
+      "cetico"
+    ],
+    "boca": [
+      "fechada",
+      "sorriso",
+      "meio-aberta",
+      "aberta",
+      "lingua",
+      "triste",
+      "cetica",
+      "o"
+    ]
+  },
+  "padrao": {
+    "peito": "unico",
+    "colar": "apagado",
+    "orelhas": "eretas",
+    "cabeca": "unico",
+    "olhos": "aberto",
+    "sobrancelhas": "neutro",
+    "boca": "fechada"
+  },
+  "expressoes": {
+    "neutral": {},
+    "happy": {
+      "olhos": "feliz",
+      "boca": "sorriso",
+      "sobrancelhas": "alto"
+    },
+    "excited": {
+      "olhos": "brilho",
+      "boca": "lingua",
+      "sobrancelhas": "alto",
+      "orelhas": "eretas"
+    },
+    "curious": {
+      "olhos": "aberto",
+      "boca": "fechada",
+      "sobrancelhas": "cetico",
+      "orelhas": "curiosa",
+      "inclinacao": 8
+    },
+    "skeptical": {
+      "olhos": "cetico",
+      "boca": "cetica",
+      "sobrancelhas": "cetico",
+      "orelhas": "atras"
+    },
+    "surprised": {
+      "olhos": "surpreso",
+      "boca": "o",
+      "sobrancelhas": "alto",
+      "orelhas": "eretas"
+    },
+    "sad": {
+      "olhos": "triste",
+      "boca": "triste",
+      "sobrancelhas": "triste",
+      "orelhas": "baixas"
+    },
+    "wink": {
+      "olhos": "piscada",
+      "boca": "sorriso",
+      "sobrancelhas": "cetico",
+      "inclinacao": -6
+    },
+    "love": {
+      "olhos": "coracao",
+      "boca": "lingua",
+      "sobrancelhas": "alto"
+    },
+    "sleepy": {
+      "olhos": "meio",
+      "boca": "fechada",
+      "sobrancelhas": "triste",
+      "orelhas": "baixas",
+      "inclinacao": 5
+    },
+    "angry": {
+      "olhos": "bravo",
+      "boca": "cetica",
+      "sobrancelhas": "bravo",
+      "orelhas": "atras"
+    },
+    "dizzy": {
+      "olhos": "espiral",
+      "boca": "o",
+      "sobrancelhas": "cetico",
+      "orelhas": "baixas",
+      "inclinacao": -8
+    }
+  },
+  "estados": {
+    "idle": {},
+    "listening": {
+      "orelhas": "curiosa",
+      "sobrancelhas": "alto",
+      "olhos": "surpreso"
+    },
+    "thinking": {
+      "sobrancelhas": "cetico",
+      "olhar": {
+        "x": 0.6,
+        "y": -0.7
+      }
+    },
+    "speaking": {
+      "colar": "aceso",
+      "falando": true
+    },
+    "error": {
+      "olhos": "x",
+      "boca": "triste",
+      "orelhas": "baixas",
+      "sobrancelhas": "triste"
+    }
+  },
+  "truques": {
+    "dance": {
+      "modo": "corpo",
+      "quadros": [
+        "danca-1",
+        "danca-2"
+      ],
+      "intervaloMs": 420,
+      "duracaoMs": 3400
+    },
+    "stretch": {
+      "modo": "corpo",
+      "quadros": [
+        "alongar-1",
+        "alongar-2"
+      ],
+      "intervaloMs": 700,
+      "duracaoMs": 3000
+    },
+    "nap": {
+      "modo": "corpo",
+      "quadros": [
+        "soneca-1",
+        "soneca-2"
+      ],
+      "intervaloMs": 900,
+      "duracaoMs": 3800
+    },
+    "sing": {
+      "modo": "busto",
+      "expressao": "happy",
+      "efeito": "notas",
+      "duracaoMs": 3000
+    },
+    "meditate": {
+      "modo": "busto",
+      "expressao": "sleepy",
+      "efeito": "aneis",
+      "duracaoMs": 3400
+    },
+    "celebrate": {
+      "modo": "busto",
+      "expressao": "excited",
+      "efeito": "confete",
+      "duracaoMs": 2600
+    }
+  }
+}

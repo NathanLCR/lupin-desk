@@ -1,6 +1,6 @@
 # 10 - Visual do Lupin: husky em camadas
 
-Status: ready-for-agent (depois da barra/Ajustes da issue 02)
+Status: entregue (primeira arte); arte final e medição no ESP32 pendentes
 
 ## Contexto
 
@@ -20,8 +20,16 @@ Feedback do teste no RG406H: o rosto abstrato estilo EMO está errado. Lupin é 
 
 ## Critérios de aceite
 
-- [ ] Camadas SVG do husky e tabela expressões -> camadas.
-- [ ] Face web desenha o husky por camadas e cobre as 12 Expressões.
-- [ ] Onda da coleira acende ao falar.
-- [ ] 3 Truques com corpo inteiro.
-- [ ] Script que gera os PNGs do ESP32 dentro do orçamento.
+- [x] Camadas SVG do husky e tabela expressões -> camadas (`static/lupin/`).
+- [x] Face web desenha o husky por camadas e cobre as 12 Expressões (`static/lupin.js`; rosto EMO removido).
+- [x] Onda da coleira acende ao falar.
+- [x] 3 Truques com corpo inteiro (`dance`, `stretch`, `nap`, 2 quadros cada).
+- [x] Script que gera os PNGs do ESP32 dentro do orçamento (`scripts/gerar_png_lupin.py`; maior PNG 8,4 KB).
+
+## Entregue (2026-11-17)
+
+- 34 variantes de camada em 7 camadas, mais 6 quadros de corpo inteiro. Total dos PNGs indexados: 86 KB.
+- Arte é a primeira versão vetorial simples; a arte final entra trocando os SVGs, sem mexer em código.
+- Pendente: o orçamento falava em até ~24 camadas, e são 34 variantes (só 7 aparecem ao mesmo tempo). Decidir com a medição na placa se isso é problema.
+- Pendente: `setAccessory` só registra o valor; a arte de fones e Pomodoro no rosto ainda não existe. Clima, suor e bocejo do rosto antigo não foram portados.
+- Sem tela física: o husky só foi visto no navegador (960x720), não no RG406H.
