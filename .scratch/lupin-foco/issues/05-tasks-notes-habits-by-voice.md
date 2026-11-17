@@ -1,25 +1,25 @@
-# 05 - Tarefas, notas e hábitos por voz
+# 05 - Tasks, notes and habits by voice
 
 Status: needs-triage
 
-## Contexto
+## Context
 
-Inspirado no Taby (foco e hábitos): Lupin ajuda a capturar tarefas, notas e hábitos falando, como uma Action na conversa. Fica para depois da 04.
+Inspired by Taby (focus and habits): Lupin helps capture tasks, notes and habits by speaking, as an Action in the conversation. Comes after 04.
 
-## Escopo
+## Scope
 
-- Criar e consultar tarefas, notas e hábitos por voz (tap-to-talk, escuta no microfone do Mac).
-- Lupin confirma por voz o que registrou.
-- Definir onde os dados vivem e como se relacionam com o Cowork.
+- Create and query tasks, notes and habits by voice (tap-to-talk, listening on the Mac's microphone).
+- Lupin confirms by voice what he recorded.
+- Define where the data lives and how it relates to Cowork.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [ ] Definido o escopo exato (o que é tarefa, nota e hábito) e o armazenamento.
-- [ ] Decidido se escrever no Cowork é permitido, já que Cowork é somente leitura após a 01.
-- [ ] Captura por voz funciona de ponta a ponta com confirmação falada.
-- [ ] 1 semana de uso real (mín. 4 dias) sem bug irritante.
+- [ ] The exact scope (what is a task, a note and a habit) and the storage are defined.
+- [ ] Decided whether writing to Cowork is allowed, since Cowork is read-only after 01.
+- [ ] Voice capture works end to end with spoken confirmation.
+- [ ] 1 week of real use (min. 4 days) without an irritating bug.
 
-## Perguntas em aberto
+## Open questions
 
-- Onde ficam os dados, se o Cowork é somente leitura?
-- Lembretes de hábito pertencem a esta issue ou à Presence?
+- Where does the data live, if Cowork is read-only?
+- Do habit reminders belong to this issue or to Presence?

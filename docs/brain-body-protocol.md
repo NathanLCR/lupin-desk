@@ -1,47 +1,51 @@
-# Protocolo Cérebro↔Corpo (versão 1)
+# Brain↔Body Protocol (version 1)
 
-O **Body** abre um único WebSocket em `/ws` e usa só ele para conversar com o **Brain** (Lupin). Todos os quadros são JSON em texto. Vocabulário em `GLOSSARY.md`; decisão em `docs/adr/0001-companion-first-brain-and-body.md`.
+The **Body** opens a single WebSocket at `/ws` and uses only that to talk to the **Brain** (Lupin). All frames are JSON text. Vocabulary in `GLOSSARY.md`; decision in `docs/adr/0001-companion-first-brain-and-body.md`.
 
 ## Body → Brain
 
-| Evento | Campos | Descrição |
+| Event | Fields | Description |
 |---|---|---|
-| `hello` | `body` ("esp32", "rg406h-web", "web"), `protocol` (1), `audio`? (lista, ex.: `["m4a"]`) | Primeira mensagem. `audio` não vazio pede a voz do Brain. O Brain responde `welcome`. |
-| `text` | `text` | Mensagem de chat do usuário; inicia um turno. |
-| `audio` | `data` (base64), `mime_type`, `language`? | Áudio gravado para STT; inicia um turno. (Não confundir com o `audio` Brain→Body.) |
-| `touch` | `kind` ("pet" \| "poke"), `intensity`? | Toque no Lupin; o Brain responde `mood`. |
-| `interrupt` | — | Cancela o turno ativo (e o áudio dele). |
-| `typing` | `active` (bool) | Usuário digitando; o Brain responde `state`. |
-| `clear_history` | — | Limpa o histórico curto. |
+| `hello` | `body` ("esp32", "rg406h-web", "web"), `protocol` (1), `audio`? (list, e.g. `["m4a"]`) | First message. A non-empty `audio` asks for the Brain's voice. The Brain answers `welcome`. |
+| `text` | `text` | The user's chat message; starts a turn. |
+| `audio` | `data` (base64), `mime_type`, `language`? | Audio recorded for STT; starts a turn. (Not to be confused with the Brain→Body `audio`.) |
+| `touch` | `kind` ("pet" \| "poke"), `intensity`? | A touch on Lupin; the Brain answers `mood`. |
+| `interrupt` | none | Cancels the active turn (and its audio). |
+| `typing` | `active` (bool) | The user is typing; the Brain answers `state`. |
+| `clear_history` | none | Clears the short-term history. |
 
-Há outras mensagens de controle (atalhos, aprovações, ações) usadas pelo Dock; ficam fora deste contrato mínimo.
+There are other control messages (shortcuts, approvals, actions) used by the Dock; they are outside this minimal contract.
 
 ## Brain → Body
 
-| Evento | Campos | Descrição |
+| Event | Fields | Description |
 |---|---|---|
-| `welcome` | `protocol` (1), `active_body`, `active` (bool) | Resposta ao `hello`: qual Body está com Lupin e se é este. |
-| `active_body` | `active_body`, `active` (bool) | O Active Body mudou (outro Body chegou ou saiu). |
-| `state` | `state` (`thinking`, `listening`, `idle`, `error`) | Estado do turno. |
-| `emotion` | `emotion` | Expression atual do rosto. |
-| `mood` | `kind`, `affinity`, `energy`, ... (campos do Mood) | Mood após um `touch`. Substitui `companion_updated`. |
-| `delta` | `text` | Trecho de texto em streaming. |
-| `sentence` | `text`, `first_wake?`, `from_body?` | Frase completa (a que será falada). `first_wake: true` marca as frases do First Wake (o Dock sobe para o Pet com elas). `from_body` só aparece em eventos espelhados (ver Resposta a quem não é o Active Body). |
-| `audio` | `sentence` (índice 0 no turno), `seq` (0), `last` (bool), `mime` ("audio/mp4"), `data` (base64, até 24 KiB brutos) | Voz da frase, em chunks. Só enviado se o `hello` pediu áudio e o TTS está disponível. Falha de TTS pula o áudio sem `error`. |
-| `done` | `text`, `emotion`, `facts`, `companion`, `first_wake?` | Fim do turno de texto. Os `audio` finais podem chegar depois dele. `first_wake: true` marca a fala do First Wake (primeira interação do dia depois das 5h no Active Body), que chega antes da resposta ao texto/áudio ou logo depois do `mood` de um toque. |
-| `interrupted` | — | Turno cancelado; nenhum `audio` novo é enviado. |
-| `error` | `message` | Falha. |
+| `welcome` | `protocol` (1), `active_body`, `active` (bool) | Answer to `hello`: which Body currently has Lupin and whether it is this one. |
+| `active_body` | `active_body`, `active` (bool) | The Active Body changed (another Body arrived or left). |
+| `state` | `state` (`thinking`, `listening`, `idle`, `error`) | Turn state. |
+| `emotion` | `emotion` | The face's current Expression. |
+| `mood` | `kind`, `affinity`, `energy`, ... (Mood fields) | Mood after a `touch`. Replaces `companion_updated`. |
+| `delta` | `text` | A streamed piece of text. |
+| `sentence` | `text`, `first_wake?`, `from_body?` | A complete sentence (the one that will be spoken). `first_wake: true` marks First Wake sentences (the Dock goes up to the Pet with them). `from_body` only appears in mirrored events (see Replies to a Body that is not the Active Body). |
+| `audio` | `sentence` (index 0 in the turn), `seq` (0), `last` (bool), `mime` ("audio/mp4"), `data` (base64, up to 24 KiB raw) | The sentence's voice, in chunks. Only sent if `hello` asked for audio and TTS is available. A TTS failure skips the audio without an `error`. |
+| `done` | `text`, `emotion`, `facts`, `companion`, `first_wake?` | End of the text turn. The final `audio` events may arrive after it. `first_wake: true` marks the First Wake speech (the first interaction of the day after 5am on the Active Body), which arrives before the reply to the text/audio or right after a touch's `mood`. |
+| `interrupted` | none | Turn cancelled; no new `audio` is sent. |
+| `error` | `message` | Failure. |
 
-O `/api/tts` HTTP continua existindo para o Dock e outros usos.
+The HTTP `/api/tts` still exists for the Dock and other uses.
 
 ## Active Body
 
-Lupin vive em um Body por vez. O Brain escolhe pela prioridade `esp32` > `rg406h-web` > qualquer outro (`web`: navegador do Mac, iPhone); no mesmo tipo, o último `hello` vence. Quando o Active Body muda, os outros Bodies recebem `active_body`. Um Body com `active: false` não recebe `audio`, não fala pelo navegador e fica só como Dock (sem Pet Mode). Quando o Active Body sai, o próximo da fila recebe `active_body` com `active: true`.
+Lupin lives in one Body at a time. The Brain picks by priority `esp32` > `rg406h-web` > anything else (`web`: the Mac browser, iPhone); within the same type, the latest `hello` wins. When the Active Body changes, the other Bodies receive `active_body`. A Body with `active: false` receives no `audio`, does not speak through the browser and stays as a Dock only (no Pet Mode). When the Active Body leaves, the next one in line receives `active_body` with `active: true`.
 
-## Resposta a quem não é o Active Body
+## Replies to a Body that is not the Active Body
 
-Qualquer Body pode perguntar (`text`, `audio`, `run_shortcut` com `agent_prompt`). Se quem perguntou não é o Active Body, ele recebe os eventos de texto de sempre, **sem `audio`**. O Active Body (outra conexão) recebe cópias de `emotion`, `sentence` e `done`, e os `audio` da resposta se declarou áudio no `hello` e o TTS está disponível, cada um com `"from_body": "<Body que perguntou>"`. Não são espelhados `delta`, `state`, `transcript` nem `memory_updated`. Se quem perguntou é o Active Body, nada muda. Sem Active Body, quem perguntou recebe só texto. Se o Active Body cai no meio do turno, o espelhamento para sem erro e a resposta ao Body que perguntou continua.
+Any Body can ask a question (`text`, `audio`, `run_shortcut` with `agent_prompt`). If the asker is not the Active Body, it receives the usual text events, **without `audio`**. The Active Body (another connection) receives copies of `emotion`, `sentence` and `done`, and the reply's `audio` if it declared audio in `hello` and TTS is available, each with `"from_body": "<Body that asked>"`. `delta`, `state`, `transcript` and `memory_updated` are not mirrored. If the asker is the Active Body, nothing changes. With no Active Body, the asker receives text only. If the Active Body drops mid-turn, mirroring stops without an error and the reply to the asking Body continues.
 
-## Configuração de Shortcuts só no Mac
+## Shortcut configuration only on the Mac
 
-`GET /api/client-info` devolve `{"is_mac": bool}` (true para loopback ou para um IP do próprio Mac). Criar, editar, apagar, fixar, reordenar e restaurar Shortcuts (`POST/PUT/DELETE /api/shortcuts...`) devolvem **403** fora do Mac, mesmo com `DESK_DEV_SEM_TOKEN`. Executar (`/run` e `run_shortcut`) continua liberado para qualquer Body. Shortcut novo nasce sem fixar (`pinned_on_deck = 0`; bancos já existentes não são migrados).
+`GET /api/client-info` returns `{"is_mac": bool}` (true for loopback or for one of the Mac's own IPs). Creating, editing, deleting, pinning, reordering and restoring Shortcuts (`POST/PUT/DELETE /api/shortcuts...`) return **403** off the Mac, even with `DESK_DEV_NO_TOKEN` (the old `DESK_DEV_SEM_TOKEN` is still accepted as a fallback). Running (`/run` and `run_shortcut`) stays open to any Body. A new Shortcut starts unpinned (`pinned_on_deck = 0`; existing databases are not migrated).
+
+## Data Consent
+
+`GET/PUT /api/data-consent` use `{"calendar": bool, "email": bool}`. Calendar events sent to clients have `title`, `start` and `all_day`; the inbox has `unread` and `recent`, each message with `sender` and `subject`.

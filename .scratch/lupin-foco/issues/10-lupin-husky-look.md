@@ -1,59 +1,59 @@
-# 10 - Visual do Lupin: husky em camadas
+# 10 - Lupin's look: layered husky
 
-Status: entregue (primeira arte); arte final e medição no ESP32 pendentes
+Status: delivered (first art); final art and ESP32 measurement pending
 
-## Contexto
+## Context
 
-Feedback do teste no RG406H: o rosto abstrato estilo EMO está errado. Lupin é um husky de desenho preto e branco (referência enviada pelo usuário): olhos ciano brilhantes, dois pontos ciano acima, contorno ciano fino, focinho branco com nariz rosa, rabo enrolado, coleira escura com onda sonora ciano. Relacionada à 02 (corpo vivo) e à 09 (Dock).
+Feedback from the RG406H test: the abstract EMO-style face is wrong. Lupin is a black-and-white cartoon husky (reference sent by the user): glowing cyan eyes, two cyan dots above, a thin cyan outline, white muzzle with a pink nose, curled tail, dark collar with a cyan sound wave. Related to 02 (living Body) and 09 (Dock).
 
-## Decisões (grilling, 2026-11-16)
+## Decisions (grilling, 2026-11-16)
 
-- Busto como enquadramento padrão; corpo inteiro só em Truques (`dance`, `stretch`, `nap`). `sing`, `meditate` e `celebrate` ficam no busto com efeitos. A onda da coleira acende quando Lupin fala.
-- Animação por camadas (cabeça, olhos, pálpebras, sobrancelhas, boca/língua, orelhas, coleira, pontos ciano), igual na web e no LVGL.
-- Arte: primeira versão em SVG vetorial simples feita por mim; arte final entra depois pelo mesmo formato de camadas.
-- Formato: SVG por camada é a fonte única; script gera PNGs com transparência 480x320 para o ESP32.
-- Tabela única `expressões -> estados de camada` compartilhada pelos dois Corpos (12 Expressões). Piscar e olhar em volta são do Corpo.
-- Orçamento ESP32: PNG por camada até ~20 KB, busto ~320x300, cores indexadas 8 bits, até ~24 camadas, corpo inteiro em 3 conjuntos de quadros carregados só durante o Truque. Medir quando a placa chegar.
-- Paleta: fundo preto, ciano como único acento e só no Lupin; resto da interface em neutros escuros com texto branco, sem brilho em botões, sem emoji.
+- Bust as the default framing; full body only in Tricks (`dance`, `stretch`, `nap`). `sing`, `meditate` and `celebrate` stay on the bust with effects. The collar wave lights up when Lupin speaks.
+- Layered animation (head, eyes, eyelids, eyebrows, mouth/tongue, ears, collar, cyan dots), identical on web and LVGL.
+- Art: first version as simple vector SVG made by me; the final art arrives later through the same layer format.
+- Format: one SVG per layer is the single source; a script generates 480x320 PNGs with transparency for the ESP32.
+- A single `expressions -> layer states` table shared by both Bodies (12 Expressions). Blinking and looking around belong to the Body.
+- ESP32 budget: PNG per layer up to ~20 KB, bust ~320x300, 8-bit indexed colors, up to ~24 layers, full body in 3 sets of frames loaded only during the Trick. Measure when the board arrives.
+- Palette: black background, cyan as the only accent and only on Lupin; the rest of the interface in dark neutrals with white text, no glow on buttons, no emoji.
 
-- Entrega depois da barra e dos Ajustes (issue 02). O rosto EMO antigo é removido quando o husky entrar, sem fallback.
+- Delivered after the bar and Settings (issue 02). The old EMO face is removed when the husky lands, with no fallback.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [x] Camadas SVG do husky e tabela expressões -> camadas (`static/lupin/`).
-- [x] Face web desenha o husky por camadas e cobre as 12 Expressões (`static/lupin.js`; rosto EMO removido).
-- [x] Onda da coleira acende ao falar.
-- [x] 3 Truques com corpo inteiro (`dance`, `stretch`, `nap`, 2 quadros cada).
-- [x] Script que gera os PNGs do ESP32 dentro do orçamento (`scripts/gerar_png_lupin.py`; maior PNG 8,4 KB).
+- [x] Husky SVG layers and the expressions -> layers table (`static/lupin/`).
+- [x] The web face draws the husky by layers and covers the 12 Expressions (`static/lupin.js`; EMO face removed).
+- [x] The collar wave lights up when speaking.
+- [x] 3 full-body Tricks (`dance`, `stretch`, `nap`, 2 frames each).
+- [x] Script that generates the ESP32 PNGs within budget (`scripts/generate_lupin_png.py`; largest PNG 8.4 KB).
 
-## Entregue (2026-11-17)
+## Delivered (2026-11-17)
 
-- 34 variantes de camada em 7 camadas, mais 6 quadros de corpo inteiro. Total dos PNGs indexados: 86 KB.
-- Arte é a primeira versão vetorial simples; a arte final entra trocando os SVGs, sem mexer em código.
-- Pendente: o orçamento falava em até ~24 camadas, e são 34 variantes (só 7 aparecem ao mesmo tempo). Decidir com a medição na placa se isso é problema.
-- Pendente: `setAccessory` só registra o valor; a arte de fones e Pomodoro no rosto ainda não existe. Clima, suor e bocejo do rosto antigo não foram portados.
-- Sem tela física: o husky só foi visto no navegador (960x720), não no RG406H.
+- 34 layer variants across 7 layers, plus 6 full-body frames. Total of the indexed PNGs: 86 KB.
+- The art is a first simple vector version; the final art arrives by swapping the SVGs, with no code changes.
+- Pending: the budget said up to ~24 layers, and there are 34 variants (only 7 show at the same time). Decide with the on-board measurement whether that is a problem.
+- Pending: `setAccessory` only records the value; the headphones and Pomodoro art on the face doesn't exist yet. Weather, sweat and yawn from the old face were not ported.
+- No physical screen: the husky was only seen in the browser (960x720), not on the RG406H.
 
-## Arte do Recraft (2026-11-17)
+## Recraft art (2026-11-17)
 
-- A cabeça, a máscara, o nariz, as orelhas, o peito e a coleira agora vêm do traçado SVG gerado no Recraft (husky simétrico, vista frontal), dividido em camadas pelo mesmo formato de antes. A tabela `expressoes.json` não mudou de contrato.
-- Só existia o SVG da pose neutra. Olhos, sobrancelhas e bocas das outras expressões foram redesenhados à mão no estilo do traçado. Os PNGs de feliz, surpreso e corações do Recraft não viraram SVG; se exportar esses SVGs, dá para trocar as variantes.
-- Os 6 quadros de corpo inteiro reutilizam a nova cabeça num corpo simples ainda desenhado à mão.
-- Paleta: ciano `#11c3fb`, branco `#ebebea`, cinza `#d6d5d5`, rosa `#eb617e`, preto. Maior PNG: 8 KB.
+- The head, mask, nose, ears, chest and collar now come from the SVG trace generated in Recraft (symmetric husky, front view), split into layers using the same format as before. The `expressions.json` table did not change its contract.
+- Only the neutral pose SVG existed. Eyes, eyebrows and mouths for the other expressions were redrawn by hand in the style of the trace. The Recraft PNGs for happy, surprised and hearts did not become SVG; if those SVGs are exported, the variants can be swapped.
+- The 6 full-body frames reuse the new head on a simple body that is still hand-drawn.
+- Palette: cyan `#11c3fb`, white `#ebebea`, gray `#d6d5d5`, pink `#eb617e`, black. Largest PNG: 8 KB.
 
-## Arte final em poses inteiras (2026-11-17)
+## Final art in whole poses (2026-11-17)
 
-- A arte nova (busto + 7 expressões + 3 Truques de corpo inteiro, traçados em SVG) substitui a primeira versão em peças. Ela vem como poses completas, não dá para separar olhos e boca sem refazer o traçado.
-- Modelo atual: camada `pose` (8 variantes de busto) + camada `colar` (brilho da onda, só aceso quando fala). A tabela `expressoes.json` (versão 2) escolhe a pose por Expressão e Estado.
-- Falar: a coleira acende e a pose alterna entre neutro e feliz (boca aberta) a partir do nível de áudio (`fala.limiar`).
-- Piscar: a tabela tem `piscada` (pose → pose de olhos fechados), hoje vazia. Falta o SVG do busto neutro com olhos fechados.
-- Sem pose própria: `curious` (neutro inclinado), `skeptical` e `sad` (usam sonolento). Faltam SVGs de curioso, cético e triste.
-- Truque `dance` usa os quadros de acenar. Total: 16 SVGs, maior PNG 11 KB, 136 KB no conjunto, bem abaixo do orçamento do ESP32.
+- The new art (bust + 7 expressions + 3 full-body Tricks, traced as SVG) replaces the first piecewise version. It comes as complete poses; eyes and mouth can't be separated without redoing the trace.
+- Current model: a `pose` layer (8 bust variants) + a `collar` layer (wave glow, lit only when speaking). The `expressions.json` table (version 2) picks the pose by Expression and State.
+- Speaking: the collar lights up and the pose alternates between neutral and happy (open mouth) from the audio level (`speech.threshold`).
+- Blinking: the table has `blink` (pose → closed-eyes pose), currently empty. The neutral bust SVG with closed eyes is missing.
+- No pose of their own: `curious` (tilted neutral), `skeptical` and `sad` (use sleepy). SVGs for curious, skeptical and sad are missing.
+- The `dance` Trick uses the wave frames. Total: 16 SVGs, largest PNG 11 KB, 136 KB for the set, well under the ESP32 budget.
 
-## Poses que faltavam (2026-11-17)
+## Missing poses (2026-11-17)
 
-- Chegaram 4 SVGs novos (mesmo traçado VTracer, sem grupos nomeados): olhos fechados, curioso, cético e triste. Os outros 14 arquivos do lote eram idênticos aos já usados.
-- Camada `pose` passa a 12 variantes: `piscar`, `curioso`, `cetico`, `triste` entram. `piscada` = `neutro → piscar`; `curious`, `skeptical` e `sad` ganham pose própria (sem inclinação extra, a arte já vem inclinada).
-- O enquadramento comum do busto não mudou (`-263.5 -8 1551 1034`), então o brilho da coleira e os corpos ficam como estavam.
-- Total: 20 SVGs, maior PNG 11,3 KB, 171 KB no conjunto.
-- Ainda faltam: quadros de dançar (o `dance` segue com acenar) e bocas de fala (meio/aberta); a fala segue alternando neutro/feliz.
+- 4 new SVGs arrived (same VTracer trace, no named groups): closed eyes, curious, skeptical and sad. The other 14 files in the batch were identical to those already in use.
+- The `pose` layer goes to 12 variants: `blink`, `curious`, `skeptical`, `sad` come in. `blink` = `neutral → blink`; `curious`, `skeptical` and `sad` get their own pose (no extra tilt, the art already comes tilted).
+- The common bust framing did not change (`-263.5 -8 1551 1034`), so the collar glow and the bodies stay as they were.
+- Total: 20 SVGs, largest PNG 11.3 KB, 171 KB for the set.
+- Still missing: dance frames (`dance` still uses wave) and speaking mouths (middle/open); speech still alternates neutral/happy.

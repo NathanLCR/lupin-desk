@@ -1,25 +1,25 @@
-# 06 - Busca inteligente
+# 06 - Smart search
 
 Status: needs-triage
 
-## Contexto
+## Context
 
-Inspirado no Taby (busca inteligente): o usuário pede por voz e Lupin encontra coisas no Mac e no Cowork e responde. Fica para depois da 05.
+Inspired by Taby (smart search): the user asks by voice and Lupin finds things on the Mac and in Cowork and answers. Comes after 05.
 
-## Escopo
+## Scope
 
-- Perguntar por voz e receber resposta falada de Lupin.
-- Definir as fontes de busca (arquivos do Mac, Cowork, notas).
-- Somente leitura.
+- Ask by voice and get a spoken answer from Lupin.
+- Define the search sources (Mac files, Cowork, notes).
+- Read-only.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [ ] Fontes e limites de busca definidos e documentados.
-- [ ] Nenhum dado sai para um provedor que o usuário não escolheu explicitamente.
-- [ ] Respostas não afirmam o que as fontes não contêm.
-- [ ] 1 semana de uso real (mín. 4 dias) sem bug irritante.
+- [ ] Search sources and limits defined and documented.
+- [ ] No data goes to a provider the user didn't explicitly choose.
+- [ ] Answers don't claim what the sources don't contain.
+- [ ] 1 week of real use (min. 4 days) without an irritating bug.
 
-## Perguntas em aberto
+## Open questions
 
-- Quais fontes entram primeiro?
-- Indexação local ou consulta sob demanda?
+- Which sources come first?
+- Local indexing or on-demand lookup?

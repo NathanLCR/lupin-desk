@@ -1,29 +1,29 @@
-# 01 - Cortes
+# 01 - Cuts
 
 Status: ready-for-agent
 
-## Contexto
+## Context
 
-O Desk Assistant cresceu largo demais (ADR 0001). Antes de qualquer feature nova, cortamos o que não está em uso diário. O código removido permanece só no branch `snapshot/swarm-2026-11-16`.
+Desk Assistant grew too wide (ADR 0001). Before any new feature, we cut whatever isn't in daily use. The removed code lives only on the `snapshot/swarm-2026-11-16` branch.
 
-## Escopo
+## Scope
 
-- Remover Ambient Display como Mode próprio: relógio, Pomodoro e Now Playing passam a ficar ao redor de Lupin no Pet Mode.
-- Skills e Diagnostics deixam de ser Modes e vão para uma área de Settings.
-- Cowork passa a ser somente leitura: remover Cowork Tasks de escrita/externas, o preview de diff e o runner de aprovação, na UI e no prompt.
-- Remover Screen Look e Clipboard Read (antes "Jarvis"); o nome "Jarvis" deve sumir do código, da UI e dos prompts.
-- Congelar o mini-pet Electron: nenhum trabalho novo.
-- iPhone não recebe trabalho dedicado.
-- Manter tudo que Pet Mode, Dock, Today (somente leitura) e First Wake usam.
+- Remove Ambient Display as its own Mode: the clock, Pomodoro and Now Playing now sit around Lupin in Pet Mode.
+- Skills and Diagnostics stop being Modes and move to a Settings area.
+- Cowork becomes read-only: remove write/external Cowork Tasks, the diff preview and the approval runner, in the UI and in the prompt.
+- Remove Screen Look and Clipboard Read (formerly "Jarvis"); the name "Jarvis" must disappear from the code, the UI and the prompts.
+- Freeze the Electron mini-pet: no new work.
+- The iPhone gets no dedicated work.
+- Keep everything that Pet Mode, Dock, Today (read-only) and First Wake use.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- [ ] O RG406H só tem dois Modes: Pet e Dock.
-- [ ] Relógio, Pomodoro e Now Playing aparecem no Pet Mode, ao redor de Lupin.
-- [ ] Skills e Diagnostics são acessados em Settings, não por Mode.
-- [ ] Nenhuma Cowork Task de escrita ou externa existe; sem diff preview nem runner de aprovação; o prompt não os menciona.
-- [ ] Today continua funcionando lendo o Cowork.
-- [ ] `grep -ri jarvis` não encontra nada no código ativo.
-- [ ] Screen Look e Clipboard Read não existem mais.
-- [ ] Mini-pet Electron intacto e marcado como congelado.
-- [ ] Testes existentes passam; o branch `snapshot/swarm-2026-11-16` continua com o código cortado.
+- [ ] The RG406H has only two Modes: Pet and Dock.
+- [ ] Clock, Pomodoro and Now Playing appear in Pet Mode, around Lupin.
+- [ ] Skills and Diagnostics are reached through Settings, not through a Mode.
+- [ ] No write or external Cowork Task exists; no diff preview or approval runner; the prompt doesn't mention them.
+- [ ] Today keeps working by reading Cowork.
+- [ ] `grep -ri jarvis` finds nothing in the active code.
+- [ ] Screen Look and Clipboard Read no longer exist.
+- [ ] Electron mini-pet intact and marked as frozen.
+- [ ] Existing tests pass; the `snapshot/swarm-2026-11-16` branch still has the cut code.

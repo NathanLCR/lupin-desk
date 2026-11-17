@@ -1,34 +1,34 @@
-# Lupin em foco
+# Lupin in focus
 
-Direção (ADR 0001): Lupin é o produto. Mac control, Cowork, Shortcuts e recursos de assistente são formas de Lupin ajudar, não produtos próprios. O Brain roda no Mac; o Body (ESP32-S3 JC4832W535, 3,5" 480x320, Arduino + LVGL) mostra Lupin, toca o som e sente o usuário. Cada feature nasce no RG406H e depois é portada para o ESP32. Quando o ESP32 chegar, ele vira o Active Body e o RG406H vira Dock (e Body quando o ESP32 estiver desligado).
+Direction (ADR 0001): Lupin is the product. Mac control, Cowork, Shortcuts and assistant features are ways for Lupin to help, not products of their own. The Brain runs on the Mac; the Body (ESP32-S3 JC4832W535, 3.5" 480x320, Arduino + LVGL) shows Lupin, plays the sound and senses the user. Every feature is born on the RG406H and then ported to the ESP32. When the ESP32 arrives, it becomes the Active Body and the RG406H becomes Dock (and a Body when the ESP32 is off).
 
-## Regra de execução
+## Execution rule
 
-- As features vêm **uma de cada vez**, na ordem 02..08.
-- Cada feature precisa **sobreviver 1 semana de uso real** (no mínimo 4 dias de uso, sem bug irritante) antes de a próxima começar.
-- Operação offline **não** é requisito.
-- Não adicionar Bodies nem Modes sem rever o ADR 0001.
+- Features come **one at a time**, in the order 02..08.
+- Each feature must **survive 1 week of real use** (at least 4 days of use, with no irritating bug) before the next one starts.
+- Offline operation is **not** a requirement.
+- Don't add Bodies or Modes without revisiting ADR 0001.
 
 ## Issues
 
 | # | Issue | Status |
 |---|-------|--------|
-| 01 | Cortes | ready-for-agent |
-| 02 | Corpo vivo: protocolo Brain-Body | ready-for-agent |
-| 03 | Manhã: First Wake | done, in daily use |
-| 04 | Presença | needs-triage |
-| 05 | Tarefas, notas e hábitos por voz | needs-triage |
-| 06 | Busca inteligente | needs-triage |
-| 07 | Ditado | needs-triage |
-| 08 | Editor de imagens | needs-triage |
-| 09 | Redesign do Dock | feito (falta teste no RG406H) |
-| 10 | Visual do Lupin: husky em camadas | primeira arte entregue |
+| 01 | Cuts | ready-for-agent |
+| 02 | Living Body: Brain-Body protocol | ready-for-agent |
+| 03 | Morning: First Wake | done, in daily use |
+| 04 | Presence | needs-triage |
+| 05 | Tasks, notes and habits by voice | needs-triage |
+| 06 | Smart search | needs-triage |
+| 07 | Dictation | needs-triage |
+| 08 | Image editor | needs-triage |
+| 09 | Dock redesign | done (RG406H test pending) |
+| 10 | Lupin's look: layered husky | first art delivered |
 | 11 | Fully local mode | needs-triage |
 | 12 | Lupin as an MCP server | needs-triage |
 | 13 | Showcase: README, video and opening the repo | needs-triage |
 | 14 | Translate the project to English | ready-for-agent |
 | 15 | Lupin's language setting | ready-for-agent (after 14) |
 
-A issue 01 vem antes de tudo (limpa o terreno). A 09 não entra na fila 02..08 e só começa depois que o ESP32 estiver em uso, ou quando o usuário decidir.
+Issue 01 comes before everything (clears the ground). Issue 09 is not in the 02..08 queue and only starts once the ESP32 is in use, or when the user decides.
 
-O código cortado fica apenas no branch `snapshot/swarm-2026-11-16`.
+The cut code lives only on the `snapshot/swarm-2026-11-16` branch.

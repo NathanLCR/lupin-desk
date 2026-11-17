@@ -11,8 +11,8 @@ Decided on 2026-11-17: code, comments, identifiers, UI text, commits, docs, issu
 - Comments, docstrings, identifiers (functions, variables, classes, files), test names and test files.
 - UI text in `static/` (labels, buttons, Settings, toasts).
 - API/JSON field names (e.g. `nao_lidos` → `unread`, `recentes` → `recent`). The web Body and the Electron shell are updated in the same change, so nothing breaks.
-- The Brain↔Body protocol doc and its field names; `docs/protocolo-cerebro-corpo.md` is renamed to English.
-- Issues 01–13 and `spec.md` in `.scratch/lupin-foco/`, and other docs (`docs/pesquisa-de-mercado.md` included).
+- The Brain↔Body protocol doc and its field names; `docs/protocolo-cerebro-corpo.md` is renamed to `docs/brain-body-protocol.md`.
+- Issues 01–13 and `spec.md` in `.scratch/lupin-foco/`, and other docs (`docs/pesquisa-de-mercado.md`, renamed to `docs/market-research.md`, included).
 - Values already saved in `data/memory.db` (meta keys, settings) keep working: read the old key as a fallback or migrate it once on startup.
 
 ## Out of scope
