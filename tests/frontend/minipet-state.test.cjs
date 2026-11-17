@@ -129,7 +129,7 @@ function makeHarness({ href = 'http://localhost/', bus = null, elements = [] } =
     dispatchEvent(event) {
       (windowListeners.get(event.type) || []).forEach((callback) => callback(event));
     },
-    EmoFace: face,
+    LupinFace: face,
     EmoAudio: audio,
     DeskDiagnostics: { init() { diagnosticsCount += 1; }, refreshVoices() {} },
     ...(bus ? { BroadcastChannel: bus.BroadcastChannel } : {}),

@@ -2,7 +2,7 @@
  * Controlador principal da interface web do Assistente de Mesa (/static/app.js).
  * Integra:
  * - 4 modos de tela (Pet Vivo, Dock & Atalhos do Mac, Smart Display, Diagnóstico)
- * - Rosto SVG (window.EmoFace) + Áudio Procedural (window.EmoAudio)
+ * - Rosto do Lupin em camadas (window.LupinFace) + Áudio Procedural (window.EmoAudio)
  * - Gamepad RG406H (window.DeskGamepad) + Diagnóstico (window.DeskDiagnostics)
  * - WebSocket (/ws) com streaming frase-a-frase, Push-to-Talk, barge-in e ações
  * - TTS híbrido (Browser speechSynthesis vs Servidor Mac via Brain)
@@ -445,9 +445,9 @@
     }
   }
 
-  // Helpers seguros para EmoFace e EmoAudio
+  // Helpers seguros para LupinFace e EmoAudio
   function faceApi() {
-    return window.EmoFace || null;
+    return window.LupinFace || null;
   }
 
   function audioApi() {

@@ -12,3 +12,4 @@ dist/
 android/build/
 electron/node_modules/
 electron/dist/
+build/

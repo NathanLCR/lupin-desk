@@ -1,0 +1,136 @@
+/**
+ * Rosto do Lupin (/static/lupin.css)
+ * Palco 480x320 escalado pelo JS; camadas SVG empilhadas na mesma tela.
+ */
+.lupin-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  overflow: hidden;
+  background-color: #000;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.lupin-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 480px;
+  height: 320px;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+}
+
+.lupin-respira,
+.lupin-grupo-cabeca,
+.lupin-camada {
+  position: absolute;
+  inset: 0;
+}
+
+.lupin-respira {
+  transform-origin: 240px 320px;
+}
+
+.lupin-grupo-cabeca {
+  transform-origin: 240px 255px;
+}
+
+.lupin-variante,
+.lupin-corpo {
+  position: absolute;
+  inset: 0;
+  width: 480px;
+  height: 320px;
+  pointer-events: none;
+}
+
+.lupin-variante[hidden],
+.lupin-corpo[hidden] {
+  display: none;
+}
+
+/* Truque de corpo inteiro: o busto some enquanto os quadros do Truque rodam. */
+.lupin-corpo-inteiro .lupin-respira {
+  visibility: hidden;
+}
+
+.lupin-root[data-state="listening"] .lupin-grupo-cabeca {
+  filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35));
+}
+
+.lupin-camada-colar {
+  transition: filter 120ms linear;
+}
+
+body.is-minipet .lupin-root {
+  min-height: 0;
+  background-color: transparent;
+}
+
+/* Efeitos dos Truques de busto (sing, meditate, celebrate) */
+.lupin-efeito {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.lupin-efeito-notas {
+  left: calc(10% + var(--x) * 0.8%);
+  bottom: 60%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22d3ee;
+  opacity: 0;
+  animation: lupin-sobe 2.4s ease-out calc(var(--i) * 0.35s) infinite;
+}
+
+.lupin-efeito-aneis {
+  left: 50%;
+  top: 50%;
+  width: 80px;
+  height: 80px;
+  margin: -40px 0 0 -40px;
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+  opacity: 0;
+  animation: lupin-anel 2.4s ease-out calc(var(--i) * 0.6s) infinite;
+}
+
+.lupin-efeito-confete {
+  left: calc(var(--x) * 1%);
+  top: -8px;
+  width: 7px;
+  height: 12px;
+  background: #22d3ee;
+  opacity: 0;
+  animation: lupin-cai 1.8s ease-in calc(var(--i) * 0.07s) infinite;
+}
+
+.lupin-efeito-confete:nth-child(3n) { background: #f4f4f5; }
+.lupin-efeito-confete:nth-child(3n + 1) { background: #f9a8d4; }
+
+@keyframes lupin-sobe {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-140px); opacity: 0; }
+}
+
+@keyframes lupin-anel {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+
+@keyframes lupin-cai {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(340px) rotate(360deg); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lupin-efeito { display: none; }
+  .lupin-camada-colar { transition: none; }
+}

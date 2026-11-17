@@ -233,7 +233,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
     clearInterval(id) { timers.delete(id); },
     addEventListener() {},
     dispatchEvent() {},
-    EmoFace: null,
+    LupinFace: null,
     EmoAudio: null,
   };
   if (speech) {
@@ -592,7 +592,7 @@ test('fetchMacStatus usa faceApi sem depender de getFace', async () => {
     }),
   });
   let musicPlaying;
-  harness.window.EmoFace = {
+  harness.window.LupinFace = {
     setMusicPlaying(value) { musicPlaying = value; },
     setAccessory() {},
   };
