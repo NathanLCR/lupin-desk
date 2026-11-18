@@ -1,6 +1,6 @@
 # P03 - Mac Layout editor
 
-Status: ready-for-agent
+Status: done
 Blocked by: P02
 
 ## Scope

@@ -1,6 +1,6 @@
 # P05 - E-ink Mode (Kindle)
 
-Status: ready-for-agent
+Status: done (device test pending)
 Blocked by: P02
 
 ## Scope

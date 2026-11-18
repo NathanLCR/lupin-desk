@@ -1,6 +1,6 @@
 # P07 - Widgets: Everyday
 
-Status: ready-for-agent
+Status: done (device test pending)
 Blocked by: P02, P06
 
 ## Scope
