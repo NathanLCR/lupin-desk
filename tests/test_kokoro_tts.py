@@ -350,3 +350,14 @@ def test_default_voice_and_list_voices_delegate_to_fallback():
     assert lupin.default_voice == "Luciana"
     assert lupin.list_voices() == fallback.list_voices()
 
+
+
+def test_unsupported_language_falls_back_to_the_default_language():
+    kokoro = FakeKokoro()
+    engine = KokoroEngine(pipeline_factory=kokoro.factory, runner=FakeRunner(), language_getter=lambda: "xx")
+
+    engine.synthesize("Hello", None, "wav")
+
+    assert speech.DEFAULT_LANGUAGE == "pt-BR"
+    assert kokoro.factory_calls == ["p"]
+    assert kokoro.pipeline_calls[0][1] == "pf_dora"

@@ -149,7 +149,7 @@ class KokoroEngine:
         """Synthesize `text` with Kokoro into `.m4a` (`audio/mp4`) or `.wav` (`audio/wav`)."""
         cleaned, fmt = _validate_request(text, output_format)
 
-        lang = speech.normalize_language(self._language_getter()) or _DEFAULT_LANGUAGE
+        lang = speech.normalize_language(self._language_getter()) or speech.DEFAULT_LANGUAGE
         chosen_voice = voice.strip() if voice and _KOKORO_VOICE_RE.match(voice.strip()) else _VOICES[lang]
 
         pipeline = self._get_pipeline(_LANG_CODES[lang])
