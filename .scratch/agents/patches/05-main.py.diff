@@ -1,0 +1,62 @@
+diff --git a/app/main.py b/app/main.py
+index 1e0aeeb..50a9310 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
+ from pydantic import BaseModel, Field
+ 
+ from app.device_routes import setup_devices
++from app.productivity import register as register_productivity
+ from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
+ from app.cowork import CoworkStore, get_git_sync_status
+ from app.llm import LLMClient, LLMError
+@@ -359,9 +360,14 @@ def create_app(
+ 
+     @asynccontextmanager
+     async def lifespan(_app: FastAPI):
++        productivity = getattr(_app.state, "productivity", None)
++        if productivity is not None:
++            productivity.start()
+         try:
+             yield
+         finally:
++            if productivity is not None:
++                await productivity.stop()
+             if own_shortcuts:
+                 resolved_shortcuts.close()
+             if own_memory:
+@@ -998,6 +1004,9 @@ def create_app(
+     )
+     fastapi_app.state.signals = signals
+ 
++    # Tasks, notes and habits (issue 05): store, REST, Panel actions, habit scheduler.
++    register_productivity(fastapi_app, resolved_settings.db_path)
++
+     @fastapi_app.websocket("/ws")
+     async def websocket_chat(websocket: WebSocket) -> None:
+         """Concurrent WebSocket channel with sentence-by-sentence streaming, barge-in and actions."""
+@@ -1382,7 +1391,23 @@ def create_app(
+                     elif event_type == "action":
+                         kind = str(event.get("kind") or "")
+                         target = str(event.get("target") or "")
+-                        if kind and target:
++                        if kind in ("task", "note", "habit") and target:
++                            voice_result = await fastapi_app.state.productivity.handle_voice(kind, target)
++                            await safe_send(
++                                {
++                                    "type": "action_executed",
++                                    "kind": kind,
++                                    "target": kind,
++                                    "ok": bool(voice_result.get("ok")),
++                                }
++                            )
++                            spoken = str(voice_result.get("spoken") or "")
++                            if spoken:
++                                await safe_send({"type": "sentence", "text": spoken})
++                                await mirror({"type": "sentence", "text": spoken})
++                                if audio_queue is not None:
++                                    audio_queue.put_nowait(spoken)
++                        elif kind and target:
+                             await execute_action_item(kind, target)
+                     elif event_type == "result":
+                         clean_text = str(event.get("text") or "")
