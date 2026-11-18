@@ -1791,6 +1791,19 @@
       }
       case 'notice': {
         // A local model is slow: show the thinking state and the caption (the server also speaks it).
+        // Lupin speaks unprompted (a Signal): caption, and browser TTS when there is no server audio.
+        const signalPlan = window.LupinSignals
+          ? window.LupinSignals.noticePlan(msg, {
+              ttsEnabled: state.ttsEnabled,
+              ttsMode: state.ttsMode,
+              isLupinBody: state.isLupinBody,
+            })
+          : null;
+        if (signalPlan) {
+          setCaption(signalPlan.caption);
+          if (signalPlan.speakInBrowser) enqueueTtsSentence(signalPlan.caption);
+          break;
+        }
         const slowCaption = window.LupinLocalMode ? window.LupinLocalMode.slowNoticeCaption(msg) : null;
         if (slowCaption) {
           applyFaceState('thinking');
