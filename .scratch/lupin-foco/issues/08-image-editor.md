@@ -1,6 +1,6 @@
 # 08 - Image editor
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -23,3 +23,11 @@ Last feature in the queue (02..08). Lupin helps with simple image edits at the u
 
 - Which edit does the user actually make often?
 - How to get the image without Clipboard Read?
+
+## Decisions (grill 2026-11-18)
+
+- The editor is a Panel widget (built on panels P02), plus voice commands through Lupin.
+- Input: the user picks or drops a photo on a Panel device; it is uploaded to the Brain (images only, size-capped). Clipboard Read stays removed.
+- Edits: crop (touch handles on the Panel), resize, compress, remove background (macOS Vision, local), convert format (HEIC/PNG/JPG/WebP).
+- All processing is local (`sips`, Vision). No provider.
+- The result downloads back to the device and is saved to `~/Pictures/Lupin` on the Mac.
