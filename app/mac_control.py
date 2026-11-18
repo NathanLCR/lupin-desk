@@ -891,6 +891,11 @@ class MacController:
         result.setdefault("action_type", action_type)
         return result
 
+    def pomodoro_active(self) -> bool:
+        """True while a Pomodoro focus session is running (Signals use it as the focus rule)."""
+        with self._lock:
+            return bool(self._pomodoro_state.get("active"))
+
     def _invalidate_status_cache(self) -> None:
         """Invalidate the status cache after actions that change volume/media/focus."""
         with self._lock:

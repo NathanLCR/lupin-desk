@@ -325,3 +325,16 @@ POMODORO_FOCUS_DONE = "Pomodoro focus cycle complete! Take a break."
 POMODORO_BREAK_DONE = "Pomodoro break finished! Time to get back to focus."
 DIAG_TEST_BROWSER_TTS = "Hi! The browser voice test is working."
 DIAG_TEST_SERVER_TTS = "Hi! The Mac server's offline voice test is working."
+
+
+# ---------------------------------------------------------------------------
+# Signals (Brain-side event bus): fallback spoken line per signal kind
+# ---------------------------------------------------------------------------
+
+SIGNAL_LINES: dict[str, str] = {
+    "claude_code_needs_user": "Claude Code needs you.",
+    "build_failed": "The build failed.",
+    "timer_done": "Your timer is done.",
+    "habit_due": "A habit is due.",
+    "meeting_soon": "Your meeting starts soon.",
+}
