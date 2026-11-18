@@ -1,6 +1,6 @@
 # P01 - Device Roles and protocol extension
 
-Status: done (live on the Mac browser 2026-11-18; RG406H test pending)
+Status: done (live on Mac browser and RG406H 2026-11-18)
 
 ## Context
 
