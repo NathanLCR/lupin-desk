@@ -896,6 +896,11 @@ class MacController:
         with self._lock:
             return bool(self._pomodoro_state.get("active"))
 
+    def pomodoro_state(self) -> dict[str, Any]:
+        """Return a copy of the Pomodoro state (active, duration_minutes, started_at)."""
+        with self._lock:
+            return dict(self._pomodoro_state)
+
     def _invalidate_status_cache(self) -> None:
         """Invalidate the status cache after actions that change volume/media/focus."""
         with self._lock:

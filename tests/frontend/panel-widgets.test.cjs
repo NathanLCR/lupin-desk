@@ -253,3 +253,220 @@ test('widgets.js stays ES5 (no arrow functions, let/const, classes or template l
   assert.equal(/`/.test(code), false, 'template literal');
   assert.equal(/\.(includes|startsWith|endsWith|find|findIndex)\(/.test(code), false, 'ES2015 string/array method');
 });
+
+// ---- Clock upgrade: zones, seconds, analog face, pure helpers ----
+
+FakeElement.prototype.setAttribute = function (name, value) {
+  if (!this.attrs) this.attrs = {};
+  this.attrs[name] = String(value);
+};
+
+FakeElement.prototype.getAttribute = function (name) {
+  return this.attrs && Object.prototype.hasOwnProperty.call(this.attrs, name)
+    ? this.attrs[name]
+    : null;
+};
+
+function fakeSvgDocument() {
+  const doc = {
+    createElement(tag) {
+      return new FakeElement(tag, doc);
+    },
+    createElementNS(ns, tag) {
+      const el = new FakeElement(tag, doc);
+      el.namespaceURI = ns;
+      return el;
+    }
+  };
+  return doc;
+}
+
+function fakeSvgHost(width, height) {
+  const el = new FakeElement('div', fakeSvgDocument());
+  el.clientWidth = width || 0;
+  el.clientHeight = height || 0;
+  return el;
+}
+
+function findAll(node, pred, out = []) {
+  if (pred(node)) out.push(node);
+  node.children.forEach((child) => findAll(child, pred, out));
+  return out;
+}
+
+function clockDef() {
+  const registry = fakeRegistry();
+  PanelWidgets.registerBuiltins(registry);
+  return registry.defs.find((d) => d.id === 'clock');
+}
+
+function closeTo(actual, expected) {
+  assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
+}
+
+test('clock keeps its id, empty topics and actions, and sizes', () => {
+  const clock = clockDef();
+  assert.equal(clock.id, 'clock');
+  assert.deepEqual(clock.topics, []);
+  assert.deepEqual(clock.actions, []);
+  assert.deepEqual(clock.sizes.default, { w: 4, h: 2 });
+  assert.deepEqual(clock.sizes.min, { w: 2, h: 1 });
+  assert.deepEqual(clock.sizes.max, { w: 12, h: 6 });
+});
+
+test('zoneTime formats HH:MM in the given IANA zone', () => {
+  const instant = new Date(Date.UTC(2026, 10, 18, 12, 5));
+  assert.equal(PanelWidgets.zoneTime(instant, 'UTC'), '12:05');
+  assert.equal(PanelWidgets.zoneTime(instant, 'Asia/Tokyo'), '21:05');
+  assert.equal(PanelWidgets.zoneTime(instant, 'America/New_York'), '07:05');
+  assert.equal(PanelWidgets.zoneTime(new Date(Date.UTC(2026, 10, 18, 0, 0)), 'UTC'), '00:00',
+    'midnight is 00:00, not 24:00');
+});
+
+test('zoneTime gives --:-- for a bad zone or when the engine throws', () => {
+  const instant = new Date(Date.UTC(2026, 10, 18, 12, 5));
+  assert.equal(PanelWidgets.zoneTime(instant, 'Mars/Olympus_Mons'), '--:--');
+
+  const original = Date.prototype.toLocaleTimeString;
+  Date.prototype.toLocaleTimeString = function () {
+    throw new RangeError('old engine');
+  };
+  try {
+    assert.equal(PanelWidgets.zoneTime(instant, 'UTC'), '--:--');
+  } finally {
+    Date.prototype.toLocaleTimeString = original;
+  }
+});
+
+test('analogAngles maps time to hour, minute and second degrees', () => {
+  const a = PanelWidgets.analogAngles(new Date(2026, 10, 18, 3, 30, 15));
+  closeTo(a.hour, 105);
+  closeTo(a.minute, 181.5);
+  closeTo(a.second, 90);
+
+  assert.deepEqual(PanelWidgets.analogAngles(new Date(2026, 10, 18, 0, 0, 0)),
+    { hour: 0, minute: 0, second: 0 });
+
+  const c = PanelWidgets.analogAngles(new Date(2026, 10, 18, 12, 59, 59));
+  closeTo(c.hour, 29.5);
+  closeTo(c.minute, 359.9);
+  closeTo(c.second, 354);
+});
+
+test('normalizeZones keeps up to 4 valid {label, tz} entries', () => {
+  assert.deepEqual(PanelWidgets.normalizeZones(undefined), []);
+  assert.deepEqual(PanelWidgets.normalizeZones('NYC'), []);
+  assert.deepEqual(PanelWidgets.normalizeZones([
+    null,
+    'Tokyo',
+    { label: 5, tz: 'Asia/Tokyo' },
+    { label: 'NoTz' },
+    { label: 'NYC', tz: 'America/New_York', extra: 1 }
+  ]), [{ label: 'NYC', tz: 'America/New_York' }]);
+
+  const many = [];
+  for (let i = 0; i < 6; i++) many.push({ label: 'Z' + i, tz: 'UTC' });
+  const out = PanelWidgets.normalizeZones(many);
+  assert.equal(out.length, 4);
+  assert.deepEqual(out.map((z) => z.label), ['Z0', 'Z1', 'Z2', 'Z3']);
+});
+
+test('digital clock shows zone rows and HH:MM:SS when seconds is on', () => {
+  const def = clockDef();
+  const start = new Date(2026, 10, 18, 9, 5, 7);
+  withFakeClock(start, (clock) => {
+    const el = fakeHost(400, 300);
+    const zones = [
+      { label: 'Tokyo', tz: 'Asia/Tokyo' },
+      { label: 'Nowhere', tz: 'Mars/Base' }
+    ];
+    const instance = def.render(el, { config: { zones, seconds: true }, size: { width: 400, height: 300 } });
+
+    assert.equal(findByClass(el, 'pn-clock-time').textContent, '09:05:07');
+    assert.equal(findByClass(el, 'pn-clock-date').textContent, 'Wed 18 Nov');
+    assert.equal(findAll(el, (n) => n.className === 'pn-clock-zone').length, 2);
+
+    const labels = findAll(el, (n) => n.className === 'pn-clock-zone-label').map((n) => n.textContent);
+    assert.deepEqual(labels, ['Tokyo', 'Nowhere']);
+    const values = findAll(el, (n) => n.className === 'pn-clock-zone-time').map((n) => n.textContent);
+    assert.deepEqual(values, [PanelWidgets.zoneTime(start, 'Asia/Tokyo'), '--:--']);
+
+    clock.advanceTo(new Date(2026, 10, 18, 9, 6, 0));
+    clock.tick();
+    assert.equal(findByClass(el, 'pn-clock-time').textContent, '09:06:00');
+
+    instance.destroy();
+    assert.equal(clock.activeCount(), 0, 'destroy clears the timer');
+  });
+});
+
+test('digital clock without zones or seconds keeps the plain HH:MM face', () => {
+  const def = clockDef();
+  withFakeClock(new Date(2026, 10, 18, 9, 5, 7), (clock) => {
+    const el = fakeHost(400, 300);
+    const instance = def.render(el, { config: { style: 'digital' }, size: { width: 400, height: 300 } });
+    assert.equal(findByClass(el, 'pn-clock-time').textContent, '09:05');
+    assert.equal(findAll(el, (n) => n.className === 'pn-clock-zones').length, 0);
+    instance.destroy();
+    assert.equal(clock.activeCount(), 0);
+  });
+});
+
+test('analog clock draws an SVG face with 12 ticks and three hands, updated every second', () => {
+  const def = clockDef();
+  const start = new Date(2026, 10, 18, 3, 30, 15);
+  withFakeClock(start, (clock) => {
+    const el = fakeSvgHost(400, 300);
+    const instance = def.render(el, {
+      config: { style: 'analog', zones: [{ label: 'UTC', tz: 'UTC' }] },
+      size: { width: 400, height: 300 }
+    });
+
+    const svg = findAll(el, (n) => n.tagName === 'SVG')[0];
+    assert.ok(svg, 'svg element is present');
+    assert.equal(svg.namespaceURI, 'http://www.w3.org/2000/svg');
+    assert.equal(svg.getAttribute('viewBox'), '0 0 100 100');
+    assert.equal(svg.getAttribute('width'), '100%');
+    assert.equal(svg.getAttribute('height'), '100%');
+
+    assert.equal(findAll(svg, (n) => n.getAttribute('data-role') === 'tick').length, 12);
+
+    const hour = findAll(svg, (n) => n.getAttribute('data-hand') === 'hour')[0];
+    const minute = findAll(svg, (n) => n.getAttribute('data-hand') === 'minute')[0];
+    const second = findAll(svg, (n) => n.getAttribute('data-hand') === 'second')[0];
+    assert.equal(hour.getAttribute('transform'), 'rotate(105 50 50)');
+    assert.equal(minute.getAttribute('transform'), 'rotate(181.5 50 50)');
+    assert.equal(second.getAttribute('transform'), 'rotate(90 50 50)');
+
+    assert.equal(findByClass(el, 'pn-clock-time'), null, 'no digital time on the analog face');
+    assert.equal(findByClass(el, 'pn-clock-date').textContent, 'Wed 18 Nov');
+    assert.equal(findByClass(el, 'pn-clock-zone-time').textContent, PanelWidgets.zoneTime(start, 'UTC'));
+
+    const face = findByClass(el, 'pn-clock-face');
+    assert.equal(face.style.width, '210px', 'face is min(0.9w, 0.7h) square');
+
+    assert.equal(clock.activeCount(), 1);
+    assert.equal(clock.timers[0].ms, 1000);
+    clock.advanceTo(new Date(2026, 10, 18, 3, 30, 16));
+    clock.tick();
+    assert.equal(second.getAttribute('transform'), 'rotate(96 50 50)');
+
+    instance.onResize({ width: 200, height: 100 });
+    assert.equal(face.style.width, '70px');
+
+    instance.destroy();
+    assert.equal(clock.activeCount(), 0, 'destroy clears the analog timer');
+  });
+});
+
+test('analog style falls back to the digital face without createElementNS', () => {
+  const def = clockDef();
+  withFakeClock(new Date(2026, 10, 18, 9, 5, 7), (clock) => {
+    const el = fakeHost(400, 300);
+    const instance = def.render(el, { config: { style: 'analog' }, size: { width: 400, height: 300 } });
+    assert.equal(findByClass(el, 'pn-clock-time').textContent, '09:05');
+    assert.equal(findAll(el, (n) => n.tagName === 'SVG').length, 0);
+    instance.destroy();
+    assert.equal(clock.activeCount(), 0);
+  });
+});
