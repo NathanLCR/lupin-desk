@@ -88,7 +88,7 @@ def test_first_time_device_id_hello_creates_panel_only_device(tmp_path: Path) ->
     hub = _hub(tmp_path)
     _, messages = _connect(
         hub,
-        {"body": "web", "device_id": "panel-0001-aaaa", "name": "Moto G5", "screen": {"w": 360}},
+        {"body": "panel", "device_id": "panel-0001-aaaa", "name": "Moto G5", "screen": {"w": 360}},
     )
 
     assert messages == [
@@ -108,7 +108,7 @@ def test_first_time_device_id_hello_creates_panel_only_device(tmp_path: Path) ->
 
 def test_a_panel_never_becomes_the_active_body(tmp_path: Path) -> None:
     hub = _hub(tmp_path)
-    _, panel_messages = _connect(hub, {"body": "esp32", "device_id": "panel-0002-bbbb"})
+    _, panel_messages = _connect(hub, {"body": "panel", "device_id": "panel-0002-bbbb"})
     assert hub.current_active_body() is None
 
     body, _ = _connect(hub, {"body": "rg406h-web"})
@@ -119,7 +119,7 @@ def test_a_panel_never_becomes_the_active_body(tmp_path: Path) -> None:
 
 def test_setting_body_role_in_store_then_device_changed_activates_device(tmp_path: Path) -> None:
     hub = _hub(tmp_path)
-    entry, messages = _connect(hub, {"body": "esp32", "device_id": "panel-0003-cccc", "name": "Desk"})
+    entry, messages = _connect(hub, {"body": "panel", "device_id": "panel-0003-cccc", "name": "Desk"})
 
     hub.store.update("panel-0003-cccc", roles=["body"])
     asyncio.run(hub.device_changed("panel-0003-cccc"))
@@ -136,7 +136,7 @@ def test_setting_body_role_in_store_then_device_changed_activates_device(tmp_pat
         }
     ]
     assert hub.current_active_body() is entry
-    assert messages[-1] == {"type": "active_body", "active_body": "esp32", "active": True}
+    assert messages[-1] == {"type": "active_body", "active_body": "panel", "active": True}
 
 
 def test_user_priority_beats_kind_rank(tmp_path: Path) -> None:
@@ -179,7 +179,7 @@ def test_removing_last_body_role_sends_active_body_none(tmp_path: Path) -> None:
     hub.store.upsert_hello("body-cccc-0003", name="C", kind="esp32")
     hub.store.update("body-cccc-0003", roles=["body"])
     _, body_messages = _connect(hub, {"body": "esp32", "device_id": "body-cccc-0003"})
-    _, panel_messages = _connect(hub, {"body": "web", "device_id": "panel-dddd-0004"})
+    _, panel_messages = _connect(hub, {"body": "panel", "device_id": "panel-dddd-0004"})
 
     hub.store.update("body-cccc-0003", roles=["panel"])
     asyncio.run(hub.device_changed("body-cccc-0003"))
@@ -302,3 +302,32 @@ def test_raw_legacy_entries_do_not_crash_hub_logic(tmp_path: Path) -> None:
     asyncio.run(hub.device_changed())
     assert asyncio.run(hub.publish("any.topic", {})) == 0
     assert entry in hub.entries
+
+
+def test_legacy_body_kind_is_stored_as_body_and_panel_once(tmp_path: Path) -> None:
+    from app.device_hub import DeviceHub
+    from app.devices import DeviceStore
+    from app.actions import ActionRegistry
+
+    store = DeviceStore(tmp_path / "d.db")
+    hub = DeviceHub(store, ActionRegistry())
+    sent: list[dict] = []
+
+    async def send(msg: dict) -> None:
+        sent.append(msg)
+
+    async def go() -> None:
+        info: dict = {}
+        await hub.hello(info, {"body": "rg406h-web", "device_id": "dev-rg406h01"}, send)
+        assert sent[-1]["roles"] == ["body", "panel"] and sent[-1]["active"] is True
+        info2: dict = {}
+        await hub.hello(info2, {"body": "kindle", "device_id": "dev-kindle01"}, send)
+        assert sent[-1]["roles"] == ["panel"]
+        # A stored role is never overwritten on reconnect.
+        store.update("dev-rg406h01", roles=["panel"])
+        await hub.disconnect(info["entry"])
+        info3: dict = {}
+        await hub.hello(info3, {"body": "rg406h-web", "device_id": "dev-rg406h01"}, send)
+        assert sent[-1]["roles"] == ["panel"] and sent[-1]["active"] is False
+
+    asyncio.run(go())

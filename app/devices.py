@@ -127,12 +127,17 @@ class DeviceStore:
         name: str = "",
         kind: str = "",
         screen: dict | None = None,
+        default_roles: list[str] | None = None,
     ) -> dict:
-        """Register a device on hello, or refresh an existing one without touching name or roles."""
+        """Register a device on hello, or refresh an existing one without touching name or roles.
+
+        `default_roles` applies only when the device is new (default: Panel only).
+        """
         if not isinstance(device_id, str) or not DEVICE_ID_RE.match(device_id):
             raise ValueError("Invalid device id")
 
         clean_kind = (kind or "").strip()[:_KIND_MAX]
+        first_roles = [r for r in ROLES if r in (default_roles or ["panel"])] or ["panel"]
         encoded_screen = _encode_screen(screen)
         now = _now_iso()
 
@@ -154,7 +159,7 @@ class DeviceStore:
                             device_id,
                             clean_name,
                             clean_kind,
-                            json.dumps(["panel"]),
+                            json.dumps(first_roles),
                             encoded_screen,
                             now,
                             now,
