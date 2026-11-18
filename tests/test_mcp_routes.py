@@ -31,7 +31,7 @@ def ctx(tmp_path):
             raise HTTPException(status_code=403, detail=detail)
 
     tools = register_mcp_routes(app, store, require_mac_client)
-    client = TestClient(app)
+    client = TestClient(app, headers={"host": "127.0.0.1:8000", "content-type": "application/json"})
     return SimpleNamespace(client=client, store=store, tools=tools, flags=flags)
 
 
@@ -315,3 +315,38 @@ async def test_run_echoes_arguments_through_the_fixture(ctx):
     result = await ctx.tools.run("fake", "echo", {"text": "hello there"})
     assert result["ok"] is True
     assert "hello there" in result["text"]
+
+
+def test_rebinding_host_is_rejected_on_every_write_route(ctx) -> None:
+    env = ctx
+    bad = {"host": "evil.example.com", "content-type": "application/json"}
+    assert env.client.post("/api/mcp/servers", json=stdio_body(), headers=bad).status_code == 403
+    assert env.store.list() == []
+    assert env.client.post("/api/mcp/servers/fake/refresh", headers=bad).status_code == 403
+    assert env.client.delete("/api/mcp/servers/fake", headers=bad).status_code == 403
+    assert env.client.get("/api/mcp/servers", headers=bad).json()["can_edit"] is False
+
+
+def test_foreign_origin_is_rejected(ctx) -> None:
+    env = ctx
+    res = env.client.post("/api/mcp/servers", json=stdio_body(), headers={"origin": "https://evil.example.com"})
+    assert res.status_code == 403
+    assert env.store.list() == []
+
+
+def test_write_needs_a_json_content_type(ctx) -> None:
+    env = ctx
+    res = env.client.post(
+        "/api/mcp/servers", content=json.dumps(stdio_body()), headers={"content-type": "text/plain"}
+    )
+    assert res.status_code == 415
+    assert env.store.list() == []
+
+
+def test_describe_shows_truncated_redacted_arguments(ctx) -> None:
+    env = ctx
+    env.client.post("/api/mcp/servers", json=stdio_body())
+    env.client.post("/api/mcp/servers/fake/refresh")
+    info = env.tools.describe("fake", "echo", {"text": "hi " + FAKE_SECRET_VALUE + " " + "x" * 600})
+    assert "hi" in info["message"] and FAKE_SECRET_VALUE not in info["message"]
+    assert len(info["message"]) < 600

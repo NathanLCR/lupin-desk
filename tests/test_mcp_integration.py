@@ -66,13 +66,13 @@ def test_mcp_endpoint_is_mounted(tmp_path: Path) -> None:
 
 def test_external_tool_needs_approval_by_default_then_runs(tmp_path: Path) -> None:
     llm = _McpLLM('fake.echo {"text": "hello"}')
-    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm)) as client:  # type: ignore[arg-type]
+    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm), headers=HEADERS) as client:  # type: ignore[arg-type]
         _add_fixture_server(client)
         with client.websocket_connect("/ws") as ws:
             ws.send_json({"type": "text", "text": "use the tool"})
             req = _wait(ws, "tool_approval_request")
             assert req["kind"] == "mcp" and req["risk"] == "external"
-            assert "hello" not in req["message"]
+            assert "hello" in req["message"]  # the approval shows the arguments that will run
             ws.send_json({"type": "confirm_action", "approval_id": req["approval_id"], "approved": True})
             done = _wait(ws, "action_executed")
             assert done["ok"] is True
@@ -81,7 +81,7 @@ def test_external_tool_needs_approval_by_default_then_runs(tmp_path: Path) -> No
 
 def test_external_tool_declined_does_not_run(tmp_path: Path) -> None:
     llm = _McpLLM('fake.echo {"text": "hello"}')
-    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm)) as client:  # type: ignore[arg-type]
+    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm), headers=HEADERS) as client:  # type: ignore[arg-type]
         _add_fixture_server(client)
         with client.websocket_connect("/ws") as ws:
             ws.send_json({"type": "text", "text": "use the tool"})
@@ -93,7 +93,7 @@ def test_external_tool_declined_does_not_run(tmp_path: Path) -> None:
 
 def test_read_tool_runs_without_approval_and_prompt_lists_tools(tmp_path: Path) -> None:
     llm = _McpLLM('fake.echo {"text": "hello"}')
-    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm)) as client:  # type: ignore[arg-type]
+    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm), headers=HEADERS) as client:  # type: ignore[arg-type]
         _add_fixture_server(client)
         res = client.put("/api/mcp/servers/fake/tools/echo/risk", json={"risk": "read"})
         assert res.status_code == 200
@@ -106,7 +106,7 @@ def test_read_tool_runs_without_approval_and_prompt_lists_tools(tmp_path: Path) 
 
 def test_unknown_external_tool_is_refused(tmp_path: Path) -> None:
     llm = _McpLLM("nope.tool {}")
-    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm)) as client:  # type: ignore[arg-type]
+    with TestClient(create_app(settings=_settings(tmp_path), llm_client=llm), headers=HEADERS) as client:  # type: ignore[arg-type]
         with client.websocket_connect("/ws") as ws:
             ws.send_json({"type": "text", "text": "x"})
             done = _wait(ws, "action_executed")
