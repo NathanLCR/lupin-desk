@@ -61,4 +61,7 @@ One row per finished task. Fill it from the agent's task-notification usage bloc
 | reviewer 12 | 12 | nested | sonnet | 118,610 | 18 | 1m45s | CHANGES REQUESTED, 2 blocking (DNS-rebinding RCE on /api/mcp, corrupt json breaks chat) | 0 | 5 nits; consent question to user |
 | P02 fix-up 1 | P02 | nested | sonnet | 156,795 | 6 | 1m03s | fe 268/269 known; py 571 pass | 1 | lead fixed registry destroy of failed tiles directly |
 | 12 fix-up 1 | 12 | nested | sonnet | 185,538 | 12 | 1m52s | py mcp tests 130 + integration 5 (needs 12-fix-main patch); fe 268/1 known | 1 | DNS-rebinding guard, corrupt-config tolerance, approval shows args, process-group kill; patch 12-fix-main.py.diff pending |
-| P04 shell, boot receiver, tests (lead did it directly, no coder) | P04 | nested | lead | ? | ? | ? | pass, +3 tests | 0 | no Haiku spawned: change was one Java file + small tests |
+| P04 shell, boot receiver, tests (lead did it directly, no coder) | P04 | nested | sonnet | 100,533 | 14 | 2m44s | pass, +3 tests | 0 | no Haiku spawned: change was one Java file + small tests |
+| eink.py render module | P05 | nested | haiku | 96,396 | 5 | 1m10s | pass | 0 | 7 widget renderers + render_page |
+| test_panels_eink.py | P05 | nested | haiku | 81,791 | 8 | 1m15s | pass, +17 tests | 0 | |
+| lead P05 | P05 | nested | sonnet | ? | ? | ? | py 665 pass; +4 wiring tests | 0 | route written by lead |

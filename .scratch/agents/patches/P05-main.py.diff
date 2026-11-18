@@ -1,0 +1,9 @@
+--- a/app/main.py
++++ b/app/main.py
+@@ -25,1 +25,2 @@
+ from app.panels.routes import register as register_panels
++from app.panels.eink import register as register_eink
+@@ -997,1 +998,3 @@
+     register_panels(fastapi_app, resolved_settings.db_path, require_mac_client)
++    # E-ink Mode (P05): GET /eink for the Kindle (app/panels/eink.py).
++    register_eink(fastapi_app)

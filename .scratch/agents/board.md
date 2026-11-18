@@ -17,7 +17,6 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 | static/editor/ (new), app/panels/credentials.py (new), app/panels/templates.py, tests/test_panels.py (template asserts only), tests/test_panel_credentials.py, tests/test_panel_templates.py, tests/frontend/editor-*.test.cjs | lead-p03 / P03 | 2026-11-18 |
 | `app/search/` , `tests/test_search_*.py`, `docs/smart-search.md` | lead-06 / 06 | 2026-11-18 |
 | `app/speech_en.py`, `app/speech_pt_br.py`, `app/llm.py` (search additions only) | lead-06 / 06 | 2026-11-18 |
-| app/panels/eink.py, tests/test_panels_eink.py, tests/test_panels_eink_wiring.py | lead-p05 / P05 | 2026-11-18 |
 | static/panel/widget-kit.js, widgets-info.js, widgets-productivity.js, widgets-timers.js, widgets.js (clock only), static/panel/index.html (script tags only), app/panels/everyday.py, tests/test_panels_everyday.py, tests/frontend/panel-everyday-*.test.cjs | lead-p07 / P07 | 2026-11-18 |
 | app/mac_control.py (add pomodoro_state() only) | lead-p07 / P07 | 2026-11-18 |
 
@@ -26,11 +25,11 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 | Task | Issue | Track | Agent (model) | Started |
 |---|---|---|---|---|
 | Mac Layout editor | P03 | nested | lead-p03 (sonnet) | 2026-11-18 |
-| E-ink Mode (Kindle) | P05 | nested | lead-p05 (sonnet) | 2026-11-18 |
 | Everyday widgets | P07 | nested | lead-p07 (sonnet) | 2026-11-18 |
 
 ## Requests
 
+- P05: apply `.scratch/agents/patches/P05-main.py.diff` (register_eink(fastapi_app) after register_panels) so GET /eink is live. Kindle URL: `/eink?device=<id>` (optional layout, page, orientation, refresh minutes).
 - (all wave 1–3 patches applied: P01, P06, 05, P02, 12 and their fix-ups.)
 
 ## Decisions and notes
