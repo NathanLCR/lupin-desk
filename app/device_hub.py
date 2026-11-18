@@ -134,7 +134,22 @@ class DeviceHub:
 
         self._seq += 1
         entry: dict[str, Any]
-        if isinstance(device_id, str) and DEVICE_ID_RE.match(device_id):
+        if kind == "editor":
+            # Layout editor live preview is an ephemeral read-only subscriber, never a device or Body.
+            entry = {
+                "body": kind,
+                "device_id": None,
+                "name": name,
+                "roles": [],
+                "layout_id": None,
+                "priority": None,
+                "seq": self._seq,
+                "send": send,
+                "wants_audio": False,
+                "topics": set(),
+                "screen": {},
+            }
+        elif isinstance(device_id, str) and DEVICE_ID_RE.match(device_id):
             record = self.store.upsert_hello(
                 device_id,
                 name=name,
