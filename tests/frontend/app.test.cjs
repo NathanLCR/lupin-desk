@@ -627,3 +627,23 @@ test('pairing limits Tab to the dialog and restores focus on close', () => {
   assert.equal(document.activeElement, opener);
   assert.equal(overlay.isConnected, false);
 });
+
+test('dictation: armed recording sends audio flagged as dictation and shows the result caption', async () => {
+  const harness = makeHarness();
+  const { app, wsMessages, mediaRecorders } = harness;
+  const data = new Blob(['A'.repeat(500)], { type: 'audio/webm' });
+
+  await app.startPtt();
+  mediaRecorders[0].ondataavailable({ data });
+  await app.stopPttAndSend();
+  assert.equal(wsMessages.filter((m) => m.type === 'audio')[0].dictation, undefined);
+
+  app.state.dictation.armed = true;
+  await app.startPtt();
+  mediaRecorders[1].ondataavailable({ data });
+  await app.stopPttAndSend();
+  assert.equal(wsMessages.filter((m) => m.type === 'audio')[1].dictation, true);
+
+  app.handleWsMessage({ type: 'dictation_result', ok: true, message: 'Inserted.' });
+  assert.equal(app.els.captionText.textContent, 'Inserted.');
+});

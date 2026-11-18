@@ -275,8 +275,15 @@ def _interpret_weather_code(code: int | None) -> tuple[str, str]:
     return ("Variable", "none")
 
 
+_PBPASTE_BIN = "/usr/bin/pbpaste"
+_PBCOPY_BIN = "/usr/bin/pbcopy"
+_MAX_PASTE_CHARS = 20000
+
+
 class MacController:
     """Safe executor of macOS commands using only `argv` lists."""
+
+    PASTE_SETTLE_SECONDS = 0.25
 
     def __init__(
         self,
@@ -296,7 +303,7 @@ class MacController:
 
     @staticmethod
     def _default_runner(
-        argv: list[str], timeout: float = 5.0
+        argv: list[str], timeout: float = 5.0, input: str | None = None
     ) -> subprocess.CompletedProcess[str]:
         """Run an external process without a shell (`shell=False`) and with a timeout."""
         return subprocess.run(
@@ -305,15 +312,18 @@ class MacController:
             capture_output=True,
             text=True,
             timeout=timeout,
+            input=input,
         )
 
     def _run_cmd(
-        self, argv: list[str], timeout: float = 5.0
+        self, argv: list[str], timeout: float = 5.0, input: str | None = None
     ) -> subprocess.CompletedProcess[str]:
         """Dispatch execution to the default runner or a mock injected in tests."""
         try:
             if self._custom_runner is None:
-                return self._default_runner(argv, timeout=timeout)
+                if input is None:
+                    return self._default_runner(argv, timeout=timeout)
+                return self._default_runner(argv, timeout=timeout, input=input)
 
             try:
                 sig = inspect.signature(self._custom_runner)
@@ -324,9 +334,12 @@ class MacController:
             except (TypeError, ValueError):
                 accepts_timeout = False
 
+            kwargs: dict[str, Any] = {}
             if accepts_timeout:
-                return self._custom_runner(argv, timeout=timeout)
-            return self._custom_runner(argv)
+                kwargs["timeout"] = timeout
+            if input is not None:
+                kwargs["input"] = input
+            return self._custom_runner(argv, **kwargs)
         except subprocess.TimeoutExpired:
             return subprocess.CompletedProcess(
                 args=argv,
@@ -470,6 +483,43 @@ class MacController:
         if key_token in _SPECIAL_KEY_CODES or _SINGLE_ALNUM_RE.fullmatch(key_token):
             return ordered_modifiers, key_token
         return None
+
+    def paste_text(self, text: str) -> dict[str, Any]:
+        """Dictation insertion: put `text` on the clipboard, paste it into the focused app
+        with Cmd+V, then restore the previous (text) clipboard.
+
+        Only fixed argv lists run (`pbpaste`, `pbcopy`, the keystroke whitelist); `text` goes
+        through stdin, never through a shell or a script. A non-text clipboard (image, files)
+        cannot be restored and is replaced by the dictated text.
+        """
+        if not isinstance(text, str) or not text:
+            return {"ok": False, "error": "Nothing to insert."}
+        if len(text) > _MAX_PASTE_CHARS:
+            return {"ok": False, "error": "Dictated text is too long to insert."}
+
+        with self._lock:
+            previous = self._run_cmd([_PBPASTE_BIN], timeout=3.0)
+            previous_text = previous.stdout if previous.returncode == 0 else None
+
+            copied = self._run_cmd([_PBCOPY_BIN], timeout=3.0, input=text)
+            if copied.returncode != 0:
+                return {"ok": False, "error": "Could not write to the clipboard."}
+
+            pasted = self.execute_keystroke("cmd+v")
+            time.sleep(self.PASTE_SETTLE_SECONDS)  # let the app read the clipboard first
+            restored = True
+            if previous_text is not None:
+                restored = (
+                    self._run_cmd([_PBCOPY_BIN], timeout=3.0, input=previous_text).returncode == 0
+                )
+
+        if not pasted.get("ok"):
+            return {
+                "ok": False,
+                "needs_accessibility": bool(pasted.get("needs_accessibility")),
+                "error": pasted.get("error") or "Could not paste into the focused app.",
+            }
+        return {"ok": True, "chars": len(text), "clipboard_restored": restored}
 
     def execute_keystroke(self, keys_spec: str) -> dict[str, Any]:
         """Run a key combination on macOS via AppleScript `System Events`."""

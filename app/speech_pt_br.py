@@ -313,6 +313,13 @@ def today_fallback_due_warning(due_count: int, today_iso: str) -> str:
 FRIENDLY_LLM_ERROR = "Não consegui falar com o modelo agora. Verifique se a API local está rodando."
 
 
+# Dictation feedback (issue 07): shown in the caption after the text was pasted, or why not.
+DICTATION_INSERTED = "Inserido."
+DICTATION_EMPTY = "Não ouvi nada para digitar."
+DICTATION_PASTE_FAILED = "Não consegui colar. Tem um campo de texto em foco?"
+DICTATION_NEEDS_ACCESSIBILITY = "Preciso da permissão de Acessibilidade para digitar por você."
+
+
 # ---------------------------------------------------------------------------
 # Client-side phrases (served to the web Body through /api/lupin-language)
 # ---------------------------------------------------------------------------

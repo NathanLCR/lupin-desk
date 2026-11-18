@@ -299,6 +299,7 @@
     captionText: document.getElementById('caption-text'),
     chatForm: document.getElementById('chat-form'),
     btnPtt: document.getElementById('btn-ptt'),
+    btnDictation: document.getElementById('btn-dictation'),
     chatInput: document.getElementById('chat-input'),
     // Shortcuts CRUD modal
     shortcutModalBackdrop: document.getElementById('shortcut-modal-backdrop'),
@@ -425,6 +426,8 @@
       generation: 0,
       spaceHeld: false,
     },
+    // Dictation (issue 07): when armed, touching the face starts/stops recording for typing
+    dictation: { armed: false },
     approvalQueue: [],
     pendingApprovalId: null,
     overlayReturnFocus: null,
@@ -1691,6 +1694,10 @@
         }
         break;
       }
+      case 'dictation_result': {
+        if (msg.message) setCaption(msg.message, { isError: msg.ok === false });
+        break;
+      }
       case 'transcript': {
         const spoken = (msg.text || '').trim();
         if (spoken) {
@@ -1880,6 +1887,23 @@
   }
 
   // Push-to-Talk (Microfone -> Base64 -> WS {type:'audio'})
+  function setDictationArmed(armed) {
+    state.dictation.armed = Boolean(armed);
+    if (els.btnDictation) {
+      els.btnDictation.classList.toggle('is-active', state.dictation.armed);
+      els.btnDictation.setAttribute('aria-pressed', state.dictation.armed ? 'true' : 'false');
+    }
+    if (!state.dictation.armed && state.ptt.active) stopPttAndSend();
+  }
+
+  // Tap-to-talk for dictation: one touch on the face starts, the next one stops and sends.
+  function handleDictationTap() {
+    if (!state.dictation.armed) return false;
+    if (state.ptt.active) stopPttAndSend();
+    else startPtt();
+    return true;
+  }
+
   async function startPtt() {
     if (state.ptt.active) return;
     const generation = ++state.ptt.generation;
@@ -1993,14 +2017,16 @@
       if (state.ptt.generation !== generation) return;
       state.streamingText = '';
       state.receivedSentenceStream = false;
-      setCaption('🎤 Transcribing...');
+      setCaption(state.dictation.armed ? '⌨️ Typing...' : '🎤 Transcribing...');
       applyFaceState('thinking');
 
-      const sent = sendWs({
+      const audioMessage = {
         type: 'audio',
         data: base64,
         mime_type: mimeType || 'audio/webm',
-      });
+      };
+      if (state.dictation.armed) audioMessage.dictation = true;
+      const sent = sendWs(audioMessage);
       if (sent) {
         state.backendTurnActive = true;
       } else {
@@ -2159,6 +2185,10 @@
         aud.purr(false);
       }
 
+      if (!wasMoved && !isMiniPet && handleDictationTap()) {
+        syncFaceBadges();
+        return;
+      }
       if (!wasMoved && !isMiniPet && handleFaceTap()) {
         syncFaceBadges();
         return;
@@ -3418,6 +3448,10 @@
         }
       });
     });
+
+    if (els.btnDictation) {
+      els.btnDictation.addEventListener('click', () => setDictationArmed(!state.dictation.armed));
+    }
 
     // Chat
     els.chatForm.addEventListener('submit', handleChatSubmit);
