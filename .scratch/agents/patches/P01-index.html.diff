@@ -1,0 +1,12 @@
+diff --git a/static/index.html b/static/index.html
+index 411ca25..ad13599 100644
+--- a/static/index.html
++++ b/static/index.html
+@@ -670,6 +670,7 @@
+ 
+   <!-- Required module load order -->
+   <script src="/static/audio_synth.js"></script>
++  <script src="/static/device.js"></script>
+   <script src="/static/lupin.js"></script>
+   <script src="/static/gamepad.js"></script>
+   <script src="/static/diagnostics.js"></script>
