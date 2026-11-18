@@ -9,6 +9,8 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
@@ -54,8 +56,14 @@ import java.util.concurrent.Executors;
  */
 public class MainActivity extends Activity {
 
-    private static final String PREFS_NAME = "desk_assistant_prefs";
+    static final String PREFS_NAME = "desk_assistant_prefs";
     private static final String KEY_SERVER_URL = "server_url";
+    static final String KEY_START_ON_BOOT = "start_on_boot";
+    private static final String KEY_OPEN_PANEL_PAGE = "open_panel_page";
+    private static final String PANEL_PATH = "/panel";
+
+    private static final long RECONNECT_BASE_MS = 2000L;
+    private static final long RECONNECT_MAX_MS = 30000L;
 
     public static final String DEFAULT_USB_URL = "http://localhost:8000";
     public static final String DEFAULT_WIFI_URL = "https://192.168.0.125:8443";
@@ -80,6 +88,16 @@ public class MainActivity extends Activity {
     private boolean fallbackAttempted = false;
     private long lastBackPressMs = 0L;
     private PermissionRequest pendingPermissionRequest = null;
+    private int reconnectAttempt = 0;
+    private boolean showingOfflinePage = false;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+
+    private final Runnable reconnectRunnable = () -> {
+        if (!isFinishing() && !isDestroyed() && webView != null) {
+            loadServerUrl(currentUrl);
+        }
+    };
 
     private final Runnable fadeMenuButtonRunnable = () -> {
         if (serverMenuButton != null) {
@@ -110,6 +128,45 @@ public class MainActivity extends Activity {
         enableImmersiveMode();
         requestAudioPermissionIfNeeded();
         resolveAndLoadInitialUrl();
+        registerNetworkWatcher();
+    }
+
+    /** Reconnect right away when Wi-Fi comes back while the offline page is shown. */
+    private void registerNetworkWatcher() {
+        try {
+            connectivityManager =
+                    (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager == null) {
+                return;
+            }
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    mainHandler.post(() -> {
+                        if (showingOfflinePage) {
+                            reconnectNow();
+                        }
+                    });
+                }
+            };
+            connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        } catch (RuntimeException ignored) {
+            networkCallback = null;
+        }
+    }
+
+    private void reconnectNow() {
+        mainHandler.removeCallbacks(reconnectRunnable);
+        reconnectAttempt = 0;
+        mainHandler.post(reconnectRunnable);
+    }
+
+    /** Retry the server with exponential backoff: 2s, 4s, 8s, 16s, then every 30s. */
+    private void scheduleReconnect() {
+        mainHandler.removeCallbacks(reconnectRunnable);
+        long delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS << Math.min(reconnectAttempt, 4));
+        reconnectAttempt++;
+        mainHandler.postDelayed(reconnectRunnable, delay);
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -256,6 +313,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         mainHandler.removeCallbacksAndMessages(null);
+        if (connectivityManager != null && networkCallback != null) {
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            } catch (RuntimeException ignored) {
+                // Already unregistered.
+            }
+            networkCallback = null;
+        }
         networkExecutor.shutdownNow();
         if (pendingPermissionRequest != null) {
             pendingPermissionRequest.deny();
@@ -335,6 +400,7 @@ public class MainActivity extends Activity {
 
     private void resolveAndLoadInitialUrl() {
         String saved = sanitizeServerUrl(prefs.getString(KEY_SERVER_URL, null));
+        final boolean firstRun = saved == null;
         if (saved != null && !DEFAULT_USB_URL.equals(saved)) {
             fallbackAttempted = false;
             loadServerUrl(saved);
@@ -351,6 +417,11 @@ public class MainActivity extends Activity {
             String target = usbTunnelReady ? DEFAULT_USB_URL : DEFAULT_WIFI_URL;
             mainHandler.post(() -> {
                 if (isFinishing() || isDestroyed() || webView == null) {
+                    return;
+                }
+                if (firstRun && !usbTunnelReady) {
+                    // First run, no USB tunnel: ask for the Brain's address instead of guessing.
+                    showFirstRunDialog();
                     return;
                 }
                 fallbackAttempted = !usbTunnelReady;
@@ -374,7 +445,43 @@ public class MainActivity extends Activity {
             return;
         }
         currentUrl = cleanUrl;
-        webView.loadUrl(cleanUrl);
+        mainHandler.removeCallbacks(reconnectRunnable);
+        webView.loadUrl(withStartPath(cleanUrl));
+    }
+
+    /** Opens the Panel page when the user chose that in the menu; otherwise the Brain's root page. */
+    private String withStartPath(String baseUrl) {
+        if (prefs == null || !prefs.getBoolean(KEY_OPEN_PANEL_PAGE, false)) {
+            return baseUrl;
+        }
+        Uri parsed = Uri.parse(baseUrl);
+        String path = parsed.getPath();
+        if (path != null && !path.isEmpty() && !"/".equals(path)) {
+            return baseUrl;
+        }
+        return parsed.buildUpon().path(PANEL_PATH).build().toString();
+    }
+
+    /**
+     * Accepts what a person types: "192.168.0.5", "192.168.0.5:8443" or a full URL.
+     * Port 8443 (or no port) means HTTPS, anything else HTTP.
+     */
+    static String normalizeServerUrl(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (!trimmed.contains("://")) {
+            boolean http = trimmed.contains(":") && !trimmed.endsWith(":8443");
+            if (!trimmed.contains(":")) {
+                trimmed = trimmed + ":8443";
+            }
+            trimmed = (http ? "http://" : "https://") + trimmed;
+        }
+        return sanitizeServerUrl(trimmed);
     }
 
     private static String sanitizeServerUrl(String rawUrl) {
@@ -458,7 +565,11 @@ public class MainActivity extends Activity {
                     "USB ADB (" + DEFAULT_USB_URL + ")",
                     "Wi-Fi HTTPS (" + DEFAULT_WIFI_URL + ")",
                     "Custom URL...",
-                    "Reload Page"
+                    "Reload Page",
+                    (prefs.getBoolean(KEY_START_ON_BOOT, false) ? "[x]" : "[ ]")
+                            + " Start on boot / USB power",
+                    (prefs.getBoolean(KEY_OPEN_PANEL_PAGE, false) ? "[x]" : "[ ]")
+                            + " Open the Panel page (" + PANEL_PATH + ")"
             };
             new AlertDialog.Builder(MainActivity.this)
                     .setTitle("Server — Desk Assistant")
@@ -472,11 +583,49 @@ public class MainActivity extends Activity {
                         } else if (which == 3) {
                             fallbackAttempted = false;
                             loadServerUrl(currentUrl);
+                        } else if (which == 4) {
+                            toggleBoolPref(KEY_START_ON_BOOT);
+                        } else if (which == 5) {
+                            toggleBoolPref(KEY_OPEN_PANEL_PAGE);
+                            fallbackAttempted = false;
+                            loadServerUrl(currentUrl);
                         }
                     })
                     .setNegativeButton("Close", null)
                     .show();
         });
+    }
+
+    private void showFirstRunDialog() {
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint("192.168.0.125:8443");
+
+        int pad = dpToPx(16);
+        FrameLayout container = new FrameLayout(this);
+        container.setPadding(pad, dpToPx(8), pad, 0);
+        container.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Desk Assistant address")
+                .setMessage("Enter the address of the Desk Assistant on your Mac (Wi-Fi). "
+                        + "Over USB, run adb reverse and restart this app.")
+                .setView(container)
+                .setCancelable(false)
+                .setPositiveButton("Connect", (dialog, which) -> {
+                    String valid = normalizeServerUrl(input.getText().toString());
+                    if (valid != null) {
+                        saveAndLoadServerUrl(valid);
+                    } else {
+                        Toast.makeText(this, "Invalid address", Toast.LENGTH_SHORT).show();
+                        showFirstRunDialog();
+                    }
+                })
+                .setNegativeButton("Later", (dialog, which) -> {
+                    fallbackAttempted = true;
+                    loadServerUrl(DEFAULT_WIFI_URL);
+                })
+                .show();
     }
 
     private void showCustomUrlDialog() {
@@ -495,19 +644,25 @@ public class MainActivity extends Activity {
                 .setView(container)
                 .setPositiveButton("Connect", (dialog, which) -> {
                     String entered = input.getText().toString();
-                    String valid = sanitizeServerUrl(entered);
+                    String valid = normalizeServerUrl(entered);
                     if (valid != null) {
                         saveAndLoadServerUrl(valid);
                     } else {
                         Toast.makeText(
                                 this,
-                                "Invalid URL. Use http:// or https://",
+                                "Invalid address. Use an IP, host:port or http(s)://",
                                 Toast.LENGTH_SHORT
                         ).show();
                     }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void toggleBoolPref(String key) {
+        boolean next = !prefs.getBoolean(key, false);
+        prefs.edit().putBoolean(key, next).apply();
+        Toast.makeText(this, next ? "Enabled" : "Disabled", Toast.LENGTH_SHORT).show();
     }
 
     private void saveAndLoadServerUrl(String url) {
@@ -547,7 +702,9 @@ public class MainActivity extends Activity {
                 + "<button onclick='window.AndroidBridge.reloadApp()'>Try again</button>"
                 + "<button onclick='window.AndroidBridge.openServerMenu()'>Switch server</button>"
                 + "</div></div></body></html>";
+        showingOfflinePage = true;
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
+        scheduleReconnect();
     }
 
     private static String escapeHtml(String value) {
@@ -563,6 +720,16 @@ public class MainActivity extends Activity {
     }
 
     private class DeskWebViewClient extends WebViewClient {
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            // A real page (not our offline data page) loaded: reset the backoff.
+            if (url != null && url.startsWith("http")) {
+                showingOfflinePage = false;
+                reconnectAttempt = 0;
+                mainHandler.removeCallbacks(reconnectRunnable);
+            }
+        }
+
         @Override
         public void onReceivedSslError(
                 WebView view,
@@ -656,9 +823,13 @@ public class MainActivity extends Activity {
             int clampedMs = Math.max(1, Math.min(ms, 2000));
             Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             if (vibrator != null && vibrator.hasVibrator()) {
-                vibrator.vibrate(
-                        VibrationEffect.createOneShot(clampedMs, VibrationEffect.DEFAULT_AMPLITUDE)
-                );
+                if (Build.VERSION.SDK_INT >= 26) {
+                    vibrator.vibrate(
+                            VibrationEffect.createOneShot(clampedMs, VibrationEffect.DEFAULT_AMPLITUDE)
+                    );
+                } else {
+                    vibrator.vibrate((long) clampedMs);
+                }
             }
         }
 
