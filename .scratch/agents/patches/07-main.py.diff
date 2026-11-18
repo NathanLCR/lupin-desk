@@ -1,0 +1,28 @@
+--- a/app/main.py
++++ b/app/main.py
+@@ -24,6 +24,7 @@
+ from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
+ from app.cowork import CoworkStore, get_git_sync_status
+ from app.llm import LLMClient, LLMError
++from app.dictation import DICTATION_TYPES, handle_dictation
+ from app.mac_control import MacController
+ from app.memory import MemoryStore
+ from app.providers import (
+@@ -1529,6 +1530,17 @@
+                         }
+                     )
+                     await announce_active_body(previous, skip=body_info["entry"])
++                    continue
++
++                if msg_type in DICTATION_TYPES:
++                    await handle_dictation(
++                        msg_type,
++                        data,
++                        stt=resolved_stt,
++                        mac=resolved_mac,
++                        send=safe_send,
++                        language=current_stt_language(),
++                    )
+                     continue
+ 
+                 if msg_type == "typing":

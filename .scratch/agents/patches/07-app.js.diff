@@ -1,0 +1,51 @@
+--- a/static/app.js
++++ b/static/app.js
+@@ -299,6 +299,7 @@
+     captionText: document.getElementById('caption-text'),
+     chatForm: document.getElementById('chat-form'),
+     btnPtt: document.getElementById('btn-ptt'),
++    btnDictate: document.getElementById('btn-dictate'),
+     chatInput: document.getElementById('chat-input'),
+     // Shortcuts CRUD modal
+     shortcutModalBackdrop: document.getElementById('shortcut-modal-backdrop'),
+@@ -1771,11 +1772,32 @@
+         maybeSpeechEnded();
+         break;
+       }
++      case 'dictation': {
++        if (dictationCtl) dictationCtl.handleMessage(msg);
++        break;
++      }
+       default:
+         break;
+     }
+   }
+ 
++  // Dictation (tap-to-talk): the Brain pastes the recognised text into the focused Mac app.
++  let dictationCtl = null;
++  function initDictation() {
++    if (!window.DeskDictation || !els.btnDictate) return;
++    dictationCtl = window.DeskDictation.create({
++      sendWs,
++      showToast,
++      onState: (name) => {
++        const on = name === 'listening';
++        els.btnDictate.classList.toggle('is-recording', on);
++        els.btnDictate.setAttribute('aria-pressed', on ? 'true' : 'false');
++        applyFaceState(name === 'thinking' ? 'thinking' : name === 'listening' ? 'listening' : name === 'error' ? 'error' : 'idle');
++      },
++    });
++    els.btnDictate.addEventListener('click', () => dictationCtl.toggle());
++  }
++
+   function playPetTrick(trickId) {
+     const face = faceApi();
+     if (face && typeof face.playTrick === 'function') {
+@@ -3606,6 +3628,7 @@
+   }
+ 
+   function init() {
++    initDictation();
+     const aud = audioApi();
+     if (aud && typeof aud.init === 'function') {
+       aud.init();
