@@ -83,10 +83,8 @@
   function defaultFetchJson(url, options) {
     var opts = options || {};
     var init = { method: opts.method || 'GET', headers: {} };
-    if (opts.body !== undefined) {
-      init.headers['Content-Type'] = 'application/json';
-      init.body = JSON.stringify(opts.body);
-    }
+    if (init.method !== 'GET') init.headers['Content-Type'] = 'application/json';
+    if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
     return global.fetch(url, init).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (data) {
         if (!response.ok) {

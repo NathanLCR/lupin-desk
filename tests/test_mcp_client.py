@@ -117,6 +117,22 @@ def test_update_changes_fields_and_revalidates(store: McpServerStore) -> None:
         store.update("notes", env={"bad name": "x"})
     with pytest.raises(ValueError):
         store.update("notes", transport="http")
+    with pytest.raises(ValueError):
+        store.update("notes", command=["other"])
+    with pytest.raises(ValueError):
+        store.update("notes", url="http://example.com")
+
+
+def test_corrupt_file_reads_as_empty_and_is_moved_aside_on_write(tmp_path: Path, caplog) -> None:
+    path = tmp_path / "servers.json"
+    path.write_text('{"servers": [ SECRET-TOKEN-xyz', encoding="utf-8")
+    store = McpServerStore(path)
+    assert store.list() == []
+    assert "SECRET-TOKEN-xyz" not in caplog.text
+    store.add(id="notes", name="Notes", transport="stdio", command=["tool"])
+    corrupt = tmp_path / "servers.json.corrupt"
+    assert corrupt.exists() and "SECRET-TOKEN-xyz" in corrupt.read_text(encoding="utf-8")
+    assert [c.id for c in store.list()] == ["notes"]
 
 
 # ---------------------------------------------------------------------------

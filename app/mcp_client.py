@@ -22,7 +22,9 @@ import dataclasses
 import functools
 import html
 import json
+import logging
 import os
+import signal
 import re
 import tempfile
 from dataclasses import dataclass, field
@@ -200,6 +202,7 @@ class McpServerStore:
 
     def __init__(self, path: Path) -> None:
         self._path = Path(path)
+        self._corrupt = False
         self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     # -- persistence -------------------------------------------------------
@@ -209,12 +212,25 @@ class McpServerStore:
             return []
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
-        except ValueError:
-            raise ValueError("MCP server config file is not valid JSON") from None
-        servers = data.get("servers", []) if isinstance(data, dict) else []
-        return [_config_from_dict(raw) for raw in servers if isinstance(raw, dict)]
+            servers = data.get("servers", []) if isinstance(data, dict) else []
+            loaded = [_config_from_dict(raw) for raw in servers if isinstance(raw, dict)]
+        except (ValueError, TypeError, OSError) as exc:
+            # Never include the file contents: they hold credentials.
+            logging.getLogger(__name__).warning(
+                "MCP server config file is unreadable (%s); treating it as empty.", type(exc).__name__
+            )
+            self._corrupt = True
+            return []
+        self._corrupt = False
+        return loaded
 
     def _save(self, servers: list[McpServerConfig]) -> None:
+        if getattr(self, "_corrupt", False) and self._path.exists():
+            # Keep the unreadable file for the user instead of silently overwriting it.
+            aside = self._path.with_name(self._path.name + ".corrupt")
+            os.replace(self._path, aside)
+            os.chmod(aside, 0o600)
+            self._corrupt = False
         payload = {"servers": [dataclasses.asdict(cfg) for cfg in servers]}
         fd, tmp_name = tempfile.mkstemp(dir=self._path.parent, prefix=".mcp-servers-", suffix=".tmp")
         try:
@@ -267,7 +283,9 @@ class McpServerStore:
         return cfg
 
     def update(self, id: str, **fields: Any) -> McpServerConfig:
-        allowed = {"name", "enabled", "env", "headers", "command", "url"}
+        # command and url are fixed at creation: changing them would swap what gets executed
+        # or contacted under an already-approved server. Remove and add the server instead.
+        allowed = {"name", "enabled", "env", "headers"}
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"cannot update: {', '.join(sorted(unknown))}")
@@ -488,15 +506,20 @@ async def _stop_process(proc: asyncio.subprocess.Process) -> None:
     if proc.stdin is not None:
         with contextlib.suppress(Exception):
             proc.stdin.close()
+    def _signal_group(sig: int) -> None:
+        # The server runs in its own session, so its whole process group can be stopped.
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(proc.pid, sig)
+
     if proc.returncode is None:
-        with contextlib.suppress(ProcessLookupError):
-            proc.terminate()
+        _signal_group(signal.SIGTERM)
         try:
             await asyncio.wait_for(proc.wait(), _KILL_GRACE_SECONDS)
         except asyncio.TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
+            _signal_group(signal.SIGKILL)
             await proc.wait()
+    else:
+        _signal_group(signal.SIGKILL)  # reap grandchildren left in the group
 
 
 def _sse_data_events(text: str) -> list[str]:
@@ -640,6 +663,7 @@ class StdioMcpClient(_BaseClient):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=env,
+                start_new_session=True,
                 limit=_MAX_LINE_BYTES,
             )
         except (OSError, ValueError):
