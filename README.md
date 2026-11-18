@@ -86,7 +86,13 @@ Everything below is built and covered by tests. "Pending" marks checks on real h
 - Android kiosk shell for old devices, built with `scripts/build_android_apk.py` (device test pending).
 - E-ink Mode at `/eink`: server-rendered HTML with no modern JS, for a Kindle (device test pending).
 
+![A Panel in landscape: clock, weather, Pomodoro, checklist, habits and notes](docs/media/panel.png)
+
 ![Mac Layout editor](docs/media/layout-editor.png)
+
+<img src="docs/media/eink-mode.png" alt="The same Layout in E-ink Mode, portrait, as a Kindle renders it" width="380">
+
+The screenshots use a throwaway demo Brain with sample data.
 
 Cut on purpose ([ADR 0001](docs/adr/0001-companion-first-brain-and-body.md)): the Stream Deck, the Live Dock as a product, Ambient Display and Screen Modes.
 
