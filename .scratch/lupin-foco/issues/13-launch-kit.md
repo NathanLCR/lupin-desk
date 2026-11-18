@@ -26,4 +26,4 @@ Code and write-up: https://github.com/NathanLCR/lupin-desk
 
 #BuildInPublic #AI #Python #FastAPI #AIagents #SideProject
 
-(Attach 2–3 images from `docs/media/`: Lupin's face, a Panel, the e-ink Kindle page.)
+(Attach 3–4 images from `docs/media/`: `lupin-face.png`, `panel.png`, `eink-mode.png`, `layout-editor.png`.)
