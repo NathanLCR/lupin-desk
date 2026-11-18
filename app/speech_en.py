@@ -39,6 +39,14 @@ def persona_prompt(emotions_list: str) -> str:
         "   - [action:app:<app_name>] to open or focus an app\n"
         "   - [action:pomodoro:start] or [action:pomodoro:stop] for the Pomodoro timer\n"
         "   - [action:today:brief] to check the Cowork Today summary\n"
+        "   - [action:task:add:<title>], [action:task:done:<words of the title>], "
+        "[action:task:remove:<words>] or [action:task:list] for tasks\n"
+        "   - [action:note:add:<text>] or [action:note:list] for notes\n"
+        "   - [action:habit:add:<name>@HH:MM] (the @HH:MM time is optional), "
+        "[action:habit:check:<name>] or [action:habit:list] for habits\n"
+        "   Use these when the user asks to create or query tasks, notes or habits. Lupin's "
+        "confirmation is spoken automatically from the result, so your own text must be only a "
+        "very short lead-in (or nothing) and must NOT repeat the content.\n"
         "   Never read out or mention brackets or tag names in the spoken text."
     )
 
@@ -338,3 +346,106 @@ SIGNAL_LINES: dict[str, str] = {
     "habit_due": "A habit is due.",
     "meeting_soon": "Your meeting starts soon.",
 }
+
+
+# ---------------------------------------------------------------------------
+# Tasks, notes and habits (app/productivity/voice.py): what Lupin says after a voice action
+# ---------------------------------------------------------------------------
+
+
+def task_added(title: str) -> str:
+    return f"Added to your tasks: {title}."
+
+
+def task_done(title: str) -> str:
+    return f"Done: {title}. Nice work."
+
+
+def task_removed(title: str) -> str:
+    return f"Removed the task: {title}."
+
+
+def task_not_found(query: str) -> str:
+    return f"I couldn't find a task matching {query}."
+
+
+def tasks_none() -> str:
+    return "You have no open tasks."
+
+
+def tasks_list(titles: list[str], total: int | None = None) -> str:
+    """Speak the open tasks; `total` is the full count when `titles` is only the first few."""
+    if not titles:
+        return tasks_none()
+    count = len(titles) if total is None else total
+    if count == 1:
+        return f"You have 1 open task: {join_items(titles)}."
+    if count > len(titles):
+        return f"You have {count} open tasks. The first {len(titles)} are: {join_items(titles)}."
+    return f"You have {count} open tasks: {join_items(titles)}."
+
+
+def note_added(text: str) -> str:
+    return f"Noted: {text}"
+
+
+def notes_none() -> str:
+    return "You have no notes yet."
+
+
+def notes_list(texts: list[str], total: int | None = None) -> str:
+    """Speak the newest notes; `total` is the full count when `texts` is only the first few."""
+    if not texts:
+        return notes_none()
+    count = len(texts) if total is None else total
+    if count == 1:
+        return f"You have 1 note: {join_items(texts)}."
+    if count > len(texts):
+        return f"You have {count} notes. The newest {len(texts)} are: {join_items(texts)}."
+    return f"You have {count} notes: {join_items(texts)}."
+
+
+def habit_added(name: str, time: str | None) -> str:
+    if time is None:
+        return f"Habit added: {name}."
+    return f"Habit added: {name}, at {time}."
+
+
+def habit_checked(name: str, streak: int) -> str:
+    if streak >= 2:
+        return f"Nice, {name} is checked off for today. That's {streak} days in a row."
+    return f"Checked off {name} for today."
+
+
+def habit_not_found(query: str) -> str:
+    return f"I couldn't find a habit matching {query}."
+
+
+def habits_none() -> str:
+    return "You have no habits yet."
+
+
+def habits_list(names: list[str], done: set[str], total: int | None = None) -> str:
+    """Speak the habits; names in `done` are marked as done today."""
+    if not names:
+        return habits_none()
+    items = [f"{name} (done today)" if name in done else name for name in names]
+    count = len(names) if total is None else total
+    if count == 1:
+        return f"You have 1 habit: {join_items(items)}."
+    if count > len(names):
+        return f"You have {count} habits. The first {len(names)} are: {join_items(items)}."
+    return f"You have {count} habits: {join_items(items)}."
+
+
+def ambiguous(query: str, titles: list[str]) -> str:
+    """Ask which match was meant. `query` is accepted for symmetry and not spoken."""
+    return f"Which one do you mean: {join_items(titles)}?"
+
+
+def voice_action_failed() -> str:
+    return "Sorry, I couldn't do that."
+
+
+def habit_due_line(name: str) -> str:
+    return f"Time for your habit: {name}."
