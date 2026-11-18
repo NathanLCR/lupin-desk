@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
 from app.cowork import CoworkStore, get_git_sync_status
 from app.llm import LLMClient, LLMError
+from app.dictation import format_dictation
 from app.mac_control import MacController
 from app.memory import MemoryStore
 from app.providers import (
@@ -1458,6 +1459,48 @@ def create_app(
                     await safe_send({"type": "state", "state": "error"})
                     await safe_send({"type": "error", "message": "Failed to transcribe the received audio."})
 
+        async def run_dictation_turn(audio_bytes: bytes, mime_type: str, language: str) -> None:
+            """Dictation: transcribe locally, format, paste into the Mac's focused app. No LLM."""
+            try:
+                await safe_send({"type": "state", "state": "thinking"})
+                stt_res = await resolved_stt.transcribe_bytes(
+                    audio_bytes=audio_bytes, mime_type=mime_type, language=language
+                )
+                if asyncio.current_task() is not active_turn_task:
+                    return
+                text = format_dictation(str(stt_res.get("text") or ""), language)
+                if not text:
+                    await safe_send(
+                        {"type": "dictation_result", "ok": False, "message": speech.DICTATION_EMPTY}
+                    )
+                    await safe_send({"type": "state", "state": "idle"})
+                    return
+                result = await asyncio.to_thread(resolved_mac.paste_text, text)
+                if result.get("ok"):
+                    message = speech.DICTATION_INSERTED
+                elif result.get("needs_accessibility"):
+                    message = speech.DICTATION_NEEDS_ACCESSIBILITY
+                else:
+                    message = speech.DICTATION_PASTE_FAILED
+                await safe_send(
+                    {
+                        "type": "dictation_result",
+                        "ok": bool(result.get("ok")),
+                        "chars": len(text) if result.get("ok") else 0,
+                        "message": message,
+                    }
+                )
+                await safe_send({"type": "state", "state": "idle" if result.get("ok") else "error"})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Unexpected error during dictation (%s)", type(exc).__name__)
+                if asyncio.current_task() is active_turn_task:
+                    await safe_send({"type": "state", "state": "error"})
+                    await safe_send(
+                        {"type": "dictation_result", "ok": False, "message": speech.DICTATION_PASTE_FAILED}
+                    )
+
         async def cancel_active_turn(notify: bool) -> None:
             nonlocal active_turn_task
             if active_turn_task is not None and not active_turn_task.done():
@@ -1480,6 +1523,10 @@ def create_app(
         def start_llm_turn(user_text: str) -> None:
             nonlocal active_turn_task
             active_turn_task = asyncio.create_task(with_first_wake(lambda: run_llm_turn(user_text)))
+
+        def start_dictation_turn(audio_bytes: bytes, mime_type: str, language: str) -> None:
+            nonlocal active_turn_task
+            active_turn_task = asyncio.create_task(run_dictation_turn(audio_bytes, mime_type, language))
 
         def start_audio_turn(audio_bytes: bytes, mime_type: str, language: str) -> None:
             nonlocal active_turn_task
@@ -1742,7 +1789,10 @@ def create_app(
                         await safe_send({"type": "state", "state": "idle"})
                         continue
 
-                    start_audio_turn(audio_bytes, mime_type, language)
+                    if data.get("dictation") is True:
+                        start_dictation_turn(audio_bytes, mime_type, language)
+                    else:
+                        start_audio_turn(audio_bytes, mime_type, language)
                     continue
 
                 if msg_type == "text":
