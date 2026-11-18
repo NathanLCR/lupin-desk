@@ -1,16 +1,159 @@
 /**
- * Controlador principal da interface web do Assistente de Mesa (/static/app.js).
- * Integra:
- * - 4 modos de tela (Pet Vivo, Dock & Atalhos do Mac, Smart Display, Diagnóstico)
- * - Rosto SVG (window.EmoFace) + Áudio Procedural (window.EmoAudio)
- * - Gamepad RG406H (window.DeskGamepad) + Diagnóstico (window.DeskDiagnostics)
- * - WebSocket (/ws) com streaming frase-a-frase, Push-to-Talk, barge-in e ações
- * - TTS híbrido (Browser speechSynthesis vs Servidor Mac /api/tts)
+ * Main controller of the Desk Assistant web interface (/static/app.js).
+ * Integrates:
+ * - 4 screen modes (Live Pet, Dock & Mac Shortcuts, Smart Display, Diagnostics)
+ * - Lupin's layered face (window.LupinFace) + Procedural Audio (window.EmoAudio)
+ * - RG406H gamepad (window.DeskGamepad) + Diagnostics (window.DeskDiagnostics)
+ * - WebSocket (/ws) with sentence-by-sentence streaming, Push-to-Talk, barge-in and actions
+ * - Hybrid TTS (Browser speechSynthesis vs Mac server via the Brain)
  */
 (() => {
   'use strict';
 
-  const MODES = ['pet', 'dock', 'display', 'diagnostics'];
+  const DESK_TOKEN_STORAGE_KEY = 'desk_access_token';
+  const PET_SYNC_CHANNEL = 'desk-assistant-pet-state';
+  const isMiniPet = (() => {
+    try {
+      return new URL(window.location.href).searchParams.get('widget') === 'minipet';
+    } catch {
+      return false;
+    }
+  })();
+  let petSyncChannel = null;
+  let lastPublishedPetSnapshot = '';
+  let pairingPromptOpen = false;
+
+  function initTokenFromUrl() {
+    try {
+      const url = new URL(window.location.href);
+      const tokenParam = (url.searchParams.get('token') || '').trim();
+      if (tokenParam) {
+        window.localStorage.setItem(DESK_TOKEN_STORAGE_KEY, tokenParam);
+        url.searchParams.delete('token');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch (_) {
+      // Ignore environments without URL/localStorage
+    }
+  }
+
+  function getDeskAccessToken() {
+    try {
+      return (window.localStorage.getItem(DESK_TOKEN_STORAGE_KEY) || '').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function setDeskAccessToken(token) {
+    try {
+      const cleaned = (token || '').trim();
+      if (cleaned) {
+        window.localStorage.setItem(DESK_TOKEN_STORAGE_KEY, cleaned);
+      } else {
+        window.localStorage.removeItem(DESK_TOKEN_STORAGE_KEY);
+      }
+    } catch (_) {
+      // Ignore
+    }
+  }
+
+  function promptForPairingToken(onSaved) {
+    if (pairingPromptOpen) return;
+    pairingPromptOpen = true;
+    const existing = document.getElementById('desk-pairing-modal');
+    if (existing) existing.remove();
+
+    const returnFocus = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.id = 'desk-pairing-modal';
+    overlay.className = 'modal-backdrop';
+    overlay.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Device pairing">
+        <h3>🔐 Access token</h3>
+        <p class="modal-hint">Enter the DESK_ACCESS_TOKEN shown in the Mac terminal to connect this device.</p>
+        <input id="desk-pairing-input" type="password" autocomplete="off" placeholder="Paste the access token..." />
+        <div class="modal-actions">
+          <button id="desk-pairing-cancel" type="button" class="btn-secondary">Cancel</button>
+          <button id="desk-pairing-save" type="button" class="btn-primary">Connect</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const input = document.getElementById('desk-pairing-input');
+    const btnSave = document.getElementById('desk-pairing-save');
+    const btnCancel = document.getElementById('desk-pairing-cancel');
+    if (input) input.focus();
+
+    const close = () => {
+      pairingPromptOpen = false;
+      overlay.remove();
+      if (returnFocus && returnFocus.isConnected !== false) returnFocus.focus();
+    };
+    overlay.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [input, btnCancel, btnSave].filter(
+        (element) => element && !element.disabled
+      );
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+    if (btnCancel) btnCancel.addEventListener('click', close);
+    if (btnSave) {
+      btnSave.addEventListener('click', () => {
+        const val = input ? input.value.trim() : '';
+        if (!val) return;
+        setDeskAccessToken(val);
+        close();
+        if (typeof onSaved === 'function') onSaved();
+      });
+    }
+  }
+
+  if (!isMiniPet) initTokenFromUrl();
+
+  if (!isMiniPet && typeof window.fetch === 'function') {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = undefined) => {
+      const rawUrl = typeof input === 'string' ? input : (input && input.url) || '';
+      const isApi = rawUrl.startsWith('/api/') || rawUrl.startsWith(`${window.location.origin}/api/`);
+      let nextInit = init;
+      if (isApi) {
+        const token = getDeskAccessToken();
+        if (token) {
+          const headers = new Headers((init && init.headers) || (input instanceof Request ? input.headers : undefined));
+          if (!headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${token}`);
+          }
+          nextInit = Object.assign({}, init || {}, { headers });
+        }
+      }
+      const resp = await nativeFetch(input, nextInit);
+      if (isApi && resp.status === 401) {
+        promptForPairingToken(() => connectWebSocket());
+      }
+      return resp;
+    };
+  }
+
+  const MODES = ['pet', 'dock', 'nathan'];
 
   const FALLBACK_EMOTIONS = [
     'neutral',
@@ -29,42 +172,45 @@
 
   const FALLBACK_STATES = ['idle', 'listening', 'thinking', 'speaking', 'error'];
 
-  const EMOTION_LABELS_PT = {
-    neutral: 'neutro',
-    happy: 'feliz',
-    excited: 'animado',
-    curious: 'curioso',
-    skeptical: 'cético',
-    surprised: 'surpreso',
-    sad: 'triste',
-    wink: 'piscando',
-    love: 'carinhoso',
-    sleepy: 'sonolento',
-    angry: 'bravo',
-    dizzy: 'tonto',
+  const EMOTION_LABELS = {
+    neutral: 'neutral',
+    happy: 'happy',
+    excited: 'excited',
+    curious: 'curious',
+    skeptical: 'skeptical',
+    surprised: 'surprised',
+    sad: 'sad',
+    wink: 'winking',
+    love: 'affectionate',
+    sleepy: 'sleepy',
+    angry: 'angry',
+    dizzy: 'dizzy',
   };
 
-  const STATE_LABELS_PT = {
-    idle: 'ocioso',
-    listening: 'ouvindo',
-    thinking: 'pensando',
-    speaking: 'falando',
-    error: 'erro',
+  const STATE_LABELS = {
+    idle: 'idle',
+    listening: 'listening',
+    thinking: 'thinking',
+    speaking: 'speaking',
+    error: 'error',
   };
 
-  const CATEGORY_LABELS_PT = {
-    general: 'geral',
-    name: 'nome',
-    identity: 'identidade',
-    location: 'local',
-    preference: 'preferência',
-    routine: 'rotina',
-    personal: 'pessoal',
-    work: 'trabalho',
+  const CATEGORY_LABELS = {
+    general: 'general',
+    name: 'name',
+    identity: 'identity',
+    location: 'location',
+    preference: 'preference',
+    routine: 'routine',
+    personal: 'personal',
+    work: 'work',
   };
 
   const TYPING_IDLE_MS = 2500;
-  const HUD_AUTO_HIDE_MS = 5000;
+  const SETTINGS_TABS = ['voice', 'brain', 'memory', 'skills', 'dock', 'diagnostics'];
+  const SWIPE_MIN_PX = 180;
+  const SWIPE_MAX_MS = 320;
+  const SWIPE_MAX_OFF_AXIS_PX = 60;
   const WS_RECONNECT_BASE_MS = 2000;
   const WS_RECONNECT_MAX_MS = 8000;
 
@@ -75,7 +221,7 @@
     captionVisible: 'desk_assistant_caption_visible',
   };
 
-  // WAV silencioso mínimo (~44 bytes) para destravar <audio> no iOS Safari no primeiro toque
+  // Minimal silent WAV (~44 bytes) to unlock <audio> on iOS Safari at the first tap
   const SILENT_WAV_DATA_URI =
     'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 
@@ -84,41 +230,36 @@
     faceContainer: document.getElementById('face-container'),
     petClockTime: document.getElementById('pet-clock-time'),
     petClockDate: document.getElementById('pet-clock-date'),
-    petPomodoroChip: document.getElementById('pet-pomodoro-chip'),
-    petPomodoroText: document.getElementById('pet-pomodoro-text'),
-    hud: document.getElementById('hud'),
     wsDot: document.getElementById('ws-dot'),
     wsStatusText: document.getElementById('ws-status-text'),
     stateLabel: document.getElementById('state-label'),
     emotionLabel: document.getElementById('emotion-label'),
-    modeButtons: Array.from(document.querySelectorAll('#mode-switcher .mode-btn')),
-    btnExpressions: document.getElementById('btn-expressions'),
     btnMemory: document.getElementById('btn-memory'),
     memoryCount: document.getElementById('memory-count'),
     btnPetSounds: document.getElementById('btn-pet-sounds'),
+    miniPetMute: document.getElementById('mini-pet-mute'),
     btnTts: document.getElementById('btn-tts'),
     btnTtsMode: document.getElementById('btn-tts-mode'),
     btnCaption: document.getElementById('btn-caption'),
-    btnFullscreen: document.getElementById('btn-fullscreen'),
-    btnHudPin: document.getElementById('btn-hud-pin'),
-    expressionsBar: document.getElementById('expressions-bar'),
     emotionChips: document.getElementById('emotion-chips'),
     stateChips: document.getElementById('state-chips'),
     audioUnlockBanner: document.getElementById('audio-unlock-banner'),
     actionToast: document.getElementById('action-toast'),
-    // Modo Dock & Atalhos
+    // Dock & Shortcuts mode
     modeDock: document.getElementById('mode-dock'),
     dockActiveApp: document.getElementById('dock-active-app'),
     btnRefreshApps: document.getElementById('btn-refresh-apps'),
     dockAppsGrid: document.getElementById('dock-apps-grid'),
-    shortcutCategoryTabs: Array.from(document.querySelectorAll('#shortcut-category-tabs .cat-tab')),
-    btnNewShortcut: document.getElementById('btn-new-shortcut'),
-    btnConfigShortcuts: document.getElementById('btn-config-shortcuts'),
+    dockAppsPage: document.getElementById('dock-apps-page'),
+    dockPageDots: document.getElementById('dock-page-dots'),
     shortcutsGrid: document.getElementById('shortcuts-grid'),
-    // Modo Smart Display
-    modeDisplay: document.getElementById('mode-display'),
-    displayClockTime: document.getElementById('display-clock-time'),
-    displayClockDate: document.getElementById('display-clock-date'),
+    dockSpeechStrip: document.getElementById('dock-speech-strip'),
+    btnDockTalk: document.getElementById('btn-dock-talk'),
+    settingsDockEditor: document.getElementById('settings-dock-editor'),
+    settingsDockNote: document.getElementById('settings-dock-note'),
+    btnSettingsNewShortcut: document.getElementById('btn-settings-new-shortcut'),
+    btnSettingsManageShortcuts: document.getElementById('btn-settings-manage-shortcuts'),
+    // Pomodoro and Now Playing on the Mac (small strip in Pet Mode)
     pomodoroPhaseLabel: document.getElementById('pomodoro-phase-label'),
     pomodoroTimer: document.getElementById('pomodoro-timer'),
     btnPomoFocus: document.getElementById('btn-pomo-focus'),
@@ -130,23 +271,29 @@
     btnMediaPrev: document.getElementById('btn-media-prev'),
     btnMediaPlay: document.getElementById('btn-media-play'),
     btnMediaNext: document.getElementById('btn-media-next'),
-    btnRefreshWeather: document.getElementById('btn-refresh-weather'),
-    weatherIcon: document.getElementById('weather-icon'),
-    weatherTemp: document.getElementById('weather-temp'),
-    weatherDesc: document.getElementById('weather-desc'),
-    weatherCity: document.getElementById('weather-city'),
-    petMoodLabel: document.getElementById('pet-mood-label'),
-    macTelemetryApp: document.getElementById('mac-telemetry-app'),
-    macTelemetryBattery: document.getElementById('mac-telemetry-battery'),
-    macTelemetryVolume: document.getElementById('mac-telemetry-volume'),
-    petAffinityVal: document.getElementById('pet-affinity-val'),
-    petAffinityBar: document.getElementById('pet-affinity-bar'),
-    petEnergyVal: document.getElementById('pet-energy-val'),
-    petEnergyBar: document.getElementById('pet-energy-bar'),
-    // Modo Diagnóstico
-    modeDiagnostics: document.getElementById('mode-diagnostics'),
+    // Settings (Skills and Diagnostics)
+    modeNathanButton: document.getElementById('btn-mode-nathan'),
+    brainAddress: document.getElementById('brain-address'),
+    brainProvider: document.getElementById('brain-provider'),
+    brainModel: document.getElementById('brain-model'),
+    consentCalendar: document.getElementById('btn-consent-calendar'),
+    consentEmail: document.getElementById('btn-consent-email'),
+    consentCalendarLabel: document.getElementById('consent-calendar-label'),
+    consentEmailLabel: document.getElementById('consent-email-label'),
+    consentFiles: document.getElementById('btn-consent-files'),
+    consentFilesLabel: document.getElementById('consent-files-label'),
+    consentNote: document.getElementById('consent-note'),
+    settingsShortcutsList: document.getElementById('settings-shortcuts-list'),
+    btnSettings: document.getElementById('btn-settings'),
+    btnSettingsClose: document.getElementById('btn-settings-close'),
+    settingsPanel: document.getElementById('settings-panel'),
+    settingsSubtabs: Array.from(document.querySelectorAll('.settings-subtab')),
+    skillsRoot: document.getElementById('skills-root'),
+    mcpRoot: document.getElementById('mcp-root'),
     diagnosticsRoot: document.getElementById('diagnostics-root'),
-    // Dock inferior
+    // Nathan OS mode (Electron)
+    modeNathan: document.getElementById('mode-nathan'),
+    // Bottom dock
     approvalBanner: document.getElementById('approval-banner'),
     approvalText: document.getElementById('approval-text'),
     btnApproveAction: document.getElementById('btn-approve-action'),
@@ -155,8 +302,9 @@
     captionText: document.getElementById('caption-text'),
     chatForm: document.getElementById('chat-form'),
     btnPtt: document.getElementById('btn-ptt'),
+    btnDictation: document.getElementById('btn-dictation'),
     chatInput: document.getElementById('chat-input'),
-    // Modal CRUD Atalhos
+    // Shortcuts CRUD modal
     shortcutModalBackdrop: document.getElementById('shortcut-modal-backdrop'),
     shortcutModal: document.getElementById('shortcut-modal'),
     btnCloseShortcutModal: document.getElementById('btn-close-shortcut-modal'),
@@ -186,7 +334,7 @@
     btnScDelete: document.getElementById('btn-sc-delete'),
     btnScResetDefaults: document.getElementById('btn-sc-reset-defaults'),
     scManageList: document.getElementById('sc-manage-list'),
-    // Gaveta de Memória
+    // Memory drawer
     memoryBackdrop: document.getElementById('memory-backdrop'),
     memoryDrawer: document.getElementById('memory-drawer'),
     btnCloseMemory: document.getElementById('btn-close-memory'),
@@ -203,6 +351,7 @@
     btnConfirmReset: document.getElementById('btn-confirm-reset'),
     btnCancelReset: document.getElementById('btn-cancel-reset'),
     serverTtsAudio: document.getElementById('server-tts-audio'),
+    selLupinLanguage: document.getElementById('sel-lupin-language'),
   };
 
   const state = {
@@ -213,9 +362,7 @@
     reconnectTimer: null,
     typingActive: false,
     typingTimer: null,
-    hudPinned: false,
-    hudTimer: null,
-    expressionsOpen: false,
+    fullscreenRequested: false,
     memoryOpen: false,
     shortcutModalOpen: false,
     captionVisible: loadBoolPref(PREFS.captionVisible, true),
@@ -224,11 +371,22 @@
     petSoundsEnabled: loadBoolPref(PREFS.petSoundsEnabled, true),
     audioUnlocked: false,
     selectedVoice: null,
+    // Lupin's language lives on the Brain (GET/PUT /api/lupin-language); pt-BR until it answers.
+    lupinLanguage: 'pt-BR',
+    lupinPhrases: null,
     activeUtterance: null,
     ttsQueue: [],
     ttsPlaying: false,
+    ttsGeneration: 0,
+    audioChunks: new Map(),
+    activeBody: null,
+    // false when Lupin is in another Body (e.g. ESP32): the device becomes just a Dock.
+    isLupinBody: true,
+    mood: null,
+    ttsCancelPlayback: null,
     serverAudioUrl: null,
     receivedSentenceStream: false,
+    backendTurnActive: false,
     audioLevelTimer: null,
     speechStartGuardTimer: null,
     audioPhase: 0,
@@ -236,10 +394,19 @@
     facts: [],
     recentMessagesCount: 0,
     wakeLock: null,
-    // Dock & Atalhos
+    // Dock & Shortcuts
     macApps: [],
     shortcuts: [],
-    shortcutCategory: 'all',
+    dockPage: 0,
+    isMac: false,
+    dataConsent: { calendar: false, email: false, files: false, receiver: '', can_edit: false, local: false },
+    // Speech in the Dock: sentence count per turn and automatic return to Pet.
+    dockSentenceCount: 0,
+    autoPetFromDock: false,
+    dockReturnTimer: null,
+    dockStripTimer: null,
+    dockTalk: { holdTimer: null, holding: false },
+    yHeldPtt: false,
     gamepadFocusIndex: -1,
     recordingShortcutKeys: false,
     // Smart Display & Pomodoro
@@ -250,17 +417,23 @@
       intervalId: null,
     },
     musicPlaying: false,
-    displayPollTimer: null,
-    // Push-to-Talk & Aprovação
+    settingsOpen: false,
+    settingsTab: 'voice',
+    // Push-to-Talk & Approval
     ptt: {
       active: false,
       stream: null,
       recorder: null,
       chunks: [],
       mimeType: '',
+      generation: 0,
       spaceHeld: false,
     },
+    // Dictation (issue 07): when armed, touching the face starts/stops recording for typing
+    dictation: { armed: false },
+    approvalQueue: [],
     pendingApprovalId: null,
+    overlayReturnFocus: null,
     toastTimer: null,
     lastPetSentAt: 0,
     pointerTouch: {
@@ -294,13 +467,13 @@
     try {
       window.localStorage.setItem(key, String(value));
     } catch {
-      // Ignora erro de armazenamento
+      // Ignore storage error
     }
   }
 
-  // Helpers seguros para EmoFace e EmoAudio
+  // Safe helpers for LupinFace and EmoAudio
   function faceApi() {
-    return window.EmoFace || null;
+    return window.LupinFace || null;
   }
 
   function audioApi() {
@@ -358,11 +531,12 @@
     const currentState = api && typeof api.getState === 'function' ? api.getState() : 'idle';
     const currentEmotion = api && typeof api.getEmotion === 'function' ? api.getEmotion() : 'neutral';
 
-    els.stateLabel.textContent = currentState;
-    els.emotionLabel.textContent = currentEmotion;
+    if (els.stateLabel) els.stateLabel.textContent = currentState;
+    if (els.emotionLabel) els.emotionLabel.textContent = currentEmotion;
 
     updateChipSelection(els.stateChips, currentState);
     updateChipSelection(els.emotionChips, currentEmotion);
+    publishPetSnapshot();
   }
 
   function updateChipSelection(container, activeValue) {
@@ -387,7 +561,7 @@
     }, durationMs);
   }
 
-  // Chips de expressão/estado
+  // Expression/state chips
   function buildExpressionChips() {
     const api = faceApi();
     const emotions =
@@ -405,7 +579,7 @@
       btn.type = 'button';
       btn.className = 'chip-btn';
       btn.dataset.value = emotion;
-      btn.textContent = `${emotion} (${EMOTION_LABELS_PT[emotion] || emotion})`;
+      btn.textContent = `${emotion} (${EMOTION_LABELS[emotion] || emotion})`;
       btn.addEventListener('click', () => applyFaceEmotion(emotion));
       els.emotionChips.appendChild(btn);
     });
@@ -416,7 +590,7 @@
       btn.type = 'button';
       btn.className = 'chip-btn';
       btn.dataset.value = st;
-      btn.textContent = `${st} (${STATE_LABELS_PT[st] || st})`;
+      btn.textContent = `${st} (${STATE_LABELS[st] || st})`;
       btn.addEventListener('click', () => applyFaceState(st));
       els.stateChips.appendChild(btn);
     });
@@ -424,123 +598,290 @@
     syncFaceBadges();
   }
 
-  // HUD auto-ocultar (somente no modo Pet quando nada está aberto)
-  function showHud() {
-    els.hud.classList.remove('is-hidden');
-    scheduleHudAutoHide();
-  }
-
-  function scheduleHudAutoHide() {
-    if (state.hudTimer) {
-      window.clearTimeout(state.hudTimer);
-      state.hudTimer = null;
-    }
-
-    const canAutoHide =
-      state.mode === 'pet' &&
-      !state.hudPinned &&
-      !state.expressionsOpen &&
-      !state.memoryOpen &&
-      !state.shortcutModalOpen &&
-      document.activeElement !== els.chatInput;
-
-    if (!canAutoHide) return;
-
-    state.hudTimer = window.setTimeout(() => {
-      const stillCanHide =
-        state.mode === 'pet' &&
-        !state.hudPinned &&
-        !state.expressionsOpen &&
-        !state.memoryOpen &&
-        !state.shortcutModalOpen &&
-        document.activeElement !== els.chatInput;
-      if (stillCanHide) {
-        els.hud.classList.add('is-hidden');
-      }
-    }, HUD_AUTO_HIDE_MS);
-  }
-
-  function toggleHudPin() {
-    state.hudPinned = !state.hudPinned;
-    els.btnHudPin.classList.toggle('is-active', state.hudPinned);
-    els.btnHudPin.setAttribute('aria-pressed', String(state.hudPinned));
-    showHud();
-    syncHudOffset();
-  }
-
-  function syncHudOffset() {
-    if (!els.hud) return;
-    window.requestAnimationFrame(() => {
-      const rect = els.hud.getBoundingClientRect();
-      if (rect && rect.height > 0) {
-        document.documentElement.style.setProperty('--hud-offset', `${Math.ceil(rect.height + 16)}px`);
-      }
-    });
-  }
-
-  // Alternador dos 4 modos de tela
-  function setMode(nextMode) {
+  // Screen mode switcher
+  function setMode(nextMode, { auto = false } = {}) {
     if (!MODES.includes(nextMode)) return;
+    if (nextMode === 'pet' && !state.isLupinBody) return;
+    // A switch made by the user cancels the automatic return from Pet to Dock.
+    if (!auto) clearAutoPet();
+    const previousMode = state.mode;
     state.mode = nextMode;
     state.gamepadFocusIndex = -1;
+    if (nextMode === 'dock' && previousMode !== 'dock') state.dockPage = 0;
 
-    document.body.classList.remove('mode-pet', 'mode-dock', 'mode-display', 'mode-diagnostics');
+    document.body.classList.remove(
+      'mode-pet',
+      'mode-dock',
+      'mode-nathan'
+    );
     document.body.classList.add(`mode-${nextMode}`);
 
-    els.modeButtons.forEach((btn) => {
-      const isCurrent = btn.dataset.mode === nextMode;
-      btn.classList.toggle('is-active', isCurrent);
-      btn.setAttribute('aria-pressed', String(isCurrent));
-    });
-
     els.modeDock.classList.toggle('hidden', nextMode !== 'dock');
-    els.modeDisplay.classList.toggle('hidden', nextMode !== 'display');
-    els.modeDiagnostics.classList.toggle('hidden', nextMode !== 'diagnostics');
+    if (els.modeNathan) {
+      els.modeNathan.classList.toggle('hidden', nextMode !== 'nathan');
+    }
+
+    window.dispatchEvent(new CustomEvent('desk:modechange', { detail: { mode: nextMode } }));
 
     const api = faceApi();
     if (api && typeof api.setCompactMode === 'function') {
-      api.setCompactMode(nextMode === 'dock' || nextMode === 'display');
+      api.setCompactMode(false);
     }
 
-    if (window.DeskDiagnostics) {
-      if (nextMode === 'diagnostics') {
-        window.DeskDiagnostics.activate();
-      } else {
-        window.DeskDiagnostics.deactivate();
-      }
-    }
+    setSettingsOpen(false);
 
+    if (nextMode !== 'dock') document.body.classList.remove('dock-text-open');
+    syncDockCorner();
     if (nextMode === 'dock') {
+      renderDock();
       fetchMacApps();
       fetchShortcuts();
-    } else if (nextMode === 'display') {
-      refreshSmartDisplay();
-    }
-
-    if (state.displayPollTimer) {
-      window.clearInterval(state.displayPollTimer);
-      state.displayPollTimer = null;
-    }
-    if (nextMode === 'display') {
-      state.displayPollTimer = window.setInterval(refreshSmartDisplay, 10000);
     }
 
     const aud = audioApi();
     if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) {
       aud.click();
     }
+  }
 
-    showHud();
-    syncHudOffset();
+  // Settings: Skills and Diagnostics live in a panel, they are not screen modes
+  function setSettingsOpen(open, tab) {
+    if (!els.settingsPanel) return;
+    if (tab) state.settingsTab = tab;
+    state.settingsOpen = Boolean(open);
+    document.body.classList.toggle('settings-open', state.settingsOpen);
+    els.settingsPanel.classList.toggle('hidden', !state.settingsOpen);
+    state.gamepadFocusIndex = -1;
+    if (els.btnSettings) {
+      els.btnSettings.setAttribute('aria-expanded', String(state.settingsOpen));
+      els.btnSettings.classList.toggle('is-active', state.settingsOpen);
+    }
+    els.settingsSubtabs.forEach((btn) => {
+      const current = btn.dataset.subtab === state.settingsTab;
+      btn.classList.toggle('is-active', current);
+      const panel = document.getElementById(`settings-tab-${btn.dataset.subtab}`);
+      if (panel) panel.classList.toggle('hidden', !current);
+    });
+
+    const diagnosticsVisible = state.settingsOpen && state.settingsTab === 'diagnostics';
+    if (window.DeskDiagnostics) {
+      if (diagnosticsVisible) window.DeskDiagnostics.activate();
+      else window.DeskDiagnostics.deactivate();
+    }
+    if (
+      state.settingsOpen &&
+      state.settingsTab === 'skills' &&
+      window.DeskSkills &&
+      typeof window.DeskSkills.activate === 'function'
+    ) {
+      window.DeskSkills.activate();
+    }
+    if (state.settingsOpen && state.settingsTab === 'skills' && mcpSettings) mcpSettings.reload();
+    if (state.settingsOpen && state.settingsTab === 'brain') {
+      fetchBrainInfo();
+      fetchDataConsent();
+    }
+    if (state.settingsOpen && state.settingsTab === 'dock') {
+      fetchClientInfo();
+      fetchShortcuts();
+    }
+  }
+
+  function cycleSettingsTab(delta) {
+    const idx = Math.max(0, SETTINGS_TABS.indexOf(state.settingsTab));
+    const next = (idx + delta + SETTINGS_TABS.length) % SETTINGS_TABS.length;
+    setSettingsOpen(true, SETTINGS_TABS[next]);
+  }
+
+  async function fetchBrainInfo() {
+    if (els.brainAddress) els.brainAddress.textContent = window.location.host || window.location.origin || '—';
+    try {
+      const res = await fetch('/api/llm/providers');
+      if (!res.ok) return;
+      const data = await res.json();
+      const active = data.active || {};
+      const preset = (data.presets || []).find((item) => item.id === active.provider_id);
+      if (els.brainProvider) els.brainProvider.textContent = (preset && preset.name) || active.provider_id || '—';
+      if (els.brainModel) els.brainModel.textContent = active.model || '—';
+    } catch {
+      // Ignore the transient error; the fields stay as they were
+    }
+  }
+
+  // Data Consent: who receives the calendar and emails. On the Mac it can be toggled; on other devices it is read-only.
+  function renderDataConsent() {
+    const dc = state.dataConsent;
+    const view = window.LupinLocalMode ? window.LupinLocalMode.consentView(dc) : null;
+    if (view && view.local) {
+      // Ollama on this Mac: nothing leaves it, so the switches are locked on.
+      const localRows = [
+        [els.consentCalendar, els.consentCalendarLabel, view.rowText.calendar],
+        [els.consentEmail, els.consentEmailLabel, view.rowText.email],
+        [els.consentFiles, els.consentFilesLabel, view.rowText.files],
+      ];
+      for (const [btn, label, text] of localRows) {
+        if (label) label.textContent = text;
+        if (!btn) continue;
+        btn.textContent = 'On';
+        btn.setAttribute('aria-checked', 'true');
+        btn.classList.add('is-active');
+        btn.disabled = true;
+      }
+      if (els.consentNote) {
+        els.consentNote.textContent = view.noteText;
+        els.consentNote.classList.remove('hidden');
+      }
+      return;
+    }
+    const receiver = dc.receiver || 'the provider';
+    const rows = [
+      ['calendar', els.consentCalendar, els.consentCalendarLabel, 'your calendar'],
+      ['email', els.consentEmail, els.consentEmailLabel, 'your emails'],
+      ['files', els.consentFiles, els.consentFilesLabel, 'the contents of your files'],
+    ];
+    for (const [key, btn, label, what] of rows) {
+      if (label) label.textContent = `Let ${receiver} see ${what}`;
+      if (!btn) continue;
+      const on = Boolean(dc[key]);
+      btn.textContent = on ? 'On' : 'Off';
+      btn.setAttribute('aria-checked', String(on));
+      btn.classList.toggle('is-active', on);
+      btn.disabled = !dc.can_edit;
+    }
+    if (els.consentNote) els.consentNote.classList.toggle('hidden', Boolean(dc.can_edit));
+  }
+
+  async function fetchDataConsent() {
+    try {
+      const res = await fetch('/api/data-consent');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.dataConsent = {
+        calendar: Boolean(data.calendar),
+        email: Boolean(data.email),
+        files: Boolean(data.files),
+        receiver: String(data.receiver || ''),
+        can_edit: Boolean(data.can_edit),
+        local: Boolean(data.local),
+      };
+      renderDataConsent();
+    } catch {
+      // No response: the switches stay as they were (read-only)
+    }
+  }
+
+  async function toggleDataConsent(key) {
+    if (!state.dataConsent.can_edit) return;
+    try {
+      const res = await fetch('/api/data-consent', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: !state.dataConsent[key] }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Could not change the permission', { isError: true });
+        return;
+      }
+      await fetchDataConsent();
+    } catch {
+      showToast('Network error while changing the permission', { isError: true });
+    }
+  }
+
+  async function fetchClientInfo() {
+    try {
+      const res = await fetch('/api/client-info');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.isMac = Boolean(data && data.is_mac);
+      renderSettingsShortcuts();
+    } catch {
+      // No response: this device stays read-only
+    }
+  }
+
+  async function toggleShortcutPinned(sc) {
+    const pinned = sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0;
+    try {
+      const res = await fetch(`/api/shortcuts/${encodeURIComponent(sc.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned_on_deck: !pinned }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Error pinning the shortcut', { isError: true });
+        return;
+      }
+      await fetchShortcuts();
+    } catch {
+      showToast('Network error while pinning the shortcut', { isError: true });
+    }
+  }
+
+  // Settings > Dock: on the Mac it is the full editor; on other devices, just the list.
+  function renderSettingsShortcuts() {
+    if (els.settingsDockEditor) els.settingsDockEditor.classList.toggle('hidden', !state.isMac);
+    if (els.settingsDockNote) {
+      els.settingsDockNote.textContent = state.isMac
+        ? 'Choose here which Shortcuts are pinned to the Dock, their order and what each one does.'
+        : 'Dock Shortcuts are created and edited on the Mac. Here you can only see the list.';
+    }
+    if (!els.settingsShortcutsList) return;
+    els.settingsShortcutsList.textContent = '';
+    if (!state.shortcuts.length) {
+      const empty = document.createElement('li');
+      empty.className = 'muted-note';
+      empty.textContent = 'No Shortcut configured on the Mac.';
+      els.settingsShortcutsList.appendChild(empty);
+      return;
+    }
+    state.shortcuts.forEach((sc) => {
+      const item = document.createElement('li');
+      const text = document.createElement('div');
+      text.className = 'settings-item-text';
+      const title = document.createElement('strong');
+      title.textContent = sc.title || sc.slug || 'Shortcut';
+      const hint = document.createElement('span');
+      const pinned = sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0;
+      hint.textContent = [pinned ? 'Pinned' : '', formatShortcutBadge(sc)].filter(Boolean).join(' · ');
+      text.appendChild(title);
+      text.appendChild(hint);
+      item.appendChild(text);
+      if (state.isMac) {
+        const pin = document.createElement('button');
+        pin.type = 'button';
+        pin.className = 'hud-btn';
+        pin.setAttribute('aria-pressed', String(pinned));
+        pin.textContent = pinned ? 'Unpin' : 'Pin';
+        pin.addEventListener('click', () => toggleShortcutPinned(sc));
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'hud-btn';
+        edit.textContent = 'Edit';
+        edit.addEventListener('click', () => openShortcutModal(sc));
+        item.appendChild(pin);
+        item.appendChild(edit);
+      }
+      els.settingsShortcutsList.appendChild(item);
+    });
+  }
+
+  function getVisibleModes() {
+    const modes = state.isLupinBody ? ['pet', 'dock'] : ['dock'];
+    if (els.modeNathanButton && !els.modeNathanButton.classList.contains('hidden')) modes.push('nathan');
+    return modes;
   }
 
   function cycleMode(delta) {
-    const idx = MODES.indexOf(state.mode);
-    const nextIdx = (idx + delta + MODES.length) % MODES.length;
-    setMode(MODES[nextIdx]);
+    const available = getVisibleModes();
+    const idx = Math.max(0, available.indexOf(state.mode));
+    const nextIdx = (idx + delta + available.length) % available.length;
+    setMode(available[nextIdx]);
   }
 
-  // Legenda em streaming
+  // Streaming caption
   function setCaption(text, { isError = false } = {}) {
     const clean = (text || '').trim();
     els.captionText.textContent = clean;
@@ -555,31 +896,32 @@
     els.captionBox.classList.toggle('is-hidden-by-user', !state.captionVisible);
     els.btnCaption.classList.toggle('is-active', state.captionVisible);
     els.btnCaption.setAttribute('aria-pressed', String(state.captionVisible));
+    els.btnCaption.textContent = state.captionVisible ? 'On' : 'Off';
   }
 
-  // Áudio Procedural + TTS Híbrido (Browser + Servidor Mac)
+  // Procedural Audio + Hybrid TTS (Browser + Mac server)
   function supportsSpeechSynthesis() {
     return typeof window !== 'undefined' && 'speechSynthesis' in window;
   }
 
-  function pickBestPortugueseVoice() {
+  function speechLocale() {
+    return state.lupinLanguage === 'en' ? 'en-US' : 'pt-BR';
+  }
+
+  function pickBestVoice() {
     if (!supportsSpeechSynthesis()) return null;
     const voices = window.speechSynthesis.getVoices() || [];
     if (voices.length === 0) return null;
 
-    const ptBrVoices = voices.filter((v) => /^pt[-_]br$/i.test(v.lang));
-    const ptAnyVoices = voices.filter((v) => /^pt\b/i.test(v.lang));
-    const pool = ptBrVoices.length > 0 ? ptBrVoices : ptAnyVoices;
+    const english = state.lupinLanguage === 'en';
+    const exactVoices = voices.filter((v) => (english ? /^en[-_]us$/i : /^pt[-_]br$/i).test(v.lang));
+    const anyVoices = voices.filter((v) => (english ? /^en\b/i : /^pt\b/i).test(v.lang));
+    const pool = exactVoices.length > 0 ? exactVoices : anyVoices;
     if (pool.length === 0) return null;
 
-    const preferredPatterns = [
-      /luciana/i,
-      /felipe/i,
-      /google.*portugu/i,
-      /natural/i,
-      /enhanced/i,
-      /neural/i,
-    ];
+    const preferredPatterns = english
+      ? [/samantha/i, /google.*us english/i, /natural/i, /enhanced/i, /neural/i]
+      : [/luciana/i, /felipe/i, /google.*portugu/i, /natural/i, /enhanced/i, /neural/i];
     for (const pattern of preferredPatterns) {
       const match = pool.find((v) => pattern.test(v.name));
       if (match) return match;
@@ -588,7 +930,7 @@
   }
 
   function refreshVoices() {
-    state.selectedVoice = pickBestPortugueseVoice();
+    state.selectedVoice = pickBestVoice();
     if (window.DeskDiagnostics && typeof window.DeskDiagnostics.refreshVoices === 'function') {
       window.DeskDiagnostics.refreshVoices();
     }
@@ -604,14 +946,14 @@
       aud.unlock();
     }
 
-    // Destrava <audio> no iOS Safari com WAV silencioso no gesto do usuário
+    // Unlock <audio> on iOS Safari with a silent WAV on the user gesture
     if (els.serverTtsAudio) {
       try {
         els.serverTtsAudio.src = SILENT_WAV_DATA_URI;
         const p = els.serverTtsAudio.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
       } catch {
-        // Ignora bloqueio em ambiente headless
+        // Ignore the block in a headless environment
       }
     }
 
@@ -622,12 +964,12 @@
           const primer = new SpeechSynthesisUtterance(' ');
           primer.volume = 0;
           primer.rate = 10;
-          primer.lang = 'pt-BR';
+          primer.lang = speechLocale();
           window.speechSynthesis.speak(primer);
         }
         refreshVoices();
       } catch {
-        // Ignora bloqueio
+        // Ignore the block
       }
     }
   }
@@ -659,17 +1001,28 @@
   }
 
   function stopSpeaking({ resetState = true } = {}) {
+    state.ttsGeneration += 1;
     state.ttsQueue = [];
     state.ttsPlaying = false;
     state.activeUtterance = null;
     clearAudioLevelTimer();
+    if (state.speechStartGuardTimer) {
+      window.clearTimeout(state.speechStartGuardTimer);
+      state.speechStartGuardTimer = null;
+    }
+
+    // Discard still-incomplete audio chunks from the Brain
+    state.audioChunks.clear();
+    const cancelPlayback = state.ttsCancelPlayback;
+    state.ttsCancelPlayback = null;
+    if (cancelPlayback) cancelPlayback();
 
     if (els.serverTtsAudio) {
       try {
         els.serverTtsAudio.pause();
         els.serverTtsAudio.currentTime = 0;
       } catch {
-        // Ignora erro
+        // Ignore error
       }
       if (state.serverAudioUrl) {
         URL.revokeObjectURL(state.serverAudioUrl);
@@ -681,7 +1034,7 @@
       try {
         window.speechSynthesis.cancel();
       } catch {
-        // Ignora erro
+        // Ignore error
       }
     }
 
@@ -694,11 +1047,41 @@
     const clean = (text || '').trim();
     if (!clean) return;
     if (!state.ttsEnabled && !forceMode) return;
+    if (!state.isLupinBody) return;
+    // In server mode the audio comes from the Brain via the `audio` event (enqueueServerAudio)
+    if ((forceMode || state.ttsMode) === 'server') return;
 
     state.ttsQueue.push({ text: clean, mode: forceMode || state.ttsMode });
     if (!state.ttsPlaying) {
       pumpTtsQueue();
     }
+  }
+
+  function enqueueServerAudio(blob) {
+    if (!blob || blob.size === 0) return;
+    state.ttsQueue.push({ blob, mode: 'server' });
+    if (!state.ttsPlaying) pumpTtsQueue();
+  }
+
+  // Reassemble the base64 chunks of a sentence and queue the audio when `last` arrives
+  function handleAudioChunk(msg) {
+    if (!state.ttsEnabled || state.ttsMode !== 'server') return;
+    if (typeof msg.data !== 'string') return;
+    const key = msg.sentence;
+    const entry = state.audioChunks.get(key) || [];
+    entry[Number.isInteger(msg.seq) ? msg.seq : entry.length] = msg.data;
+    state.audioChunks.set(key, entry);
+    if (!msg.last) return;
+    state.audioChunks.delete(key);
+    const parts = [];
+    for (const b64 of entry) {
+      if (typeof b64 !== 'string') continue;
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      parts.push(bytes);
+    }
+    enqueueServerAudio(new Blob(parts, { type: msg.mime || 'audio/mp4' }));
   }
 
   async function pumpTtsQueue() {
@@ -707,37 +1090,37 @@
     if (!item) {
       clearAudioLevelTimer();
       applyFaceState('idle');
+      maybeSpeechEnded();
       return;
     }
 
     state.ttsPlaying = true;
+    const generation = state.ttsGeneration;
     const modeToUse = item.mode === 'server' ? 'server' : 'browser';
-
-    if (modeToUse === 'server') {
-      await playServerTtsItem(item.text);
+    const isServer = modeToUse === 'server';
+    const onDone = () => {
+      if (generation !== state.ttsGeneration) return;
       state.ttsPlaying = false;
       pumpTtsQueue();
+    };
+
+    if (isServer) {
+      await playServerTtsItem(item.blob, generation);
+      onDone();
       return;
     }
-
     if (!supportsSpeechSynthesis()) {
-      // Fallback automático para TTS do servidor se o browser não suportar speechSynthesis
-      await playServerTtsItem(item.text);
-      state.ttsPlaying = false;
-      pumpTtsQueue();
+      onDone();
       return;
     }
 
-    playBrowserTtsItem(item.text, () => {
-      state.ttsPlaying = false;
-      pumpTtsQueue();
-    });
+    playBrowserTtsItem(item.text, generation, onDone);
   }
 
-  function playBrowserTtsItem(clean, onDone) {
+  function playBrowserTtsItem(clean, generation, onDone) {
     refreshVoices();
     const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = 'pt-BR';
+    utterance.lang = speechLocale();
     utterance.rate = 1.03;
     utterance.pitch = 1.0;
     if (state.selectedVoice) {
@@ -754,12 +1137,13 @@
       if (state.activeUtterance === utterance) {
         state.activeUtterance = null;
       }
+      if (generation !== state.ttsGeneration) return;
       clearAudioLevelTimer();
       onDone();
     };
 
     utterance.onstart = () => {
-      if (state.activeUtterance !== utterance) return;
+      if (generation !== state.ttsGeneration || state.activeUtterance !== utterance) return;
       started = true;
       if (state.speechStartGuardTimer) {
         window.clearTimeout(state.speechStartGuardTimer);
@@ -770,7 +1154,7 @@
     };
 
     utterance.onboundary = () => {
-      if (state.activeUtterance === utterance) {
+      if (generation === state.ttsGeneration && state.activeUtterance === utterance) {
         setAudioLevelSafe(0.88);
       }
     };
@@ -779,7 +1163,12 @@
     utterance.onerror = finishOnce;
 
     state.speechStartGuardTimer = window.setTimeout(() => {
-      if (state.activeUtterance === utterance && !started && !window.speechSynthesis.speaking) {
+      if (
+        generation === state.ttsGeneration &&
+        state.activeUtterance === utterance &&
+        !started &&
+        !window.speechSynthesis.speaking
+      ) {
         if (!state.audioUnlocked) {
           els.audioUnlockBanner.classList.remove('hidden');
         }
@@ -794,21 +1183,17 @@
     }
   }
 
-  async function playServerTtsItem(clean) {
+  async function playServerTtsItem(blob, generation) {
     try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: clean, format: 'm4a' }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      if (!blob || blob.size === 0) return;
+      if (generation !== state.ttsGeneration || !blob || blob.size === 0) return;
 
-      if (state.serverAudioUrl) {
-        URL.revokeObjectURL(state.serverAudioUrl);
+      const audioUrl = URL.createObjectURL(blob);
+      if (generation !== state.ttsGeneration) {
+        URL.revokeObjectURL(audioUrl);
+        return;
       }
-      state.serverAudioUrl = URL.createObjectURL(blob);
+      if (state.serverAudioUrl) URL.revokeObjectURL(state.serverAudioUrl);
+      state.serverAudioUrl = audioUrl;
 
       await new Promise((resolve) => {
         const audioEl = els.serverTtsAudio;
@@ -820,21 +1205,25 @@
         const done = () => {
           if (settled) return;
           settled = true;
-          audioEl.onended = null;
-          audioEl.onerror = null;
-          clearAudioLevelTimer();
+          if (audioEl.onended === done) audioEl.onended = null;
+          if (audioEl.onerror === done) audioEl.onerror = null;
+          if (state.ttsCancelPlayback === done) state.ttsCancelPlayback = null;
+          if (generation === state.ttsGeneration) clearAudioLevelTimer();
           resolve();
         };
 
+        state.ttsCancelPlayback = done;
         audioEl.onended = done;
         audioEl.onerror = done;
-        audioEl.src = state.serverAudioUrl;
-        applyFaceState('speaking');
-        startAudioLevelAnimation();
+        audioEl.src = audioUrl;
+        if (generation === state.ttsGeneration) {
+          applyFaceState('speaking');
+          startAudioLevelAnimation();
+        }
         const p = audioEl.play();
         if (p && typeof p.catch === 'function') {
           p.catch(() => {
-            if (!state.audioUnlocked) {
+            if (generation === state.ttsGeneration && !state.audioUnlocked) {
               els.audioUnlockBanner.classList.remove('hidden');
             }
             done();
@@ -842,7 +1231,63 @@
         }
       });
     } catch {
-      // Silencia erro de rede no TTS do servidor
+      // Silence playback errors for the Brain's audio
+    }
+  }
+
+  // Lupin's spoken phrases come from the Brain with the language setting; until it answers,
+  // these pt-BR defaults (the default language) are used.
+  const DEFAULT_LUPIN_PHRASES = {
+    pomodoro_focus_done: 'Ciclo Pomodoro de foco concluído! Faça uma pausa.',
+    pomodoro_break_done: 'Pausa do Pomodoro finalizada! Hora de voltar ao foco.',
+    diag_test_browser_tts: 'Olá! Teste de voz do navegador funcionando.',
+    diag_test_server_tts: 'Olá! Teste de voz offline do servidor Mac.',
+  };
+
+  function lupinPhrase(key) {
+    return (state.lupinPhrases && state.lupinPhrases[key]) || DEFAULT_LUPIN_PHRASES[key];
+  }
+
+  function renderLupinLanguage() {
+    if (els.selLupinLanguage) els.selLupinLanguage.value = state.lupinLanguage;
+  }
+
+  function applyLupinLanguage(data) {
+    if (!data || typeof data.language !== 'string') return;
+    const changed = data.language !== state.lupinLanguage;
+    state.lupinLanguage = data.language;
+    state.lupinPhrases = data.phrases || null;
+    renderLupinLanguage();
+    if (changed) refreshVoices();
+  }
+
+  async function fetchLupinLanguage() {
+    try {
+      const res = await fetch('/api/lupin-language');
+      if (!res.ok) return;
+      applyLupinLanguage(await res.json());
+    } catch {
+      // No response: keep the current language
+    }
+  }
+
+  async function changeLupinLanguage(language) {
+    try {
+      const res = await fetch('/api/lupin-language', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || "Could not change Lupin's language", { isError: true });
+        renderLupinLanguage();
+        return;
+      }
+      applyLupinLanguage(await res.json());
+    } catch {
+      showToast("Network error while changing Lupin's language", { isError: true });
+      renderLupinLanguage();
     }
   }
 
@@ -856,25 +1301,129 @@
   }
 
   function syncTtsUI() {
-    els.btnTts.textContent = state.ttsEnabled ? '🔊 Voz' : '🔇 Mudo';
-    els.btnTts.classList.toggle('is-active', state.ttsEnabled);
-    els.btnTts.setAttribute('aria-pressed', String(state.ttsEnabled));
+    if (els.btnTts) {
+      els.btnTts.textContent = state.ttsEnabled ? 'On' : 'Off';
+      els.btnTts.classList.toggle('is-active', state.ttsEnabled);
+      els.btnTts.setAttribute('aria-pressed', String(state.ttsEnabled));
+    }
 
-    els.btnTtsMode.textContent = state.ttsMode === 'server' ? '🖥️ Mac TTS' : '🗣️ Browser';
-    els.btnTtsMode.classList.toggle('is-active', state.ttsMode === 'server');
+    if (els.btnTtsMode) {
+      els.btnTtsMode.textContent = state.ttsMode === 'server' ? 'Mac' : 'Browser';
+      els.btnTtsMode.classList.toggle('is-active', state.ttsMode === 'server');
+      els.btnTtsMode.setAttribute('aria-pressed', String(state.ttsMode === 'server'));
+    }
 
-    els.btnPetSounds.textContent = state.petSoundsEnabled ? '🔔 Sons Pet' : '🔕 Pet Mudo';
-    els.btnPetSounds.classList.toggle('is-active', state.petSoundsEnabled);
-    els.btnPetSounds.setAttribute('aria-pressed', String(state.petSoundsEnabled));
+    if (els.btnPetSounds) {
+      els.btnPetSounds.textContent = state.petSoundsEnabled ? 'On' : 'Off';
+      els.btnPetSounds.classList.toggle('is-active', state.petSoundsEnabled);
+      els.btnPetSounds.setAttribute('aria-pressed', String(state.petSoundsEnabled));
+    }
+
+    const muted = !state.ttsEnabled && !state.petSoundsEnabled;
+    if (els.miniPetMute) {
+      const label = document.getElementById('mini-pet-mute-label') || els.miniPetMute;
+      label.textContent = muted ? 'Unmute' : 'Mute';
+      els.miniPetMute.title = muted ? "Unmute the pet's voice and sounds" : "Mute the pet's voice and sounds";
+      els.miniPetMute.setAttribute('aria-label', els.miniPetMute.title);
+      els.miniPetMute.classList.toggle('is-active', !muted);
+      els.miniPetMute.setAttribute('aria-pressed', String(muted));
+    }
 
     const aud = audioApi();
+    if (aud && typeof aud.purr === 'function' && (isMiniPet || !state.petSoundsEnabled)) {
+      aud.purr(false);
+    }
     if (aud && typeof aud.setMuted === 'function') {
-      aud.setMuted(!state.petSoundsEnabled);
+      aud.setMuted(isMiniPet || !state.petSoundsEnabled);
     }
 
-    if (window.DeskDiagnostics && typeof window.DeskDiagnostics.refreshVoices === 'function') {
+    if (!isMiniPet && window.DeskDiagnostics && typeof window.DeskDiagnostics.refreshVoices === 'function') {
       window.DeskDiagnostics.refreshVoices();
     }
+  }
+
+  function syncPreferencesFromStorage(event) {
+    if (event && event.key && !Object.values(PREFS).includes(event.key)) return;
+    const wasTtsEnabled = state.ttsEnabled;
+    const wasTtsMode = state.ttsMode;
+    state.ttsEnabled = loadBoolPref(PREFS.ttsEnabled, true);
+    state.ttsMode = loadStringPref(PREFS.ttsMode, 'browser') === 'server' ? 'server' : 'browser';
+    if (state.ttsMode !== wasTtsMode) sendHello();
+    state.petSoundsEnabled = loadBoolPref(PREFS.petSoundsEnabled, true);
+    state.captionVisible = loadBoolPref(PREFS.captionVisible, true);
+    syncTtsUI();
+    if (!isMiniPet) {
+      if (els.captionBox && els.btnCaption) syncCaptionVisibilityUI();
+    }
+    if (wasTtsEnabled && !state.ttsEnabled) stopSpeaking({ resetState: true });
+  }
+
+  function toggleMiniPetMute() {
+    const enable = !state.ttsEnabled && !state.petSoundsEnabled;
+    state.ttsEnabled = enable;
+    state.petSoundsEnabled = enable;
+    savePref(PREFS.ttsEnabled, enable);
+    savePref(PREFS.petSoundsEnabled, enable);
+    syncTtsUI();
+    if (!enable) stopSpeaking({ resetState: true });
+  }
+
+  function publishPetSnapshot() {
+    if (isMiniPet || !petSyncChannel) return;
+    const api = faceApi();
+    const snapshot = {
+      type: 'snapshot',
+      state: api && typeof api.getState === 'function' ? api.getState() : 'idle',
+      emotion: api && typeof api.getEmotion === 'function' ? api.getEmotion() : 'neutral',
+      musicPlaying: Boolean(state.musicPlaying),
+      lupinBody: state.isLupinBody,
+    };
+    const signature = `${snapshot.state}|${snapshot.emotion}|${snapshot.musicPlaying}|${snapshot.lupinBody}`;
+    if (signature === lastPublishedPetSnapshot) return;
+    lastPublishedPetSnapshot = signature;
+    petSyncChannel.postMessage(snapshot);
+  }
+
+  function initPetSync() {
+    if (typeof window.BroadcastChannel !== 'function') return;
+    try {
+      petSyncChannel = new window.BroadcastChannel(PET_SYNC_CHANNEL);
+      petSyncChannel.addEventListener('message', (event) => {
+        const message = event.data;
+        if (!message || typeof message !== 'object') return;
+        if (isMiniPet && message.type === 'snapshot') {
+          const api = faceApi();
+          if (api && typeof api.setState === 'function') api.setState(message.state);
+          if (api && typeof api.setEmotion === 'function') api.setEmotion(message.emotion);
+          if (api && typeof api.setMusicPlaying === 'function') api.setMusicPlaying(message.musicPlaying);
+          // Outside the Active Body the mini-pet hides the drawing and shows only "Talk to Lupin".
+          document.body.classList.toggle('lupin-in-other-body', message.lupinBody === false);
+          syncFaceBadges();
+        } else if (!isMiniPet && message.type === 'request') {
+          lastPublishedPetSnapshot = '';
+          publishPetSnapshot();
+        }
+      });
+      if (isMiniPet) petSyncChannel.postMessage({ type: 'request' });
+      else {
+        lastPublishedPetSnapshot = '';
+        publishPetSnapshot();
+      }
+    } catch {
+      petSyncChannel = null;
+    }
+  }
+
+  function bindMiniPetEvents() {
+    if (els.miniPetMute) els.miniPetMute.addEventListener('click', toggleMiniPetMute);
+    const talk = document.getElementById('mini-pet-talk');
+    if (talk) {
+      talk.addEventListener('click', () => {
+        const api = window.electronAPI;
+        if (api && typeof api.openDashboard === 'function') api.openDashboard();
+      });
+    }
+    bindFaceTouchEvents();
   }
 
   function toggleTtsMode() {
@@ -882,26 +1431,142 @@
     state.ttsMode = state.ttsMode === 'browser' ? 'server' : 'browser';
     savePref(PREFS.ttsMode, state.ttsMode);
     syncTtsUI();
+    sendHello();
     showToast(
       state.ttsMode === 'server'
-        ? 'Voz alterada para Servidor Mac (/api/tts)'
-        : 'Voz alterada para Navegador (speechSynthesis)'
+        ? 'Voice changed to Mac server (Brain)'
+        : 'Voice changed to Browser (speechSynthesis)'
     );
   }
 
-  // Barge-in determinístico
+  // Deterministic barge-in
   function triggerBargeIn() {
     const api = faceApi();
     const currentFaceState = api && typeof api.getState === 'function' ? api.getState() : 'idle';
     const isBusy =
+      state.backendTurnActive ||
       state.ttsPlaying ||
       state.ttsQueue.length > 0 ||
       currentFaceState === 'speaking' ||
       currentFaceState === 'thinking';
 
+    state.backendTurnActive = false;
     stopSpeaking({ resetState: true });
     if (isBusy) {
       sendWs({ type: 'interrupt' });
+    }
+  }
+
+  // Speech in the Dock: small Lupin in the corner, one-line text and automatic return to Pet.
+  const DOCK_STRIP_HIDE_MS = 4000;
+  const DOCK_RETURN_MS = 5000;
+  const DOCK_TALK_HOLD_MS = 280;
+  const DOCK_MAX_SENTENCES = 2;
+
+  function clearAutoPet() {
+    state.autoPetFromDock = false;
+    if (state.dockReturnTimer !== null) {
+      window.clearTimeout(state.dockReturnTimer);
+      state.dockReturnTimer = null;
+    }
+  }
+
+  // Any touch, key, gamepad button or mode switch cancels the automatic return.
+  function noteUserInput() {
+    clearAutoPet();
+  }
+
+  function syncDockCorner() {
+    const inDock = state.mode === 'dock';
+    document.body.classList.toggle('dock-lupin-corner', inDock && state.isLupinBody);
+    if (els.btnDockTalk) {
+      els.btnDockTalk.classList.toggle('hidden', state.isLupinBody);
+      els.btnDockTalk.textContent = state.ptt.active ? '🔴 Listening...' : 'Talk to Lupin';
+    }
+  }
+
+  function setDockStrip(text) {
+    if (!els.dockSpeechStrip) return;
+    const clean = (text || '').replace(/\s+/g, ' ').trim();
+    els.dockSpeechStrip.textContent = clean;
+    els.dockSpeechStrip.classList.toggle('is-empty', clean.length === 0);
+  }
+
+  function onReplySentence(msg, text) {
+    setDockStrip(text);
+    if (state.dockStripTimer !== null) {
+      window.clearTimeout(state.dockStripTimer);
+      state.dockStripTimer = null;
+    }
+    if (state.dockReturnTimer !== null) {
+      window.clearTimeout(state.dockReturnTimer);
+      state.dockReturnTimer = null;
+    }
+    // Only the Active Body, in Dock Mode, may go up to Pet because of speech.
+    if (state.mode !== 'dock' || !state.isLupinBody) return;
+    state.dockSentenceCount += 1;
+    if ((msg && msg.first_wake) || state.dockSentenceCount > DOCK_MAX_SENTENCES) {
+      setMode('pet', { auto: true });
+      if (state.mode === 'pet') state.autoPetFromDock = true;
+    }
+  }
+
+  function maybeSpeechEnded() {
+    if (state.backendTurnActive || state.ttsPlaying || state.ttsQueue.length > 0) return;
+    if (state.dockStripTimer !== null) window.clearTimeout(state.dockStripTimer);
+    state.dockStripTimer = window.setTimeout(() => {
+      state.dockStripTimer = null;
+      setDockStrip('');
+    }, DOCK_STRIP_HIDE_MS);
+    if (state.autoPetFromDock && state.mode === 'pet') {
+      if (state.dockReturnTimer !== null) window.clearTimeout(state.dockReturnTimer);
+      state.dockReturnTimer = window.setTimeout(() => {
+        state.dockReturnTimer = null;
+        if (state.autoPetFromDock && state.mode === 'pet') {
+          state.autoPetFromDock = false;
+          setMode('dock', { auto: true });
+        }
+      }, DOCK_RETURN_MS);
+    }
+  }
+
+  // Tapping the small Lupin in the corner opens Pet Mode.
+  function handleFaceTap() {
+    if (state.mode === 'dock' && state.isLupinBody) {
+      setMode('pet');
+      return true;
+    }
+    return false;
+  }
+
+  function toggleDockText(open) {
+    const next = open === undefined ? !document.body.classList.contains('dock-text-open') : open;
+    document.body.classList.toggle('dock-text-open', next);
+    if (next && els.chatInput && typeof els.chatInput.focus === 'function') els.chatInput.focus();
+  }
+
+  // "Talk to Lupin": holding records the microphone, tapping opens the text input.
+  function dockTalkDown() {
+    unlockAudio();
+    if (state.dockTalk.holdTimer !== null) window.clearTimeout(state.dockTalk.holdTimer);
+    state.dockTalk.holding = false;
+    state.dockTalk.holdTimer = window.setTimeout(() => {
+      state.dockTalk.holdTimer = null;
+      state.dockTalk.holding = true;
+      startPtt();
+    }, DOCK_TALK_HOLD_MS);
+  }
+
+  function dockTalkUp() {
+    if (state.dockTalk.holdTimer !== null) {
+      window.clearTimeout(state.dockTalk.holdTimer);
+      state.dockTalk.holdTimer = null;
+      toggleDockText();
+      return;
+    }
+    if (state.dockTalk.holding) {
+      state.dockTalk.holding = false;
+      stopPttAndSend();
     }
   }
 
@@ -928,12 +1593,46 @@
     if (state.reconnectTimer) return;
     const waitMs = state.reconnectDelayMs;
     state.reconnectDelayMs = Math.min(state.reconnectDelayMs * 1.5, WS_RECONNECT_MAX_MS);
-    setWsStatus('reconnecting', 'Reconectando...');
+    setWsStatus('reconnecting', 'Reconnecting...');
 
     state.reconnectTimer = window.setTimeout(() => {
       state.reconnectTimer = null;
       connectWebSocket();
     }, waitMs);
+  }
+
+  // Brain↔Body handshake (protocol 1); `audio` is only announced in server TTS mode
+  // The RG406H (Android) takes priority over regular browsers to be the Active Body.
+  function detectBodyKind() {
+    const ua = (typeof navigator !== 'undefined' && navigator && navigator.userAgent) || '';
+    return window.AndroidBridge || /Android/i.test(ua) ? 'rg406h-web' : 'web';
+  }
+
+  // Lupin lives in one Body at a time; outside it the device is just a Dock (ADR 0001).
+  function applyActiveBody(msg) {
+    state.activeBody = msg.active_body || null;
+    const isActive = msg.active !== false;
+    if (isActive === state.isLupinBody) return;
+    state.isLupinBody = isActive;
+    document.body.classList.toggle('lupin-in-other-body', !isActive);
+    clearAutoPet();
+    syncDockCorner();
+    publishPetSnapshot();
+    if (!isActive) {
+      stopSpeaking();
+      setMode('dock');
+    } else if (state.mode === 'dock') {
+      setMode('pet');
+    }
+  }
+
+  function sendHello() {
+    return sendWs(Object.assign({
+      type: 'hello',
+      body: detectBodyKind(),
+      protocol: 1,
+      audio: state.ttsMode === 'server' ? ['m4a'] : [],
+    }, window.DeskDevice ? window.DeskDevice.helloFields() : {}));
   }
 
   function connectWebSocket() {
@@ -945,8 +1644,11 @@
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    setWsStatus('reconnecting', 'Conectando...');
+    const token = getDeskAccessToken();
+    const wsUrl = token
+      ? `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
+      : `${protocol}//${window.location.host}/ws`;
+    setWsStatus('reconnecting', 'Connecting...');
 
     const ws = new WebSocket(wsUrl);
     state.ws = ws;
@@ -954,7 +1656,9 @@
     ws.addEventListener('open', () => {
       state.wsConnected = true;
       state.reconnectDelayMs = WS_RECONNECT_BASE_MS;
-      setWsStatus('connected', 'Conectado');
+      setWsStatus('connected', 'Connected');
+      sendHello();
+      fetchLupinLanguage();
       fetchMemory();
       const aud = audioApi();
       if (aud && typeof aud.wake === 'function' && state.audioUnlocked && state.petSoundsEnabled) {
@@ -972,15 +1676,20 @@
       handleWsMessage(msg);
     });
 
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (event) => {
       state.wsConnected = false;
+      state.backendTurnActive = false;
       state.ws = null;
-      setWsStatus('disconnected', 'Desconectado');
+      setWsStatus('disconnected', 'Disconnected');
+      if (event && event.code === 4401) {
+        promptForPairingToken(() => connectWebSocket());
+        return;
+      }
       scheduleReconnect();
     });
 
     ws.addEventListener('error', () => {
-      setWsStatus('reconnecting', 'Erro na conexão');
+      setWsStatus('reconnecting', 'Connection error');
     });
   }
 
@@ -988,8 +1697,22 @@
     if (!msg || typeof msg.type !== 'string') return;
 
     switch (msg.type) {
+      case 'welcome':
+      case 'active_body': {
+        applyActiveBody(msg);
+        break;
+      }
+      case 'mood': {
+        state.mood = msg;
+        break;
+      }
+      case 'audio': {
+        handleAudioChunk(msg);
+        break;
+      }
       case 'state': {
         if (msg.state) {
+          if (msg.state === 'thinking') state.backendTurnActive = true;
           applyFaceState(msg.state);
         }
         break;
@@ -998,6 +1721,10 @@
         if (msg.emotion) {
           applyFaceEmotion(msg.emotion);
         }
+        break;
+      }
+      case 'dictation_result': {
+        if (msg.message) setCaption(msg.message, { isError: msg.ok === false });
         break;
       }
       case 'transcript': {
@@ -1010,6 +1737,7 @@
         break;
       }
       case 'delta': {
+        state.backendTurnActive = true;
         const chunk = typeof msg.text === 'string' ? msg.text : '';
         if (chunk) {
           state.streamingText += chunk;
@@ -1018,14 +1746,17 @@
         break;
       }
       case 'sentence': {
+        state.backendTurnActive = true;
         const sentenceText = typeof msg.text === 'string' ? msg.text.trim() : '';
         if (sentenceText) {
           state.receivedSentenceStream = true;
+          onReplySentence(msg, sentenceText);
           enqueueTtsSentence(sentenceText);
         }
         break;
       }
       case 'done': {
+        state.backendTurnActive = false;
         const finalText =
           typeof msg.text === 'string' && msg.text.length > 0
             ? msg.text
@@ -1036,15 +1767,21 @@
           applyFaceEmotion(msg.emotion);
         }
         if (!state.receivedSentenceStream) {
+          if (finalText.trim()) onReplySentence(msg, finalText.trim());
           speakText(finalText);
         } else if (!state.ttsPlaying && state.ttsQueue.length === 0) {
           applyFaceState('idle');
         }
         state.receivedSentenceStream = false;
+        state.dockSentenceCount = 0;
+        maybeSpeechEnded();
         break;
       }
       case 'interrupted': {
+        state.backendTurnActive = false;
         stopSpeaking({ resetState: true });
+        state.dockSentenceCount = 0;
+        maybeSpeechEnded();
         break;
       }
       case 'action_executed': {
@@ -1059,18 +1796,37 @@
         renderMemoryState(msg.facts, msg.recent_messages_count);
         break;
       }
-      case 'companion_updated': {
-        if (msg.companion) {
-          renderCompanionState(msg.companion);
+      case 'notice': {
+        // A local model is slow: show the thinking state and the caption (the server also speaks it).
+        // Lupin speaks unprompted (a Signal): caption, and browser TTS when there is no server audio.
+        const signalPlan = window.LupinSignals
+          ? window.LupinSignals.noticePlan(msg, {
+              ttsEnabled: state.ttsEnabled,
+              ttsMode: state.ttsMode,
+              isLupinBody: state.isLupinBody,
+            })
+          : null;
+        if (signalPlan) {
+          setCaption(signalPlan.caption);
+          if (signalPlan.speakInBrowser) enqueueTtsSentence(signalPlan.caption);
+          break;
+        }
+        const slowCaption = window.LupinLocalMode ? window.LupinLocalMode.slowNoticeCaption(msg) : null;
+        if (slowCaption) {
+          applyFaceState('thinking');
+          setCaption(slowCaption);
         }
         break;
       }
       case 'error': {
+        state.backendTurnActive = false;
         stopSpeaking({ resetState: false });
         applyFaceState('error');
-        setCaption(msg.message || 'Ocorreu um erro ao processar sua mensagem.', {
+        setCaption(msg.message || 'An error occurred while processing your message.', {
           isError: true,
         });
+        state.dockSentenceCount = 0;
+        maybeSpeechEnded();
         break;
       }
       default:
@@ -1078,12 +1834,26 @@
     }
   }
 
+  function playPetTrick(trickId) {
+    const face = faceApi();
+    if (face && typeof face.playTrick === 'function') {
+      face.playTrick(trickId);
+    }
+    const aud = audioApi();
+    if (aud && typeof aud.playTrick === 'function' && state.petSoundsEnabled) {
+      aud.playTrick(trickId);
+    }
+  }
+
   function handleActionExecutedEvent(msg) {
-    const label = msg.title || msg.target || msg.action || 'Ação executada';
+    if (msg.kind === 'pet' && msg.ok && msg.target) {
+      playPetTrick(msg.target);
+    }
+    const label = msg.title || msg.target || msg.action || 'Action executed';
     const ok = msg.ok !== false;
     const message = ok
       ? `⚡ ${label}`
-      : `⚠️ ${msg.message || msg.error || `Falha em ${label}`}`;
+      : `⚠️ ${msg.message || msg.error || `Failed: ${label}`}`;
     showToast(message, { isError: !ok });
 
     const target = String(msg.target || '').toLowerCase();
@@ -1098,59 +1868,118 @@
 
     if (state.mode === 'dock') {
       fetchMacApps();
-    } else if (state.mode === 'display') {
-      refreshSmartDisplay();
     }
   }
 
-  function showToolApproval(msg) {
-    state.pendingApprovalId = msg.approval_id || msg.id || null;
-    const desc = msg.title || msg.description || msg.target || 'executar atalho no Mac';
-    els.approvalText.textContent = `Confirmar ação: ${desc}?`;
+  function renderPendingApproval() {
+    const approval = state.approvalQueue[0] || null;
+    state.pendingApprovalId = approval ? approval.id : null;
+    if (!approval) {
+      els.approvalBanner.classList.add('hidden');
+      return;
+    }
+
+    els.approvalText.textContent = `Confirm action: ${approval.title}?`;
+    const diffEl = document.getElementById('approval-diff');
+    if (diffEl) {
+      diffEl.textContent = approval.diff;
+      diffEl.classList.toggle('hidden', !approval.diff);
+    }
     els.approvalBanner.classList.remove('hidden');
+  }
+
+  function showToolApproval(msg) {
+    const id = msg.approval_id || msg.id;
+    if (id === undefined || id === null || id === '') return;
+    const approvalId = String(id);
+    if (state.approvalQueue.some((approval) => approval.id === approvalId)) return;
+
+    const desc = msg.title || msg.description || msg.target || 'run a shortcut on the Mac';
+    const approval = Object.freeze({
+      id: approvalId,
+      title: desc,
+      message: msg.message || `Confirm write to ${msg.target || 'Cowork'}?`,
+      diff: msg.diff || '',
+      risk: msg.risk || '',
+      target: msg.target || '',
+    });
+    state.approvalQueue.push(approval);
+    renderPendingApproval();
+
     const aud = audioApi();
     if (aud && typeof aud.alert === 'function' && state.petSoundsEnabled) {
       aud.alert();
     }
+    if (window.electronAPI && typeof window.electronAPI.confirmWrite === 'function' && approval.risk === 'write') {
+      window.electronAPI
+        .confirmWrite({
+          title: approval.title,
+          message: approval.message,
+          diff: approval.diff,
+        })
+        .then((approved) => resolveToolApproval(Boolean(approved), approval.id))
+        .catch(() => {});
+    }
   }
 
-  function resolveToolApproval(approved) {
-    if (!state.pendingApprovalId) {
-      els.approvalBanner.classList.add('hidden');
-      return;
-    }
+  function resolveToolApproval(approved, approvalId = state.pendingApprovalId) {
+    if (approvalId === undefined || approvalId === null) return;
+    const id = String(approvalId);
+    const index = state.approvalQueue.findIndex((approval) => approval.id === id);
+    if (index < 0) return;
+
     sendWs({
       type: 'confirm_action',
-      approval_id: state.pendingApprovalId,
+      approval_id: id,
       approved: Boolean(approved),
     });
-    state.pendingApprovalId = null;
-    els.approvalBanner.classList.add('hidden');
+    state.approvalQueue.splice(index, 1);
+    renderPendingApproval();
   }
 
   // Push-to-Talk (Microfone -> Base64 -> WS {type:'audio'})
+  function setDictationArmed(armed) {
+    state.dictation.armed = Boolean(armed);
+    if (els.btnDictation) {
+      els.btnDictation.classList.toggle('is-active', state.dictation.armed);
+      els.btnDictation.setAttribute('aria-pressed', state.dictation.armed ? 'true' : 'false');
+    }
+    if (!state.dictation.armed && state.ptt.active) stopPttAndSend();
+  }
+
+  // Tap-to-talk for dictation: one touch on the face starts, the next one stops and sends.
+  function handleDictationTap() {
+    if (!state.dictation.armed) return false;
+    if (state.ptt.active) stopPttAndSend();
+    else startPtt();
+    return true;
+  }
+
   async function startPtt() {
     if (state.ptt.active) return;
+    const generation = ++state.ptt.generation;
     unlockAudio();
     triggerBargeIn();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      showToast('Microfone indisponível neste navegador/origem (use HTTPS ou localhost).', {
+      showToast('Microphone unavailable in this browser/origin (use HTTPS or localhost).', {
         isError: true,
       });
       return;
     }
     if (typeof window.MediaRecorder === 'undefined') {
-      showToast('Gravação MediaRecorder indisponível neste navegador.', { isError: true });
+      showToast('MediaRecorder recording is unavailable in this browser.', { isError: true });
       return;
     }
 
     state.ptt.active = true;
     els.btnPtt.classList.add('is-recording');
-    els.btnPtt.textContent = '🔴 Ouvindo...';
+    els.btnPtt.textContent = '🔴 Listening...';
     els.btnPtt.setAttribute('aria-pressed', 'true');
     applyFaceState('listening');
+    syncDockCorner();
 
+    let stream = null;
     try {
       const selectedMic =
         window.DeskDiagnostics && typeof window.DeskDiagnostics.getSelectedMicId === 'function'
@@ -1160,8 +1989,8 @@
         ? { deviceId: { exact: selectedMic }, echoCancellation: true, noiseSuppression: true }
         : { echoCancellation: true, noiseSuppression: true };
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-      if (!state.ptt.active) {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      if (!state.ptt.active || state.ptt.generation !== generation) {
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
@@ -1171,22 +2000,23 @@
       const recorder = mimeType
         ? new window.MediaRecorder(stream, { mimeType })
         : new window.MediaRecorder(stream);
+      const chunks = [];
 
       state.ptt.stream = stream;
       state.ptt.recorder = recorder;
-      state.ptt.chunks = [];
+      state.ptt.chunks = chunks;
       state.ptt.mimeType = mimeType || recorder.mimeType || 'audio/webm';
 
       recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          state.ptt.chunks.push(e.data);
-        }
+        if (e.data && e.data.size > 0) chunks.push(e.data);
       };
 
       recorder.start();
     } catch (err) {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      if (state.ptt.generation !== generation) return;
       cancelPttUI();
-      showToast(`Erro ao abrir microfone: ${err.message || err}`, { isError: true });
+      showToast(`Error opening microphone: ${err.message || err}`, { isError: true });
       applyFaceState('idle');
     }
   }
@@ -1194,8 +2024,9 @@
   function cancelPttUI() {
     state.ptt.active = false;
     els.btnPtt.classList.remove('is-recording');
-    els.btnPtt.textContent = '🎤 Segure para falar';
+    els.btnPtt.textContent = '🎤 Hold to talk';
     els.btnPtt.setAttribute('aria-pressed', 'false');
+    syncDockCorner();
   }
 
   async function stopPttAndSend() {
@@ -1203,13 +2034,14 @@
     cancelPttUI();
 
     const { recorder, stream, chunks, mimeType } = state.ptt;
+    const generation = ++state.ptt.generation;
     state.ptt.recorder = null;
     state.ptt.stream = null;
     state.ptt.chunks = [];
 
     if (!recorder || recorder.state === 'inactive') {
       if (stream) stream.getTracks().forEach((t) => t.stop());
-      applyFaceState('idle');
+      if (state.ptt.generation === generation) applyFaceState('idle');
       return;
     }
 
@@ -1222,9 +2054,8 @@
       }
     });
 
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-    }
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    if (state.ptt.generation !== generation) return;
 
     const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
     if (blob.size < 400) {
@@ -1234,22 +2065,27 @@
 
     try {
       const base64 = await blobToBase64(blob);
+      if (state.ptt.generation !== generation) return;
       state.streamingText = '';
       state.receivedSentenceStream = false;
-      setCaption('🎤 Transcrevendo...');
+      setCaption(state.dictation.armed ? '⌨️ Typing...' : '🎤 Transcribing...');
       applyFaceState('thinking');
 
-      const sent = sendWs({
+      const audioMessage = {
         type: 'audio',
         data: base64,
         mime_type: mimeType || 'audio/webm',
-      });
-      if (!sent) {
+      };
+      if (state.dictation.armed) audioMessage.dictation = true;
+      const sent = sendWs(audioMessage);
+      if (sent) {
+        state.backendTurnActive = true;
+      } else {
         applyFaceState('error');
-        setCaption('Sem conexão no momento. Tentando reconectar...', { isError: true });
+        setCaption('No connection right now. Trying to reconnect...', { isError: true });
       }
     } catch {
-      applyFaceState('error');
+      if (state.ptt.generation === generation) applyFaceState('error');
     }
   }
 
@@ -1261,12 +2097,12 @@
         const commaIdx = result.indexOf(',');
         resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
       };
-      reader.onerror = () => reject(new Error('Falha ao ler áudio'));
+      reader.onerror = () => reject(new Error('Failed to read audio'));
       reader.readAsDataURL(blob);
     });
   }
 
-  // Digitação e envio de texto
+  // Typing and sending text
   function stopTypingSignal({ resetLook = true } = {}) {
     if (state.typingTimer) {
       window.clearTimeout(state.typingTimer);
@@ -1320,9 +2156,10 @@
     const sent = sendWs({ type: 'text', text: clean });
     if (!sent) {
       applyFaceState('error');
-      setCaption('Sem conexão no momento. Tentando reconectar...', { isError: true });
+      setCaption('No connection right now. Trying to reconnect...', { isError: true });
       return;
     }
+    state.backendTurnActive = true;
   }
 
   function handleChatSubmit(event) {
@@ -1332,11 +2169,11 @@
     if (!text) return;
     submitChatText(text);
     els.chatInput.value = '';
+    document.body.classList.remove('dock-text-open');
     lookAtSafe(0, 0);
-    scheduleHudAutoHide();
   }
 
-  // Interação direta de toque/carinho no rosto
+  // Direct touch/petting interaction on the face
   function computeNormalizedTouch(clientX, clientY) {
     const rect = els.faceContainer.getBoundingClientRect();
     if (!rect.width || !rect.height) return { nx: 0, ny: 0 };
@@ -1349,10 +2186,10 @@
     if (!els.faceContainer) return;
 
     els.faceContainer.addEventListener('pointerdown', (e) => {
-      unlockAudio();
+      if (!isMiniPet) unlockAudio();
       const api = faceApi();
       const faceState = api && typeof api.getState === 'function' ? api.getState() : 'idle';
-      if (faceState === 'speaking' || state.ttsPlaying) {
+      if (!isMiniPet && (faceState === 'speaking' || state.ttsPlaying)) {
         triggerBargeIn();
         return;
       }
@@ -1379,10 +2216,12 @@
         lookAtSafe(nx, ny);
       }
 
-      const now = Date.now();
-      if (now - state.lastPetSentAt > 900) {
-        state.lastPetSentAt = now;
-        sendWs({ type: 'pet', kind: 'pet' });
+      if (!isMiniPet) {
+        const now = Date.now();
+        if (now - state.lastPetSentAt > 900) {
+          state.lastPetSentAt = now;
+          sendWs({ type: 'touch', kind: 'pet' });
+        }
       }
     });
 
@@ -1397,13 +2236,21 @@
         aud.purr(false);
       }
 
+      if (!wasMoved && !isMiniPet && handleDictationTap()) {
+        syncFaceBadges();
+        return;
+      }
+      if (!wasMoved && !isMiniPet && handleFaceTap()) {
+        syncFaceBadges();
+        return;
+      }
       if (!wasMoved) {
         const { nx, ny } = computeNormalizedTouch(e.clientX, e.clientY);
         const api = faceApi();
         if (api && typeof api.reactToTouch === 'function') {
           api.reactToTouch('poke', nx, ny);
         }
-        sendWs({ type: 'pet', kind: 'poke' });
+        if (!isMiniPet) sendWs({ type: 'touch', kind: 'poke' });
       }
       syncFaceBadges();
     };
@@ -1412,7 +2259,7 @@
     els.faceContainer.addEventListener('pointercancel', endTouch);
   }
 
-  // Dock Viva & Stream Deck de Atalhos
+  // Live Dock & Shortcuts Stream Deck
   async function fetchMacApps() {
     try {
       const res = await fetch('/api/mac/apps');
@@ -1422,19 +2269,19 @@
       state.macApps = apps;
       renderMacApps();
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
   function renderMacApps() {
     els.dockAppsGrid.textContent = '';
     const front = state.macApps.find((a) => a.frontmost || a.is_frontmost);
-    els.dockActiveApp.textContent = `Ativo: ${front ? front.name : '—'}`;
+    els.dockActiveApp.textContent = `Active: ${front ? front.name : '—'}`;
 
     if (state.macApps.length === 0) {
       const empty = document.createElement('span');
       empty.className = 'panel-pill';
-      empty.textContent = 'Nenhum app listado';
+      empty.textContent = 'No apps listed';
       els.dockAppsGrid.appendChild(empty);
       return;
     }
@@ -1475,16 +2322,16 @@
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok !== false) {
-        showToast(`🖥️ ${appName} em foco`);
+        showToast(`🖥️ ${appName} in focus`);
         applyFaceEmotion('happy');
         fetchMacApps();
       } else {
-        showToast(data.error || data.message || data.detail || `Erro ao ativar ${appName}`, {
+        showToast(data.error || data.message || data.detail || `Error activating ${appName}`, {
           isError: true,
         });
       }
     } catch {
-      showToast(`Erro de rede ao ativar ${appName}`, { isError: true });
+      showToast(`Network error while activating ${appName}`, { isError: true });
     }
   }
 
@@ -1494,12 +2341,13 @@
       if (!res.ok) return;
       const data = await res.json();
       state.shortcuts = Array.isArray(data) ? data : data.shortcuts || [];
-      renderShortcutsGrid();
+      renderDock();
+      renderSettingsShortcuts();
       if (state.shortcutModalOpen) {
         renderShortcutManageList();
       }
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -1507,96 +2355,172 @@
     const p = sc.payload || {};
     if (sc.action_type === 'keystroke') return p.keys || '';
     if (sc.action_type === 'app_activate') return p.app || 'App';
-    if (sc.action_type === 'mac_command') return p.command || 'Comando';
-    if (sc.action_type === 'agent_prompt') return 'Assistente';
+    if (sc.action_type === 'mac_command') return p.command || 'Command';
+    if (sc.action_type === 'agent_prompt') return 'Assistant';
     return '';
   }
 
-  function renderShortcutsGrid() {
-    els.shortcutsGrid.textContent = '';
-    const filtered = state.shortcuts.filter((sc) => {
-      if (sc.pinned_on_deck === false || sc.pinned_on_deck === 0) return false;
-      if (state.shortcutCategory === 'all') return true;
-      return sc.category === state.shortcutCategory;
-    });
+  // Dock: 3x3 grid of Pinned Shortcuts, 9 per page. The last page lists the open apps.
+  const DOCK_PAGE_SIZE = 9;
+  const DOCK_EMPTY_TEXT = 'No pinned shortcuts. Choose shortcuts on the Mac.';
 
-    if (filtered.length === 0) {
+  function pinnedShortcuts() {
+    return state.shortcuts
+      .filter((sc) => sc.pinned_on_deck !== false && sc.pinned_on_deck !== 0)
+      .map((sc, index) => ({ sc, index }))
+      .sort((x, y) => {
+        const ox = Number.isFinite(x.sc.sort_order) ? x.sc.sort_order : 0;
+        const oy = Number.isFinite(y.sc.sort_order) ? y.sc.sort_order : 0;
+        return ox - oy || x.index - y.index;
+      })
+      .map((item) => item.sc);
+  }
+
+  function shortcutPageCount() {
+    return Math.max(1, Math.ceil(pinnedShortcuts().length / DOCK_PAGE_SIZE));
+  }
+
+  // Shortcut pages + 1 final "Open apps" page.
+  function dockPageCount() {
+    return shortcutPageCount() + 1;
+  }
+
+  function setDockPage(page) {
+    const last = dockPageCount() - 1;
+    const next = Math.max(0, Math.min(last, Number.isFinite(page) ? Math.trunc(page) : 0));
+    const changed = next !== state.dockPage;
+    state.dockPage = next;
+    state.gamepadFocusIndex = -1;
+    renderDock();
+    if (changed) {
+      const aud = audioApi();
+      if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) aud.click();
+    }
+  }
+
+  function renderDockDots() {
+    if (!els.dockPageDots) return;
+    els.dockPageDots.textContent = '';
+    const total = dockPageCount();
+    for (let i = 0; i < total; i += 1) {
+      const dot = document.createElement('span');
+      dot.className = 'dock-dot';
+      const isApps = i === total - 1;
+      if (isApps) dot.classList.add('is-apps');
+      if (i === state.dockPage) dot.classList.add('is-active');
+      dot.setAttribute('aria-hidden', 'true');
+      els.dockPageDots.appendChild(dot);
+    }
+    els.dockPageDots.setAttribute(
+      'aria-label',
+      `Page ${state.dockPage + 1} of ${total}${state.dockPage === total - 1 ? ' (Open apps)' : ''}`
+    );
+  }
+
+  function renderDock() {
+    const total = dockPageCount();
+    if (state.dockPage > total - 1) state.dockPage = total - 1;
+    const onApps = state.dockPage === total - 1;
+    if (els.shortcutsGrid) els.shortcutsGrid.classList.toggle('hidden', onApps);
+    if (els.dockAppsPage) els.dockAppsPage.classList.toggle('hidden', !onApps);
+    renderDockDots();
+    if (onApps) {
+      if (els.shortcutsGrid) els.shortcutsGrid.textContent = '';
+      return;
+    }
+    if (!els.shortcutsGrid) return;
+    els.shortcutsGrid.textContent = '';
+    const pinned = pinnedShortcuts();
+    if (pinned.length === 0) {
       const empty = document.createElement('p');
-      empty.className = 'memory-hint';
-      empty.textContent = 'Nenhum atalho nesta categoria. Clique em "➕ Novo Atalho" para criar.';
+      empty.className = 'dock-empty';
+      empty.textContent = DOCK_EMPTY_TEXT;
       els.shortcutsGrid.appendChild(empty);
       return;
     }
-
-    filtered.forEach((sc) => {
-      const tile = document.createElement('div');
-      tile.className = `shortcut-tile color-${sc.color || 'cyan'}`;
-      tile.tabIndex = 0;
-      tile.setAttribute('role', 'button');
-      tile.dataset.navTile = 'shortcut';
-
-      const top = document.createElement('div');
-      top.className = 'shortcut-tile-top';
-
-      const icon = document.createElement('span');
-      icon.className = 'shortcut-icon';
-      icon.textContent = sc.icon || '⚡';
-
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'shortcut-edit-btn';
-      editBtn.title = 'Editar / Trocar atalho';
-      editBtn.textContent = '✏️';
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openShortcutModal(sc);
-      });
-
-      top.appendChild(icon);
-      top.appendChild(editBtn);
-
-      const title = document.createElement('div');
-      title.className = 'shortcut-title';
-      title.textContent = sc.title || sc.slug || 'Atalho';
-
-      const meta = document.createElement('div');
-      meta.className = 'shortcut-meta';
-      meta.textContent = formatShortcutBadge(sc);
-
-      tile.appendChild(top);
-      tile.appendChild(title);
-      tile.appendChild(meta);
-
-      tile.addEventListener('click', () => runShortcut(sc));
-      tile.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          runShortcut(sc);
-        }
-      });
-
-      els.shortcutsGrid.appendChild(tile);
+    const start = state.dockPage * DOCK_PAGE_SIZE;
+    pinned.slice(start, start + DOCK_PAGE_SIZE).forEach((sc) => {
+      els.shortcutsGrid.appendChild(buildShortcutTile(sc));
     });
   }
 
-  async function runShortcut(sc) {
+  function buildShortcutTile(sc) {
+    const labelText = sc.title || sc.slug || 'Shortcut';
+    const hintText = formatShortcutBadge(sc);
+
+    const tile = document.createElement('div');
+    tile.className = `shortcut-tile vsd-key color-${sc.color || 'cyan'}`;
+    tile.tabIndex = 0;
+    tile.setAttribute('role', 'button');
+    tile.setAttribute('aria-label', hintText ? `${labelText} — ${hintText}` : labelText);
+    tile.title = hintText ? `${labelText} (${hintText})` : labelText;
+    tile.dataset.navTile = 'shortcut';
+
+    const icon = document.createElement('span');
+    icon.className = 'vsd-key-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = sc.icon || '⚡';
+
+    const title = document.createElement('div');
+    title.className = 'vsd-key-label';
+    title.textContent = labelText;
+
+    tile.appendChild(icon);
+    tile.appendChild(title);
+
+    tile.addEventListener('click', () => runShortcut(sc, tile));
+    tile.addEventListener('keydown', (e) => {
+      if (e.target !== tile) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        runShortcut(sc, tile);
+      }
+    });
+    return tile;
+  }
+
+  function renderShortcutsGrid() {
+    renderDock();
+  }
+
+  async function runShortcut(sc, tileEl = null) {
     if (!sc) return;
+    if (tileEl) {
+      tileEl.classList.add('is-firing');
+      window.setTimeout(() => tileEl.classList.remove('is-firing'), 220);
+    }
     unlockAudio();
     const aud = audioApi();
     if (aud && typeof aud.click === 'function' && state.petSoundsEnabled) aud.click();
 
-    if (sc.action_type === 'agent_prompt' && sc.payload && sc.payload.prompt) {
-      submitChatText(sc.payload.prompt);
-      showToast(`🤖 ${sc.title}`);
+    const idOrSlug = sc.id !== undefined && sc.id !== null ? sc.id : sc.slug;
+    const sendShortcutOverWs = () => {
+      const sent = sendWs({
+        type: 'run_shortcut',
+        [sc.id !== undefined && sc.id !== null ? 'id' : 'slug']: idOrSlug,
+      });
+      if (sent && sc.action_type === 'agent_prompt' && !sc.requires_confirmation) {
+        state.backendTurnActive = true;
+      }
+      return sent;
+    };
+
+    if (sc.requires_confirmation || sc.action_type === 'agent_prompt') {
+      if (!sendShortcutOverWs()) {
+        showToast('No connection to request the shortcut confirmation.', { isError: true });
+      }
       return;
     }
 
-    const idOrSlug = sc.id !== undefined && sc.id !== null ? sc.id : sc.slug;
     try {
       const res = await fetch(`/api/shortcuts/${encodeURIComponent(idOrSlug)}/run`, {
         method: 'POST',
       });
       const data = await res.json().catch(() => ({}));
+
+      if (res.status === 409 && data.detail && data.detail.code === 'approval_required') {
+        if (sendShortcutOverWs()) return;
+      }
 
       if (res.ok && data.ok !== false) {
         showToast(`⚡ ${sc.title}`);
@@ -1605,8 +2529,10 @@
         if (cmd === 'pomodoro_start') startPomodoro(25 * 60, 'focus');
         if (cmd === 'pomodoro_stop') stopPomodoro();
       } else {
+        const detailMessage =
+          data.detail && typeof data.detail === 'object' ? data.detail.message : data.detail;
         showToast(
-          data.error || data.message || data.detail || `Falha ao executar ${sc.title}`,
+          data.error || data.message || detailMessage || `Failed to run ${sc.title}`,
           {
             isError: true,
             durationMs: 4500,
@@ -1615,11 +2541,11 @@
         applyFaceEmotion('sad');
       }
     } catch {
-      showToast(`Erro de rede ao executar ${sc.title}`, { isError: true });
+      showToast(`Network error while running ${sc.title}`, { isError: true });
     }
   }
 
-  // Modal CRUD de Atalhos
+  // Shortcuts CRUD modal
   function updateShortcutPayloadVisibility() {
     const type = els.scActionType.value;
     els.scPayloadKeystroke.classList.toggle('hidden', type !== 'keystroke');
@@ -1652,7 +2578,7 @@
 
   function resetShortcutForm() {
     els.scId.value = '';
-    els.scFormHeading.textContent = 'Novo Atalho';
+    els.scFormHeading.textContent = 'New Shortcut';
     els.scTitle.value = '';
     els.scIcon.value = '⚡';
     els.scCategory.value = 'custom';
@@ -1663,7 +2589,7 @@
     els.scMacCommand.value = 'mission_control';
     els.scAgentPrompt.value = '';
     els.scVoiceTriggers.value = '';
-    els.scPinned.checked = true;
+    els.scPinned.checked = false;
     els.scConfirm.checked = false;
     els.btnScDelete.classList.add('hidden');
     stopRecordingKeys();
@@ -1673,7 +2599,7 @@
 
   function fillShortcutForm(sc) {
     els.scId.value = sc.id !== undefined ? String(sc.id) : sc.slug || '';
-    els.scFormHeading.textContent = `Editar: ${sc.title}`;
+    els.scFormHeading.textContent = `Edit: ${sc.title}`;
     els.scTitle.value = sc.title || '';
     els.scIcon.value = sc.icon || '⚡';
     els.scCategory.value = sc.category || 'custom';
@@ -1694,6 +2620,8 @@
   }
 
   function openShortcutModal(shortcutToEdit = null) {
+    state.overlayReturnFocus = document.activeElement;
+    state.gamepadFocusIndex = -1;
     state.shortcutModalOpen = true;
     els.shortcutModalBackdrop.classList.remove('hidden');
     els.shortcutModal.classList.remove('hidden');
@@ -1703,30 +2631,32 @@
       resetShortcutForm();
     }
     renderShortcutManageList();
-    showHud();
-    syncHudOffset();
+    els.scTitle.focus();
   }
 
   function closeShortcutModal() {
     state.shortcutModalOpen = false;
+    state.gamepadFocusIndex = -1;
     stopRecordingKeys();
     els.shortcutModalBackdrop.classList.add('hidden');
     els.shortcutModal.classList.add('hidden');
-    scheduleHudAutoHide();
+    const returnFocus = state.overlayReturnFocus;
+    state.overlayReturnFocus = null;
+    if (returnFocus && returnFocus.isConnected !== false) returnFocus.focus();
   }
 
   function startRecordingKeys() {
     state.recordingShortcutKeys = !state.recordingShortcutKeys;
     els.btnRecordKeys.classList.toggle('is-active', state.recordingShortcutKeys);
     els.btnRecordKeys.textContent = state.recordingShortcutKeys
-      ? '🔴 Pressione a combinação...'
-      : '🎹 Gravar no Teclado';
+      ? '🔴 Press the combination...'
+      : '🎹 Record from Keyboard';
   }
 
   function stopRecordingKeys() {
     state.recordingShortcutKeys = false;
     els.btnRecordKeys.classList.remove('is-active');
-    els.btnRecordKeys.textContent = '🎹 Gravar no Teclado';
+    els.btnRecordKeys.textContent = '🎹 Record from Keyboard';
   }
 
   function normalizeRecordedKey(event) {
@@ -1788,14 +2718,14 @@
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        showToast(err.detail || 'Erro ao salvar atalho', { isError: true });
+        showToast(err.detail || 'Error saving shortcut', { isError: true });
         return;
       }
-      showToast(existingId ? '✓ Atalho atualizado' : '✓ Novo atalho criado');
+      showToast(existingId ? '✓ Shortcut updated' : '✓ New shortcut created');
       resetShortcutForm();
       await fetchShortcuts();
     } catch {
-      showToast('Erro de rede ao salvar atalho', { isError: true });
+      showToast('Network error while saving shortcut', { isError: true });
     }
   }
 
@@ -1806,13 +2736,13 @@
         method: 'DELETE',
       });
       if (!res.ok) return;
-      showToast('🗑️ Atalho removido');
+      showToast('🗑️ Shortcut removed');
       if (els.scId.value === String(idOrSlug)) {
         resetShortcutForm();
       }
       await fetchShortcuts();
     } catch {
-      showToast('Erro ao remover atalho', { isError: true });
+      showToast('Error removing shortcut', { isError: true });
     }
   }
 
@@ -1833,7 +2763,7 @@
         await fetchShortcuts();
       }
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -1841,11 +2771,11 @@
     try {
       const res = await fetch('/api/shortcuts/reset-defaults', { method: 'POST' });
       if (!res.ok) return;
-      showToast('↺ Atalhos restaurados para o padrão');
+      showToast('↺ Shortcuts restored to defaults');
       resetShortcutForm();
       await fetchShortcuts();
     } catch {
-      showToast('Erro ao restaurar atalhos', { isError: true });
+      showToast('Error restoring shortcuts', { isError: true });
     }
   }
 
@@ -1872,28 +2802,28 @@
       upBtn.type = 'button';
       upBtn.className = 'mini-icon-btn';
       upBtn.textContent = '↑';
-      upBtn.title = 'Subir';
+      upBtn.title = 'Move up';
       upBtn.addEventListener('click', () => moveShortcutOrder(index, -1));
 
       const downBtn = document.createElement('button');
       downBtn.type = 'button';
       downBtn.className = 'mini-icon-btn';
       downBtn.textContent = '↓';
-      downBtn.title = 'Descer';
+      downBtn.title = 'Move down';
       downBtn.addEventListener('click', () => moveShortcutOrder(index, 1));
 
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'mini-icon-btn';
       editBtn.textContent = '✏️';
-      editBtn.title = 'Editar';
+      editBtn.title = 'Edit';
       editBtn.addEventListener('click', () => fillShortcutForm(sc));
 
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'mini-icon-btn';
       delBtn.textContent = '🗑️';
-      delBtn.title = 'Remover';
+      delBtn.title = 'Remove';
       delBtn.addEventListener('click', () => deleteShortcutById(sc.id));
 
       btns.appendChild(upBtn);
@@ -1907,7 +2837,7 @@
     });
   }
 
-  // Modo 3: Smart Display Ambiente, Relógio, Pomodoro, Clima & Telemetria
+  // Pet Mode: clock, Pomodoro and Now Playing on the Mac
   function formatClockParts(date) {
     const hh = String(date.getHours()).padStart(2, '0');
     const mm = String(date.getMinutes()).padStart(2, '0');
@@ -1924,8 +2854,6 @@
     const parts = formatClockParts(new Date());
     if (els.petClockTime) els.petClockTime.textContent = parts.hm;
     if (els.petClockDate) els.petClockDate.textContent = parts.dateStr;
-    if (els.displayClockTime) els.displayClockTime.textContent = parts.hms;
-    if (els.displayClockDate) els.displayClockDate.textContent = parts.dateStr;
   }
 
   function formatMmSs(totalSeconds) {
@@ -1938,15 +2866,13 @@
   function syncPomodoroUI() {
     const label = formatMmSs(state.pomodoro.remainingSec);
     els.pomodoroTimer.textContent = label;
-    els.petPomodoroText.textContent = `${state.pomodoro.phase === 'break' ? '☕' : '🍅'} ${label}`;
-    els.petPomodoroChip.classList.toggle('hidden', !state.pomodoro.active);
 
     if (!state.pomodoro.active) {
-      els.pomodoroPhaseLabel.textContent = 'Pronto';
+      els.pomodoroPhaseLabel.textContent = 'Ready';
     } else if (state.pomodoro.phase === 'break') {
-      els.pomodoroPhaseLabel.textContent = 'Pausa';
+      els.pomodoroPhaseLabel.textContent = 'Break';
     } else {
-      els.pomodoroPhaseLabel.textContent = 'Foco ativo';
+      els.pomodoroPhaseLabel.textContent = 'Focus active';
     }
     syncAccessoryForContext();
   }
@@ -1966,12 +2892,16 @@
         const aud = audioApi();
         if (aud && typeof aud.alert === 'function' && state.petSoundsEnabled) aud.alert();
         applyFaceEmotion('excited');
-        const msg =
+        // Lupin's spoken line follows his language setting; the toast is UI text.
+        const spoken = lupinPhrase(
+          endedPhase === 'break' ? 'pomodoro_break_done' : 'pomodoro_focus_done',
+        );
+        const toastText =
           endedPhase === 'break'
-            ? 'Pausa do Pomodoro finalizada! Hora de voltar ao foco.'
-            : 'Ciclo Pomodoro de foco concluído! Faça uma pausa.';
-        showToast(`🍅 ${msg}`, { durationMs: 5000 });
-        speakText(msg);
+            ? 'Pomodoro break finished! Time to get back to focus.'
+            : 'Pomodoro focus cycle complete! Take a break.';
+        showToast(`🍅 ${toastText}`, { durationMs: 5000 });
+        speakText(spoken);
         return;
       }
       syncPomodoroUI();
@@ -1995,101 +2925,23 @@
       if (!res.ok) return;
       const data = await res.json();
 
-      const activeApp = data.active_app || '—';
-      els.macTelemetryApp.textContent = activeApp;
-
-      if (data.battery_percent !== null && data.battery_percent !== undefined) {
-        els.macTelemetryBattery.textContent = `${data.battery_percent}%${
-          data.charging ? ' ⚡' : ''
-        }`;
-      } else {
-        els.macTelemetryBattery.textContent = data.power_source || 'AC / Desktop';
-      }
-
-      if (data.volume !== null && data.volume !== undefined) {
-        els.macTelemetryVolume.textContent = data.muted ? 'Mudo' : `${data.volume}%`;
-      } else {
-        els.macTelemetryVolume.textContent = '—';
-      }
-
       const np = data.now_playing || {};
       const playing = Boolean(np.playing || np.state === 'playing');
       state.musicPlaying = playing;
-      els.nowPlayingState.textContent = playing ? 'Tocando' : 'Pausado';
-      els.nowPlayingTitle.textContent = np.track || np.title || 'Nenhuma mídia ativa';
+      const face = faceApi();
+      if (face && typeof face.setMusicPlaying === 'function') {
+        face.setMusicPlaying(playing);
+      }
+      els.nowPlayingState.textContent = playing ? 'Playing' : 'Paused';
+      els.nowPlayingTitle.textContent = np.track || np.title || 'No active media';
       els.nowPlayingArtist.textContent =
         [np.artist, np.app].filter(Boolean).join(' · ') || 'Spotify / Apple Music';
 
       syncAccessoryForContext();
+      publishPetSnapshot();
     } catch {
-      // Silencia erro transitório
+      // Silence transient error
     }
-  }
-
-  function mapWeatherEffect(codeOrDesc) {
-    const text = String(codeOrDesc || '').toLowerCase();
-    if (/chuva|garoa|rain|drizzle|tempest/.test(text)) return { effect: 'rain', icon: '🌧️' };
-    if (/neve|snow|geada/.test(text)) return { effect: 'snow', icon: '❄️' };
-    if (/limpo|sol|ensolarado|clear|sun/.test(text)) return { effect: 'sun', icon: '☀️' };
-    if (/nublado|nuvens|cloud/.test(text)) return { effect: 'none', icon: '⛅' };
-    return { effect: 'none', icon: '🌤️' };
-  }
-
-  async function fetchWeather() {
-    try {
-      const res = await fetch('/api/weather');
-      if (!res.ok) return;
-      const data = await res.json();
-      const temp =
-        data.temperature_c !== undefined && data.temperature_c !== null
-          ? `${Math.round(data.temperature_c)}°C`
-          : '--°C';
-      const desc = data.condition || data.description || 'Tempo estável';
-      const city = data.city || 'Local';
-      const mapped = mapWeatherEffect(data.effect || desc);
-
-      els.weatherTemp.textContent = temp;
-      els.weatherDesc.textContent = desc;
-      els.weatherCity.textContent = city;
-      els.weatherIcon.textContent = data.icon || mapped.icon;
-
-      const api = faceApi();
-      if (api && typeof api.setWeather === 'function') {
-        api.setWeather(data.effect || mapped.effect);
-      }
-    } catch {
-      // Silencia erro offline
-    }
-  }
-
-  function renderCompanionState(comp) {
-    if (!comp) return;
-    const affinity = Math.max(0, Math.min(100, Math.round(comp.affinity ?? 50)));
-    const energy = Math.max(0, Math.min(100, Math.round(comp.energy ?? 85)));
-    els.petAffinityVal.textContent = String(affinity);
-    els.petAffinityBar.style.width = `${affinity}%`;
-    els.petEnergyVal.textContent = String(energy);
-    els.petEnergyBar.style.width = `${energy}%`;
-    const pleasure = Number(comp.pleasure ?? 0.2);
-    const moodText = pleasure > 0.35 ? 'radiante' : pleasure < -0.2 ? 'carente' : 'sereno';
-    els.petMoodLabel.textContent = `Humor: ${moodText}`;
-  }
-
-  async function fetchCompanionState() {
-    try {
-      const res = await fetch('/api/memory/state');
-      if (!res.ok) return;
-      const data = await res.json();
-      renderCompanionState(data.companion || data);
-    } catch {
-      // Silencia erro transitório
-    }
-  }
-
-  function refreshSmartDisplay() {
-    fetchMacStatus();
-    fetchWeather();
-    fetchCompanionState();
   }
 
   async function triggerQuickMediaCommand(commandSlug) {
@@ -2099,24 +2951,34 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) {
-        showToast(data.error || data.message || data.detail || 'Falha no comando de mídia', {
+        showToast(data.error || data.message || data.detail || 'Media command failed', {
           isError: true,
           durationMs: 4000,
         });
       }
       window.setTimeout(fetchMacStatus, 450);
     } catch {
-      showToast('Erro de rede ao controlar mídia', { isError: true });
+      showToast('Network error while controlling media', { isError: true });
     }
   }
 
-  // Navegação por Gamepad D-Pad na Dock & Display
+  // Gamepad D-Pad navigation in the Dock, Settings & Nathan OS
   function getNavigableTiles() {
-    if (state.mode === 'dock') {
-      return Array.from(els.modeDock.querySelectorAll('[data-nav-tile]'));
+    if (state.pendingApprovalId) return getFocusableElements(els.approvalBanner);
+    if (state.shortcutModalOpen) return getFocusableElements(els.shortcutModal);
+    if (state.memoryOpen) return getFocusableElements(els.memoryDrawer);
+
+    if (state.settingsOpen && els.settingsPanel) {
+      return Array.from(els.settingsPanel.querySelectorAll('button, input[type="checkbox"]')).filter(
+        isElementAvailable
+      );
     }
-    if (state.mode === 'display') {
-      return Array.from(els.modeDisplay.querySelectorAll('button'));
+    if (state.mode === 'dock') {
+      return Array.from(els.modeDock.querySelectorAll('[data-nav-tile]')).filter(isElementAvailable);
+    }
+    const modeNathan = document.getElementById('mode-nathan');
+    if (state.mode === 'nathan' && modeNathan) {
+      return Array.from(modeNathan.querySelectorAll('button')).filter(isElementAvailable);
     }
     return [];
   }
@@ -2126,9 +2988,21 @@
     if (items.length === 0) return;
 
     items.forEach((el) => el.classList.remove('gamepad-focused'));
-    const step = direction === 'left' || direction === 'up' ? -1 : 1;
+    const forward = direction === 'right' || direction === 'down';
+    const step = forward ? 1 : -1;
+    const inShortcutGrid =
+      state.mode === 'dock' &&
+      !state.settingsOpen &&
+      !state.pendingApprovalId &&
+      !state.shortcutModalOpen &&
+      !state.memoryOpen &&
+      state.dockPage < dockPageCount() - 1;
     if (state.gamepadFocusIndex < 0) {
       state.gamepadFocusIndex = 0;
+    } else if (inShortcutGrid && (direction === 'up' || direction === 'down')) {
+      // 3x3 grid: up and down move one row; at the edges the focus stays where it is.
+      const target = state.gamepadFocusIndex + step * 3;
+      if (target >= 0 && target < items.length) state.gamepadFocusIndex = target;
     } else {
       state.gamepadFocusIndex = (state.gamepadFocusIndex + step + items.length) % items.length;
     }
@@ -2136,7 +3010,10 @@
     const target = items[state.gamepadFocusIndex];
     if (target) {
       target.classList.add('gamepad-focused');
-      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      target.focus();
+      if (typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
     }
   }
 
@@ -2146,12 +3023,12 @@
       items[state.gamepadFocusIndex].click();
       return;
     }
-    if (state.mode === 'pet') {
-      toggleExpressionsBar();
+    if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen) {
+      if (items[0]) items[0].focus();
     }
   }
 
-  // Memória HTTP & Gaveta
+  // HTTP Memory & Drawer
   function renderMemoryState(facts, recentCount) {
     const safeFacts = Array.isArray(facts) ? facts : [];
     const safeCount = typeof recentCount === 'number' ? recentCount : 0;
@@ -2176,7 +3053,7 @@
       const catSpan = document.createElement('span');
       catSpan.className = 'fact-cat-tag';
       const catKey = item.category || 'general';
-      catSpan.textContent = CATEGORY_LABELS_PT[catKey] || catKey;
+      catSpan.textContent = CATEGORY_LABELS[catKey] || catKey;
 
       const textSpan = document.createElement('span');
       textSpan.className = 'fact-text';
@@ -2188,8 +3065,8 @@
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'fact-delete-btn';
-      delBtn.title = 'Remover este fato';
-      delBtn.setAttribute('aria-label', `Remover fato: ${item.fact || ''}`);
+      delBtn.title = 'Remove this fact';
+      delBtn.setAttribute('aria-label', `Remove fact: ${item.fact || ''}`);
       delBtn.textContent = '×';
       delBtn.addEventListener('click', () => deleteFact(item.id));
 
@@ -2206,7 +3083,7 @@
       const data = await res.json();
       renderMemoryState(data.facts, data.recent_messages_count);
     } catch {
-      // Falha silenciosa
+      // Silent failure
     }
   }
 
@@ -2226,7 +3103,7 @@
       els.factInput.value = '';
       await fetchMemory();
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -2239,7 +3116,7 @@
       if (!res.ok) return;
       await fetchMemory();
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
@@ -2254,13 +3131,15 @@
       const data = await res.json();
       renderMemoryState(data.facts, data.recent_messages_count);
       hideResetConfirmation();
-      setCaption(includeFacts ? 'Toda a memória foi resetada.' : 'Conversa atual limpa.');
+      setCaption(includeFacts ? 'All memory was reset.' : 'Current conversation cleared.');
     } catch {
-      // Ignora erro transitório
+      // Ignore transient error
     }
   }
 
   function openMemoryDrawer() {
+    state.overlayReturnFocus = document.activeElement;
+    state.gamepadFocusIndex = -1;
     state.memoryOpen = true;
     els.memoryBackdrop.classList.remove('hidden');
     els.memoryDrawer.classList.remove('hidden');
@@ -2269,19 +3148,21 @@
     els.btnMemory.classList.add('is-active');
     hideResetConfirmation();
     fetchMemory();
-    showHud();
-    syncHudOffset();
+    focusFirstInContainer(els.memoryDrawer);
   }
 
   function closeMemoryDrawer() {
     state.memoryOpen = false;
+    state.gamepadFocusIndex = -1;
     els.memoryBackdrop.classList.add('hidden');
     els.memoryDrawer.classList.add('hidden');
     els.memoryDrawer.setAttribute('aria-hidden', 'true');
     els.btnMemory.setAttribute('aria-expanded', 'false');
     els.btnMemory.classList.remove('is-active');
     hideResetConfirmation();
-    scheduleHudAutoHide();
+    const returnFocus = state.overlayReturnFocus;
+    state.overlayReturnFocus = null;
+    if (returnFocus && returnFocus.isConnected !== false) returnFocus.focus();
   }
 
   function showResetConfirmation() {
@@ -2294,20 +3175,7 @@
     els.btnResetMemory.classList.remove('hidden');
   }
 
-  function toggleExpressionsBar() {
-    state.expressionsOpen = !state.expressionsOpen;
-    els.expressionsBar.classList.toggle('hidden', !state.expressionsOpen);
-    els.btnExpressions.classList.toggle('is-active', state.expressionsOpen);
-    els.btnExpressions.setAttribute('aria-expanded', String(state.expressionsOpen));
-    if (state.expressionsOpen) {
-      syncFaceBadges();
-      showHud();
-    } else {
-      scheduleHudAutoHide();
-    }
-  }
-
-  // Tela cheia & WakeLock
+  // Fullscreen & WakeLock
   async function requestWakeLock() {
     if (!('wakeLock' in navigator) || state.wakeLock) return;
     try {
@@ -2316,7 +3184,7 @@
         state.wakeLock = null;
       });
     } catch {
-      // Ignora erro de permissão
+      // Ignore permission error
     }
   }
 
@@ -2325,7 +3193,7 @@
     try {
       await state.wakeLock.release();
     } catch {
-      // Ignora erro
+      // Ignore error
     } finally {
       state.wakeLock = null;
     }
@@ -2341,15 +3209,71 @@
         await releaseWakeLock();
       }
     } catch {
-      // Ignora se fullscreen não for suportado
+      // Ignore if fullscreen is not supported
     }
   }
 
-  function syncFullscreenUI() {
-    const isFull = Boolean(document.fullscreenElement);
-    els.btnFullscreen.classList.toggle('is-active', isFull);
-    els.btnFullscreen.setAttribute('aria-pressed', String(isFull));
-    els.btnFullscreen.textContent = isFull ? '⛶ Sair' : '⛶ Tela Cheia';
+  // Automatic fullscreen: the browser only accepts it after a user gesture, so
+  // we ask once on the first tap or key. If the user exits, we do not insist.
+  function requestFullscreenOnce() {
+    if (state.fullscreenRequested || document.fullscreenElement) return;
+    state.fullscreenRequested = true;
+    toggleFullscreen();
+  }
+
+  function isElementAvailable(element) {
+    if (!element || element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
+    for (let current = element; current && current !== document.body; current = current.parentElement) {
+      if (
+        (current.classList && current.classList.contains('hidden')) ||
+        current.inert ||
+        (current.getAttribute && current.getAttribute('aria-hidden') === 'true')
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function getFocusableElements(container) {
+    if (!container || typeof container.querySelectorAll !== 'function') return [];
+    return Array.from(
+      container.querySelectorAll(
+        'button, input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter(isElementAvailable);
+  }
+
+  function focusFirstInContainer(container) {
+    const first = getFocusableElements(container)[0];
+    if (first) first.focus();
+  }
+
+  function trapDialogFocus(event) {
+    const container = state.shortcutModalOpen
+      ? els.shortcutModal
+      : state.memoryOpen
+        ? els.memoryDrawer
+        : null;
+    if (!container) return false;
+    const focusable = getFocusableElements(container);
+    if (!focusable.length) {
+      event.preventDefault();
+      return true;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (!focusable.includes(document.activeElement)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+    return true;
   }
 
   function isTypingInField(target) {
@@ -2358,24 +3282,90 @@
     return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
   }
 
-  // Registro de eventos
+  function cycleHorizontally(delta) {
+    if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen) return;
+    if (state.settingsOpen) cycleSettingsTab(delta);
+    else cycleMode(delta);
+  }
+
+  function pageDock(delta) {
+    if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen || state.settingsOpen) return;
+    if (state.mode !== 'dock') return;
+    setDockPage(state.dockPage + delta);
+  }
+
+  const SWIPE_MIN_VERTICAL_PX = 110;
+
+  // Horizontal swipe switches the Mode; vertical, in the Dock, switches the page.
+  function applySwipe(dx, dy, elapsedMs) {
+    if (elapsedMs > SWIPE_MAX_MS) return false; // dragging slowly is petting the face
+    if (Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dy) <= SWIPE_MAX_OFF_AXIS_PX) {
+      cycleHorizontally(dx < 0 ? 1 : -1);
+      return true;
+    }
+    if (
+      state.mode === 'dock' &&
+      Math.abs(dy) >= SWIPE_MIN_VERTICAL_PX &&
+      Math.abs(dx) <= SWIPE_MAX_OFF_AXIS_PX
+    ) {
+      pageDock(dy < 0 ? 1 : -1);
+      return true;
+    }
+    return false;
+  }
+
+  function bindSwipe() {
+    let start = null;
+    document.addEventListener(
+      'touchstart',
+      (event) => {
+        const touch = event.touches && event.touches.length === 1 ? event.touches[0] : null;
+        const target = event.target;
+        const ignored =
+          !touch ||
+          isTypingInField(target) ||
+          Boolean(target && target.closest && target.closest('.bottom-dock, .memory-drawer, .shortcut-modal'));
+        start = ignored ? null : { x: touch.clientX, y: touch.clientY, at: Date.now() };
+      },
+      { passive: true }
+    );
+    document.addEventListener(
+      'touchend',
+      (event) => {
+        if (!start) return;
+        const touch = event.changedTouches && event.changedTouches[0];
+        const origin = start;
+        start = null;
+        if (!touch) return;
+        applySwipe(touch.clientX - origin.x, touch.clientY - origin.y, Date.now() - origin.at);
+      },
+      { passive: true }
+    );
+  }
+
+  // Event registration
   function bindEvents() {
+    bindSwipe();
+    ['pointerdown', 'touchstart', 'keydown'].forEach((evtName) => {
+      document.addEventListener(evtName, noteUserInput, { passive: true, capture: true });
+    });
     ['mousemove', 'pointerdown', 'touchstart'].forEach((evtName) => {
       document.addEventListener(
         evtName,
         () => {
-          showHud();
           if (evtName !== 'mousemove') {
             unlockAudio();
+            requestFullscreenOnce();
           }
         },
         { passive: true }
       );
     });
 
-    // Teclado no Mac: Gravador de atalhos, Escape (barge-in / fechar) e Espaço (PTT)
+    // Keyboard on the Mac: shortcut recorder, Escape (barge-in / close) and Space (PTT)
     document.addEventListener('keydown', (event) => {
-      showHud();
+
+      if (event.key === 'Tab' && trapDialogFocus(event)) return;
 
       if (state.recordingShortcutKeys && state.shortcutModalOpen) {
         const keyPart = normalizeRecordedKey(event);
@@ -2393,11 +3383,20 @@
         return;
       }
 
+      if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        event.preventDefault();
+        cycleHorizontally(event.key === 'ArrowLeft' ? -1 : 1);
+        return;
+      }
+
       if (event.key === 'Escape') {
         if (state.shortcutModalOpen) {
           closeShortcutModal();
         } else if (state.memoryOpen) {
           closeMemoryDrawer();
+        } else if (state.settingsOpen) {
+          setSettingsOpen(false);
+          els.btnSettings.focus();
         } else {
           triggerBargeIn();
         }
@@ -2425,15 +3424,17 @@
       }
     });
 
-    // Alternador dos 4 modos
-    els.modeButtons.forEach((btn) => {
-      btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    // Switcher for the 4 modes
+    if (els.btnSettings) {
+      els.btnSettings.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
+    }
+    if (els.btnSettingsClose) {
+      els.btnSettingsClose.addEventListener('click', () => setSettingsOpen(false));
+    }
+    els.settingsSubtabs.forEach((btn) => {
+      btn.addEventListener('click', () => setSettingsOpen(true, btn.dataset.subtab));
     });
-
-    els.petPomodoroChip.addEventListener('click', () => setMode('display'));
     els.audioUnlockBanner.addEventListener('click', unlockAudio);
-    els.btnHudPin.addEventListener('click', toggleHudPin);
-    els.btnExpressions.addEventListener('click', toggleExpressionsBar);
 
     els.btnMemory.addEventListener('click', () => {
       if (state.memoryOpen) closeMemoryDrawer();
@@ -2464,6 +3465,13 @@
     });
 
     els.btnTtsMode.addEventListener('click', toggleTtsMode);
+    if (els.selLupinLanguage) {
+      els.selLupinLanguage.addEventListener('change', () => changeLupinLanguage(els.selLupinLanguage.value));
+    }
+
+    if (els.consentCalendar) els.consentCalendar.addEventListener('click', () => toggleDataConsent('calendar'));
+    if (els.consentEmail) els.consentEmail.addEventListener('click', () => toggleDataConsent('email'));
+    if (els.consentFiles) els.consentFiles.addEventListener('click', () => toggleDataConsent('files'));
 
     els.btnCaption.addEventListener('click', () => {
       state.captionVisible = !state.captionVisible;
@@ -2471,9 +3479,7 @@
       syncCaptionVisibilityUI();
     });
 
-    els.btnFullscreen.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', () => {
-      syncFullscreenUI();
       if (!document.fullscreenElement) releaseWakeLock();
     });
     document.addEventListener('visibilitychange', () => {
@@ -2482,7 +3488,7 @@
       }
     });
 
-    // Push-to-Talk botão físico/toque
+    // Push-to-Talk physical button/touch
     els.btnPtt.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       startPtt();
@@ -2495,35 +3501,44 @@
       });
     });
 
+    if (els.btnDictation) {
+      els.btnDictation.addEventListener('click', () => setDictationArmed(!state.dictation.armed));
+    }
+
     // Chat
     els.chatForm.addEventListener('submit', handleChatSubmit);
     els.chatInput.addEventListener('input', handleInputActivity);
     els.chatInput.addEventListener('focus', () => {
-      showHud();
       lookAtSafe(0, 0.35);
     });
     els.chatInput.addEventListener('blur', () => {
       if (!state.typingActive) lookAtSafe(0, 0);
-      scheduleHudAutoHide();
     });
 
-    // Aprovação rápida
+    // Quick approval
     els.btnApproveAction.addEventListener('click', () => resolveToolApproval(true));
     els.btnDenyAction.addEventListener('click', () => resolveToolApproval(false));
 
-    // Dock & Atalhos
+    // Dock & Shortcuts
     els.btnRefreshApps.addEventListener('click', fetchMacApps);
-    els.shortcutCategoryTabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        state.shortcutCategory = tab.dataset.cat || 'all';
-        els.shortcutCategoryTabs.forEach((t) =>
-          t.classList.toggle('is-active', t.dataset.cat === state.shortcutCategory)
-        );
-        renderShortcutsGrid();
+    if (els.btnSettingsNewShortcut) {
+      els.btnSettingsNewShortcut.addEventListener('click', () => openShortcutModal(null));
+    }
+    if (els.btnSettingsManageShortcuts) {
+      els.btnSettingsManageShortcuts.addEventListener('click', () => openShortcutModal(null));
+    }
+    if (els.btnDockTalk) {
+      els.btnDockTalk.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        dockTalkDown();
       });
-    });
-    els.btnNewShortcut.addEventListener('click', () => openShortcutModal(null));
-    els.btnConfigShortcuts.addEventListener('click', () => openShortcutModal(null));
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach((evt) => {
+        els.btnDockTalk.addEventListener(evt, () => {
+          if (state.dockTalk.holdTimer !== null || state.dockTalk.holding) dockTalkUp();
+        });
+      });
+      els.btnDockTalk.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
     els.btnCloseShortcutModal.addEventListener('click', closeShortcutModal);
     els.shortcutModalBackdrop.addEventListener('click', closeShortcutModal);
     els.scActionType.addEventListener('change', updateShortcutPayloadVisibility);
@@ -2553,9 +3568,8 @@
     els.btnMediaPrev.addEventListener('click', () => triggerQuickMediaCommand('prev_track'));
     els.btnMediaPlay.addEventListener('click', () => triggerQuickMediaCommand('play_pause'));
     els.btnMediaNext.addEventListener('click', () => triggerQuickMediaCommand('next_track'));
-    els.btnRefreshWeather.addEventListener('click', fetchWeather);
 
-    // Memória
+    // Memory
     els.addFactForm.addEventListener('submit', addManualFact);
     els.btnClearChat.addEventListener('click', () => clearMemory({ includeFacts: false }));
     els.btnResetMemory.addEventListener('click', showResetConfirmation);
@@ -2571,20 +3585,53 @@
 
   function initGamepad() {
     if (!window.DeskGamepad || typeof window.DeskGamepad.init !== 'function') return;
-    window.DeskGamepad.init({
+    const overlayOpen = () => state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen;
+    const handlers = {
       onLook: (x, y) => lookAtSafe(x, y),
-      onPttStart: () => startPtt(),
+      // In the Dock, L2/R2 become "previous/next page"; outside it they remain Push-to-Talk.
+      triggersAsPage: () => state.mode === 'dock' && !state.settingsOpen && !overlayOpen(),
+      onPage: (dir) => pageDock(dir),
+      onYPress: () => {
+        if (overlayOpen()) return;
+        if (state.mode === 'dock' && !state.settingsOpen) {
+          state.yHeldPtt = true;
+          startPtt();
+        } else {
+          toggleTtsMode();
+        }
+      },
+      onYRelease: () => {
+        if (!state.yHeldPtt) return;
+        state.yHeldPtt = false;
+        stopPttAndSend();
+      },
+      onPttStart: () => {
+        if (!state.pendingApprovalId && !state.shortcutModalOpen && !state.memoryOpen) startPtt();
+      },
       onPttEnd: () => stopPttAndSend(),
-      onModeCycle: (dir) => cycleMode(dir),
+      onModeCycle: (dir) => {
+        if (state.pendingApprovalId || state.shortcutModalOpen || state.memoryOpen) return;
+        // With Settings open, L1/R1 switch section; outside it, they switch Mode.
+        if (state.settingsOpen) cycleSettingsTab(dir);
+        else cycleMode(dir);
+      },
       onDpad: (dir) => moveGamepadFocus(dir),
-      onConfirm: () => activateGamepadFocused(),
+      onConfirm: () => {
+        if (state.pendingApprovalId) {
+          resolveToolApproval(true);
+          return;
+        }
+        activateGamepadFocused();
+      },
       onBackOrInterrupt: () => {
-        if (state.shortcutModalOpen) {
+        if (state.pendingApprovalId) {
+          resolveToolApproval(false);
+        } else if (state.shortcutModalOpen) {
           closeShortcutModal();
         } else if (state.memoryOpen) {
           closeMemoryDrawer();
-        } else if (state.expressionsOpen) {
-          toggleExpressionsBar();
+        } else if (state.settingsOpen) {
+          setSettingsOpen(false);
         } else {
           triggerBargeIn();
         }
@@ -2597,21 +3644,45 @@
       onToggleTtsMode: () => toggleTtsMode(),
       onSelect: () => toggleFullscreen(),
       onStart: () => {
-        if (state.mode === 'dock') {
-          if (state.shortcutModalOpen) closeShortcutModal();
-          else openShortcutModal(null);
+        if (state.pendingApprovalId) return;
+        if (state.shortcutModalOpen) {
+          closeShortcutModal();
+        } else if (state.memoryOpen) {
+          closeMemoryDrawer();
         } else {
-          if (state.memoryOpen) closeMemoryDrawer();
-          else openMemoryDrawer();
+          setSettingsOpen(!state.settingsOpen);
         }
       },
+    };
+    // Any gamepad button counts as interaction and cancels the automatic return from Pet.
+    Object.keys(handlers).forEach((name) => {
+      if (name === 'onLook' || name === 'triggersAsPage') return;
+      const original = handlers[name];
+      handlers[name] = (...args) => {
+        noteUserInput();
+        return original(...args);
+      };
     });
+    window.DeskGamepad.init(handlers);
   }
 
+  var mcpSettings = null; // var: hoisted, read by the settings renderer before init runs
+
   function initDiagnostics() {
+    if (window.DeskMcpSettings && els.mcpRoot) mcpSettings = window.DeskMcpSettings.mount(els.mcpRoot);
+    if (window.DeskSkills && typeof window.DeskSkills.init === 'function' && els.skillsRoot) {
+      window.DeskSkills.init(els.skillsRoot, {
+        onPlayTrick: (trickId) => {
+          setMode('pet');
+          playPetTrick(trickId);
+        },
+      });
+    }
     if (!window.DeskDiagnostics || typeof window.DeskDiagnostics.init !== 'function') return;
     window.DeskDiagnostics.init(els.diagnosticsRoot, {
       getTtsMode: () => state.ttsMode,
+      getVoiceLang: () => (state.lupinLanguage === 'en' ? 'en' : 'pt'),
+      getTestPhrase: (kind) => lupinPhrase(kind === 'server' ? 'diag_test_server_tts' : 'diag_test_browser_tts'),
       onTestBrowserTts: (text) => {
         unlockAudio();
         enqueueTtsSentence(text, 'browser');
@@ -2634,24 +3705,35 @@
       api.init(els.faceContainer);
     }
 
+    if (isMiniPet) {
+      syncTtsUI();
+      window.addEventListener('storage', syncPreferencesFromStorage);
+      bindMiniPetEvents();
+      initPetSync();
+      return;
+    }
+
     buildExpressionChips();
     syncTtsUI();
     syncCaptionVisibilityUI();
-    syncFullscreenUI();
     syncPomodoroUI();
     refreshVoices();
+    window.addEventListener('storage', syncPreferencesFromStorage);
     bindEvents();
+    initPetSync();
     initGamepad();
     initDiagnostics();
     connectWebSocket();
+    fetchLupinLanguage();
     fetchMemory();
-    fetchWeather();
+    fetchMacStatus();
+    fetchClientInfo();
+    renderDock();
+    syncDockCorner();
     tickClocks();
-    showHud();
-    syncHudOffset();
-    window.addEventListener('resize', syncHudOffset);
 
     window.setInterval(tickClocks, 1000);
+    window.setInterval(fetchMacStatus, 10000);
     window.setInterval(syncFaceBadges, 1000);
   }
 

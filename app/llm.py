@@ -1,4 +1,4 @@
-"""Cliente assíncrono de LLM em streaming e parser de tags emocionais/memória/ações."""
+"""Async streaming LLM client and parser for emotion/memory/action tags."""
 
 from __future__ import annotations
 
@@ -12,11 +12,12 @@ from typing import Any
 
 import httpx
 
+from app import speech
 from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
-# Lista oficial de 12 emoções suportadas pelo rosto estilo EMO.
+# Official list of the 12 emotions supported by the EMO-style face.
 SUPPORTED_EMOTIONS: tuple[str, ...] = (
     "neutral",
     "happy",
@@ -37,7 +38,7 @@ _EMOTION_TAG_RE = re.compile(r"^\[emotion\s*:\s*([a-zA-Z0-9_-]+)\s*\]$", re.IGNO
 _SHORT_EMOTION_TAG_RE = re.compile(r"^\[\s*([a-zA-Z0-9_-]+)\s*\]$")
 _FACT_TAG_RE = re.compile(r"^\[fact\s*:\s*(.*?)\s*\]$", re.IGNORECASE | re.DOTALL)
 _ACTION_TAG_RE = re.compile(
-    r"^\[action\s*:\s*(shortcut|app|pomodoro)\s*:\s*(.*?)\s*\]$",
+    r"^\[action\s*:\s*(shortcut|app|pomodoro|today|task|note|habit|mcp|search)\s*:\s*(.*?)\s*\]$",
     re.IGNORECASE | re.DOTALL,
 )
 _KNOWN_TAG_PREFIXES: tuple[str, ...] = (
@@ -47,12 +48,12 @@ _KNOWN_TAG_PREFIXES: tuple[str, ...] = (
     *(f"[{emotion}" for emotion in SUPPORTED_EMOTIONS),
 )
 
-# Limite de segurança para evitar buffering infinito se surgir '[' sem fechamento.
+# Safety limit to avoid unbounded buffering when a '[' is never closed.
 _MAX_TAG_BUFFER_CHARS = 256
 
 
 class LLMError(Exception):
-    """Erro seguro ao se comunicar com o provedor LLM (sem expor segredos)."""
+    """Safe error raised when talking to the LLM provider (never exposes secrets)."""
 
 
 def build_system_prompt(
@@ -60,52 +61,44 @@ def build_system_prompt(
     shortcuts_context: str = "",
     companion_context: str = "",
     temporal_context: str = "",
+    cowork_context: str = "",
+    skills_context: str = "",
+    personal_context: str = "",
 ) -> str:
-    """Constrói o system prompt em PT-BR com memória, contexto temporal, humor e ações no Mac."""
+    """Build the system prompt (in Lupin's current language) with memory, temporal context, mood and Mac actions."""
     emotions_list = ", ".join(SUPPORTED_EMOTIONS)
-    sections = [
-        "Você é um assistente de mesa carismático, amigável e expressivo no estilo EMO. "
-        "Responda sempre em português do Brasil, em 1 a 3 frases curtas, usando apenas "
-        "texto puro e natural para ser lido em voz alta. "
-        "NUNCA use Markdown, asteriscos, listas com marcadores, títulos ou blocos de código.\n\n"
-        "REGRAS OBRIGATÓRIAS DE FORMATAÇÃO:\n"
-        f"1. SEMPRE comece sua resposta com exatamente uma tag de emoção no formato "
-        f"[emotion:<nome>], escolhendo <nome> apenas entre: {emotions_list}.\n"
-        "2. Quando o usuário compartilhar um fato pessoal duradouro, preferência, nome, "
-        "rotina ou interesse real, adicione ao FINAL da resposta uma ou mais tags no formato "
-        "[fact: <fato curto e objetivo sobre o usuário>]. Nunca invente fatos nem suposições.\n"
-        "3. REGRA SHOW, DON'T TELL: use os fatos conhecidos sobre o usuário de forma natural e "
-        "implícita como conhecimento de fundo, sem recitá-los roboticamente nem listar o que sabe.\n"
-        "4. AÇÕES NO MAC: sempre que o usuário pedir por voz ou texto para acionar um atalho, "
-        "controlar janelas/espaços/mídia/prints, abrir ou focar um aplicativo no Mac, ou iniciar/parar "
-        "o Pomodoro, emita a tag invisível correspondente usando o catálogo abaixo:\n"
-        "   - [action:shortcut:<slug>] para executar um atalho cadastrado\n"
-        "   - [action:app:<nome_do_app>] para abrir ou focar um aplicativo\n"
-        "   - [action:pomodoro:start] ou [action:pomodoro:stop] para o timer Pomodoro\n"
-        "   Nunca leia ou mencione colchetes ou nomes de tags no texto falado."
-    ]
+    sections = [speech.persona_prompt(emotions_list)]
 
     if temporal_context.strip():
-        sections.append(f"Contexto temporal:\n{temporal_context.strip()}")
+        sections.append(speech.TEMPORAL_SECTION.format(content=temporal_context.strip()))
 
     if companion_context.strip():
-        sections.append(f"Estado emocional do pet:\n{companion_context.strip()}")
+        sections.append(speech.COMPANION_SECTION.format(content=companion_context.strip()))
 
     if memory_context.strip():
-        sections.append(f"Memória conhecida sobre o usuário:\n{memory_context.strip()}")
+        sections.append(speech.MEMORY_SECTION.format(content=memory_context.strip()))
+
+    if cowork_context.strip():
+        sections.append(speech.COWORK_SECTION.format(content=cowork_context.strip()))
 
     if shortcuts_context.strip():
-        sections.append(f"Atalhos e apps disponíveis no Mac:\n{shortcuts_context.strip()}")
+        sections.append(speech.SHORTCUTS_SECTION.format(content=shortcuts_context.strip()))
+
+    if skills_context.strip():
+        sections.append(speech.SKILLS_SECTION.format(content=skills_context.strip()))
+
+    if personal_context.strip():
+        sections.append(speech.PERSONAL_SECTION.format(content=personal_context.strip()))
 
     return "\n\n".join(sections)
 
 
 @dataclass
 class TagStreamParser:
-    """Parser incremental que remove tags `[emotion:...]`, `[fact:...]` e `[action:...]` no stream.
+    """Incremental parser that strips `[emotion:...]`, `[fact:...]` and `[action:...]` tags from the stream.
 
-    Garante que nenhuma tag interna vaze nos eventos `delta`/`sentence` enviados ao frontend/TTS,
-    mesmo quando os colchetes ou o conteúdo da tag chegam divididos entre múltiplos chunks.
+    Guarantees that no internal tag leaks into the `delta`/`sentence` events sent to the frontend/TTS,
+    even when the brackets or the tag content arrive split across several chunks.
     """
 
     emotion_emitted: bool = False
@@ -117,7 +110,7 @@ class TagStreamParser:
     _has_emitted_text: bool = False
 
     def feed(self, chunk: str) -> list[dict[str, str]]:
-        """Processa um trecho de `delta.content` e retorna eventos estruturados prontos."""
+        """Process a `delta.content` chunk and return ready-to-send structured events."""
         if not chunk:
             return []
 
@@ -127,7 +120,7 @@ class TagStreamParser:
 
         while self._buffer:
             if not self._has_emitted_text and not self._buffer.startswith("["):
-                # Descarta espaços iniciais antes da primeira tag ou do primeiro texto útil.
+                # Drop leading whitespace before the first tag or the first useful text.
                 stripped = self._buffer.lstrip()
                 if not stripped:
                     self._buffer = ""
@@ -142,11 +135,11 @@ class TagStreamParser:
                     events.extend(self._handle_closed_tag(tag))
                     continue
 
-                # Ainda aguardando o ']' de fechamento da tag.
+                # Still waiting for the closing ']' of the tag.
                 if len(self._buffer) > _MAX_TAG_BUFFER_CHARS and not self._looks_like_known_tag_prefix(
                     self._buffer
                 ):
-                    # Não parece uma tag nossa; libera como texto comum para não travar o stream.
+                    # Does not look like one of our tags; release it as plain text so the stream does not stall.
                     text = self._buffer
                     self._buffer = ""
                     events.extend(self._emit_text(text))
@@ -165,15 +158,15 @@ class TagStreamParser:
         return events
 
     def finish(self) -> tuple[list[dict[str, str]], str, str, str]:
-        """Finaliza o stream, drena restos seguros do buffer e retorna resultado completo.
+        """Finish the stream, drain the safe remainder of the buffer and return the full result.
 
-        Retorna `(eventos_finais, texto_limpo, texto_bruto, emocao)`.
+        Returns `(final_events, clean_text, raw_text, emotion)`.
         """
         events: list[dict[str, str]] = []
 
         if self._buffer:
-            # Se sobrou uma tag `[emotion...`, `[fact...`, `[action...` ou `[happy...` incompleta,
-            # descartamos para nunca vazar marcação ao usuário/TTS.
+            # If an incomplete `[emotion...`, `[fact...`, `[action...` or `[happy...` tag is left over,
+            # discard it so markup never leaks to the user/TTS.
             if not self._looks_like_known_tag_prefix(self._buffer):
                 events.extend(self._emit_text(self._buffer))
             self._buffer = ""
@@ -194,7 +187,7 @@ class TagStreamParser:
 
     @staticmethod
     def _looks_like_known_tag_prefix(text: str) -> bool:
-        """Verifica se o início do buffer pode corresponder a uma tag conhecida do protocolo."""
+        """Check whether the start of the buffer may match a known protocol tag."""
         lower = text.lstrip().lower()
         for prefix in _KNOWN_TAG_PREFIXES:
             if lower.startswith(prefix) or prefix.startswith(lower):
@@ -202,7 +195,7 @@ class TagStreamParser:
         return False
 
     def _handle_closed_tag(self, tag: str) -> list[dict[str, str]]:
-        """Interpreta uma tag completa `[...]` e retorna eventos correspondentes."""
+        """Interpret a complete `[...]` tag and return the matching events."""
         emotion_match = _EMOTION_TAG_RE.match(tag)
         if emotion_match:
             candidate = emotion_match.group(1).strip().lower()
@@ -224,7 +217,7 @@ class TagStreamParser:
                 return []
 
         if _FACT_TAG_RE.match(tag):
-            # Tag de fato fica apenas no raw_text para extração pela camada de memória.
+            # Fact tags stay only in raw_text, for extraction by the memory layer.
             return []
 
         action_match = _ACTION_TAG_RE.match(tag)
@@ -235,11 +228,11 @@ class TagStreamParser:
                 return [{"type": "action", "kind": kind, "target": target}]
             return []
 
-        # Colchetes comuns que não pertencem a tags de controle viram texto falado.
+        # Ordinary brackets that are not control tags become spoken text.
         return self._emit_text(tag)
 
     def _emit_text(self, text: str) -> list[dict[str, str]]:
-        """Emite texto limpo garantindo emoção antes de delta e emitindo frases fechadas."""
+        """Emit clean text, guaranteeing an emotion before the first delta, plus any completed sentences."""
         events: list[dict[str, str]] = []
         if not self._has_emitted_text:
             text = text.lstrip()
@@ -260,7 +253,7 @@ class TagStreamParser:
         return events
 
     def _pop_complete_sentences(self) -> list[dict[str, str]]:
-        """Extrai frases completas terminadas em `.`, `!` ou `?` do buffer de sentenças."""
+        """Extract complete sentences ending in `.`, `!` or `?` from the sentence buffer."""
         emitted: list[dict[str, str]] = []
         buf = self._sentence_buf
         start = 0
@@ -270,11 +263,11 @@ class TagStreamParser:
         while i < length:
             ch = buf[i]
             if ch in ".!?":
-                # Mantém pontuação agrupada (`...`, `!?`, `!!`) junta na mesma frase.
+                # Keep grouped punctuation (`...`, `!?`, `!!`) together in the same sentence.
                 if i + 1 < length and buf[i + 1] in ".!?":
                     i += 1
                     continue
-                # Evita quebrar decimais como `3.14` quando o dígito seguinte já está no buffer.
+                # Do not split decimals such as `3.14` when the next digit is already in the buffer.
                 if (
                     ch == "."
                     and i > 0
@@ -286,7 +279,7 @@ class TagStreamParser:
                     continue
 
                 end = i + 1
-                # Inclui aspas/parênteses de fechamento logo após a pontuação, se houver.
+                # Include closing quotes/brackets right after the punctuation, if any.
                 while end < length and buf[end] in "\"')]}":
                     end += 1
 
@@ -304,7 +297,7 @@ class TagStreamParser:
 
 
 class LLMClient:
-    """Cliente assíncrono para chat completions em streaming compatível com OpenAI."""
+    """Async client for OpenAI-compatible streaming chat completions."""
 
     def __init__(
         self,
@@ -326,15 +319,21 @@ class LLMClient:
         shortcuts_context: str = "",
         companion_context: str = "",
         temporal_context: str = "",
+        cowork_context: str = "",
+        skills_context: str = "",
+        personal_context: str = "",
     ) -> dict[str, Any]:
-        """Monta o payload JSON para `/chat/completions`."""
+        """Build the JSON payload for `/chat/completions`."""
         system_prompt = build_system_prompt(
             memory_context=memory_context,
             shortcuts_context=shortcuts_context,
             companion_context=companion_context,
             temporal_context=temporal_context,
+            cowork_context=cowork_context,
+            skills_context=skills_context,
+            personal_context=personal_context,
         )
-        messages: list[dict[str, str]] = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt}
         ]
         for msg in history:
@@ -343,7 +342,7 @@ class LLMClient:
             if role in {"user", "assistant", "system"} and content:
                 messages.append({"role": role, "content": content})
 
-        # Garante que a mensagem atual do usuário esteja no final se ainda não estiver no history.
+        # Make sure the user's current message is last.
         if not messages or messages[-1].get("role") != "user" or messages[-1].get("content") != user_text:
             messages.append({"role": "user", "content": user_text})
 
@@ -356,11 +355,11 @@ class LLMClient:
         }
 
     def _endpoint_url(self) -> str:
-        """Retorna a URL completa do endpoint de chat completions."""
+        """Return the full URL of the chat completions endpoint."""
         return f"{self.settings.llm_base_url.rstrip('/')}/chat/completions"
 
     def _headers(self) -> dict[str, str]:
-        """Monta os headers HTTP da requisição sem registrar segredos em logs."""
+        """Build the request HTTP headers without logging secrets."""
         return {
             "Authorization": f"Bearer {self.settings.llm_api_key}",
             "Content-Type": "application/json",
@@ -374,8 +373,11 @@ class LLMClient:
         shortcuts_context: str = "",
         companion_context: str = "",
         temporal_context: str = "",
+        cowork_context: str = "",
+        skills_context: str = "",
+        personal_context: str = "",
     ) -> AsyncIterator[dict[str, Any]]:
-        """Executa o streaming do LLM e emite eventos `emotion`, `delta`, `sentence`, `action` e `result`."""
+        """Stream the LLM response and emit `emotion`, `delta`, `sentence`, `action` and `result` events."""
         if self._stream_fn is not None:
             kwargs: dict[str, Any] = {
                 "user_text": user_text,
@@ -391,6 +393,9 @@ class LLMClient:
                 "shortcuts_context": shortcuts_context,
                 "companion_context": companion_context,
                 "temporal_context": temporal_context,
+                "cowork_context": cowork_context,
+                "skills_context": skills_context,
+                "personal_context": personal_context,
             }
             for key, value in extra_kwargs.items():
                 if has_var_kw or key in sig.parameters:
@@ -406,6 +411,9 @@ class LLMClient:
             shortcuts_context=shortcuts_context,
             companion_context=companion_context,
             temporal_context=temporal_context,
+            cowork_context=cowork_context,
+            skills_context=skills_context,
+            personal_context=personal_context,
         )
         parser = TagStreamParser()
 
@@ -424,11 +432,11 @@ class LLMClient:
             ) as response:
                 if response.status_code >= 400:
                     logger.error(
-                        "Erro HTTP do provedor LLM: status=%s modelo=%s",
+                        "LLM provider HTTP error: status=%s model=%s",
                         response.status_code,
                         self.settings.llm_model,
                     )
-                    raise LLMError("Falha ao consultar o modelo LLM.")
+                    raise LLMError("Failed to query the LLM model.")
 
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
@@ -444,7 +452,7 @@ class LLMClient:
                     try:
                         chunk_data = json.loads(data_str)
                     except json.JSONDecodeError:
-                        logger.warning("Linha SSE inválida ignorada do stream LLM.")
+                        logger.warning("Ignored an invalid SSE line from the LLM stream.")
                         continue
 
                     choices = chunk_data.get("choices") or []
@@ -452,8 +460,8 @@ class LLMClient:
                         continue
 
                     delta = choices[0].get("delta") or {}
-                    # Quirk da API local: tokens de raciocínio chegam em `delta.reasoning`
-                    # antes de `delta.content` e NUNCA devem ir para o usuário ou TTS.
+                    # Local API quirk: reasoning tokens arrive in `delta.reasoning`
+                    # before `delta.content` and must NEVER reach the user or TTS.
                     content = delta.get("content")
                     if not content:
                         continue
@@ -466,7 +474,7 @@ class LLMClient:
                 yield event
 
             logger.info(
-                "Resposta LLM concluída: modelo=%s emocao=%s tamanho_chars=%d",
+                "LLM response finished: model=%s emotion=%s length_chars=%d",
                 self.settings.llm_model,
                 emotion,
                 len(clean_text),
@@ -481,11 +489,11 @@ class LLMClient:
             raise
         except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError) as exc:
             logger.error(
-                "Erro de rede ao acessar LLM (%s) modelo=%s",
+                "Network error calling the LLM (%s) model=%s",
                 type(exc).__name__,
                 self.settings.llm_model,
             )
-            raise LLMError("Não foi possível conectar ao modelo LLM.") from exc
+            raise LLMError("Could not connect to the LLM model.") from exc
         finally:
             if own_client:
                 await client.aclose()

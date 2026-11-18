@@ -7,8 +7,11 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
@@ -48,14 +51,20 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Activity principal em tela cheia imersiva para o Anbernic RG406H.
- * Hospeda a interface web do Desk Assistant com suporte a microfone,
- * Gamepad API, certificado local autoassinado e ponte nativa AndroidBridge.
+ * Main immersive full-screen Activity for the Anbernic RG406H.
+ * Hosts the Desk Assistant web interface with microphone support,
+ * Gamepad API, a local self-signed certificate and the native AndroidBridge.
  */
 public class MainActivity extends Activity {
 
-    private static final String PREFS_NAME = "desk_assistant_prefs";
+    static final String PREFS_NAME = "desk_assistant_prefs";
     private static final String KEY_SERVER_URL = "server_url";
+    static final String KEY_START_ON_BOOT = "start_on_boot";
+    private static final String KEY_OPEN_PANEL_PAGE = "open_panel_page";
+    private static final String PANEL_PATH = "/panel";
+
+    private static final long RECONNECT_BASE_MS = 2000L;
+    private static final long RECONNECT_MAX_MS = 30000L;
 
     public static final String DEFAULT_USB_URL = "http://localhost:8000";
     public static final String DEFAULT_WIFI_URL = "https://192.168.0.125:8443";
@@ -80,10 +89,21 @@ public class MainActivity extends Activity {
     private boolean fallbackAttempted = false;
     private long lastBackPressMs = 0L;
     private PermissionRequest pendingPermissionRequest = null;
+    private int reconnectAttempt = 0;
+    private boolean showingOfflinePage = false;
+    private boolean mainFrameError = false;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+
+    private final Runnable reconnectRunnable = () -> {
+        if (!isFinishing() && !isDestroyed() && webView != null) {
+            loadServerUrl(currentUrl);
+        }
+    };
 
     private final Runnable fadeMenuButtonRunnable = () -> {
         if (serverMenuButton != null) {
-            serverMenuButton.animate().alpha(0.08f).setDuration(350L).start();
+            serverMenuButton.animate().alpha(0.22f).setDuration(350L).start();
         }
     };
 
@@ -91,7 +111,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Mantém a tela sempre ativa no uso como pet de mesa OLED.
+        // Keep the screen always on when used as an OLED desk pet.
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= 28) {
             WindowManager.LayoutParams lp = getWindow().getAttributes();
@@ -110,6 +130,45 @@ public class MainActivity extends Activity {
         enableImmersiveMode();
         requestAudioPermissionIfNeeded();
         resolveAndLoadInitialUrl();
+        registerNetworkWatcher();
+    }
+
+    /** Reconnect right away when Wi-Fi comes back while the offline page is shown. */
+    private void registerNetworkWatcher() {
+        try {
+            connectivityManager =
+                    (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager == null) {
+                return;
+            }
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    mainHandler.post(() -> {
+                        if (showingOfflinePage) {
+                            reconnectNow();
+                        }
+                    });
+                }
+            };
+            connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        } catch (RuntimeException ignored) {
+            networkCallback = null;
+        }
+    }
+
+    private void reconnectNow() {
+        mainHandler.removeCallbacks(reconnectRunnable);
+        reconnectAttempt = 0;
+        mainHandler.post(reconnectRunnable);
+    }
+
+    /** Retry the server with exponential backoff: 2s, 4s, 8s, 16s, then every 30s. */
+    private void scheduleReconnect() {
+        mainHandler.removeCallbacks(reconnectRunnable);
+        long delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS << Math.min(reconnectAttempt, 4));
+        reconnectAttempt++;
+        mainHandler.postDelayed(reconnectRunnable, delay);
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -146,20 +205,20 @@ public class MainActivity extends Activity {
         );
         rootLayout.addView(webView, webParams);
 
-        // Botão discreto no canto superior direito para menu de servidor (auto-ocultável em 3s).
-        int sizePx = dpToPx(38);
+        // Discreet button in the top-right corner for the server menu (auto-hides after 3s).
+        int sizePx = dpToPx(44);
         int marginPx = dpToPx(10);
         serverMenuButton = new TextView(this);
         serverMenuButton.setText("⚙");
-        serverMenuButton.setTextColor(Color.parseColor("#CC00F0FF"));
-        serverMenuButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        serverMenuButton.setTextColor(Color.parseColor("#D956DCFF"));
+        serverMenuButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         serverMenuButton.setGravity(Gravity.CENTER);
-        serverMenuButton.setContentDescription("Configurar servidor");
+        serverMenuButton.setContentDescription("Configure server");
 
         GradientDrawable badgeBg = new GradientDrawable();
         badgeBg.setShape(GradientDrawable.OVAL);
-        badgeBg.setColor(Color.parseColor("#66091016"));
-        badgeBg.setStroke(dpToPx(1), Color.parseColor("#5500F0FF"));
+        badgeBg.setColor(Color.parseColor("#880B0F16"));
+        badgeBg.setStroke(dpToPx(1), Color.parseColor("#6656DCFF"));
         serverMenuButton.setBackground(badgeBg);
 
         FrameLayout.LayoutParams btnParams = new FrameLayout.LayoutParams(sizePx, sizePx);
@@ -167,11 +226,8 @@ public class MainActivity extends Activity {
         btnParams.setMargins(marginPx, marginPx, marginPx, marginPx);
 
         serverMenuButton.setOnClickListener(v -> {
-            if (serverMenuButton.getAlpha() < 0.3f) {
-                revealMenuButtonTemporarily();
-            } else {
-                openServerMenu();
-            }
+            revealMenuButtonTemporarily();
+            openServerMenu();
         });
         serverMenuButton.setOnLongClickListener(v -> {
             revealMenuButtonTemporarily();
@@ -259,6 +315,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         mainHandler.removeCallbacksAndMessages(null);
+        if (connectivityManager != null && networkCallback != null) {
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            } catch (RuntimeException ignored) {
+                // Already unregistered.
+            }
+            networkCallback = null;
+        }
         networkExecutor.shutdownNow();
         if (pendingPermissionRequest != null) {
             pendingPermissionRequest.deny();
@@ -277,7 +341,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        // Nunca intercepta eventos vindos de controle/gamepad para não atrapalhar a Gamepad API.
+        // Never intercept events coming from a controller/gamepad so the Gamepad API is not disrupted.
         boolean fromGamepad = isGamepadEvent(event);
         if (!fromGamepad
                 && event.getKeyCode() == KeyEvent.KEYCODE_BACK
@@ -290,7 +354,7 @@ public class MainActivity extends Activity {
                 lastBackPressMs = now;
                 Toast.makeText(
                         this,
-                        "Pressione VOLTAR novamente para abrir o menu do servidor",
+                        "Press BACK again to open the server menu",
                         Toast.LENGTH_SHORT
                 ).show();
             }
@@ -338,13 +402,14 @@ public class MainActivity extends Activity {
 
     private void resolveAndLoadInitialUrl() {
         String saved = sanitizeServerUrl(prefs.getString(KEY_SERVER_URL, null));
+        final boolean firstRun = saved == null;
         if (saved != null && !DEFAULT_USB_URL.equals(saved)) {
             fallbackAttempted = false;
             loadServerUrl(saved);
             return;
         }
 
-        // Faz probe rápido na porta 8000 local (túnel USB ADB); se indisponível, cai para Wi-Fi HTTPS.
+        // Quick probe on local port 8000 (USB ADB tunnel); if unavailable, fall back to Wi-Fi HTTPS.
         networkExecutor.execute(() -> {
             boolean usbTunnelReady = isTcpPortReachable(
                     LOCAL_PROBE_HOST,
@@ -354,6 +419,11 @@ public class MainActivity extends Activity {
             String target = usbTunnelReady ? DEFAULT_USB_URL : DEFAULT_WIFI_URL;
             mainHandler.post(() -> {
                 if (isFinishing() || isDestroyed() || webView == null) {
+                    return;
+                }
+                if (firstRun && !usbTunnelReady) {
+                    // First run, no USB tunnel: ask for the Brain's address instead of guessing.
+                    showFirstRunDialog();
                     return;
                 }
                 fallbackAttempted = !usbTunnelReady;
@@ -377,7 +447,44 @@ public class MainActivity extends Activity {
             return;
         }
         currentUrl = cleanUrl;
-        webView.loadUrl(cleanUrl);
+        mainFrameError = false;
+        mainHandler.removeCallbacks(reconnectRunnable);
+        webView.loadUrl(withStartPath(cleanUrl));
+    }
+
+    /** Opens the Panel page when the user chose that in the menu; otherwise the Brain's root page. */
+    private String withStartPath(String baseUrl) {
+        if (prefs == null || !prefs.getBoolean(KEY_OPEN_PANEL_PAGE, false)) {
+            return baseUrl;
+        }
+        Uri parsed = Uri.parse(baseUrl);
+        String path = parsed.getPath();
+        if (path != null && !path.isEmpty() && !"/".equals(path)) {
+            return baseUrl;
+        }
+        return parsed.buildUpon().path(PANEL_PATH).build().toString();
+    }
+
+    /**
+     * Accepts what a person types: "192.168.0.5", "192.168.0.5:8443" or a full URL.
+     * Port 8443 (or no port) means HTTPS, anything else HTTP.
+     */
+    static String normalizeServerUrl(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (!trimmed.contains("://")) {
+            boolean http = trimmed.contains(":") && !trimmed.endsWith(":8443");
+            if (!trimmed.contains(":")) {
+                trimmed = trimmed + ":8443";
+            }
+            trimmed = (http ? "http://" : "https://") + trimmed;
+        }
+        return sanitizeServerUrl(trimmed);
     }
 
     private static String sanitizeServerUrl(String rawUrl) {
@@ -402,8 +509,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Valida estritamente se o host é local ou pertence a uma faixa privada RFC 1918 / loopback.
-     * Aceita apenas: localhost, 127.x.x.x, ::1, *.local, 10.x.x.x, 192.168.x.x, 172.16-31.x.x.
+     * Strictly validate that the host is local or belongs to an RFC 1918 private range / loopback.
+     * Accepts only: localhost, 127.x.x.x, ::1, *.local, 10.x.x.x, 192.168.x.x, 172.16-31.x.x.
      */
     static boolean isPrivateOrLocalHost(String rawHost) {
         if (rawHost == null) {
@@ -460,11 +567,15 @@ public class MainActivity extends Activity {
             String[] options = new String[]{
                     "USB ADB (" + DEFAULT_USB_URL + ")",
                     "Wi-Fi HTTPS (" + DEFAULT_WIFI_URL + ")",
-                    "URL Customizada...",
-                    "Recarregar Página"
+                    "Custom URL...",
+                    "Reload Page",
+                    (prefs.getBoolean(KEY_START_ON_BOOT, false) ? "[x]" : "[ ]")
+                            + " Start on boot / USB power",
+                    (prefs.getBoolean(KEY_OPEN_PANEL_PAGE, false) ? "[x]" : "[ ]")
+                            + " Open the Panel page (" + PANEL_PATH + ")"
             };
             new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("Servidor — Desk Assistant")
+                    .setTitle("Server — Desk Assistant")
                     .setItems(options, (dialog, which) -> {
                         if (which == 0) {
                             saveAndLoadServerUrl(DEFAULT_USB_URL);
@@ -475,11 +586,49 @@ public class MainActivity extends Activity {
                         } else if (which == 3) {
                             fallbackAttempted = false;
                             loadServerUrl(currentUrl);
+                        } else if (which == 4) {
+                            toggleBoolPref(KEY_START_ON_BOOT);
+                        } else if (which == 5) {
+                            toggleBoolPref(KEY_OPEN_PANEL_PAGE);
+                            fallbackAttempted = false;
+                            loadServerUrl(currentUrl);
                         }
                     })
-                    .setNegativeButton("Fechar", null)
+                    .setNegativeButton("Close", null)
                     .show();
         });
+    }
+
+    private void showFirstRunDialog() {
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint("192.168.0.125:8443");
+
+        int pad = dpToPx(16);
+        FrameLayout container = new FrameLayout(this);
+        container.setPadding(pad, dpToPx(8), pad, 0);
+        container.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Desk Assistant address")
+                .setMessage("Enter the address of the Desk Assistant on your Mac (Wi-Fi). "
+                        + "Over USB, run adb reverse and restart this app.")
+                .setView(container)
+                .setCancelable(false)
+                .setPositiveButton("Connect", (dialog, which) -> {
+                    String valid = normalizeServerUrl(input.getText().toString());
+                    if (valid != null) {
+                        saveAndLoadServerUrl(valid);
+                    } else {
+                        Toast.makeText(this, "Invalid address", Toast.LENGTH_SHORT).show();
+                        showFirstRunDialog();
+                    }
+                })
+                .setNegativeButton("Later", (dialog, which) -> {
+                    fallbackAttempted = true;
+                    loadServerUrl(DEFAULT_WIFI_URL);
+                })
+                .show();
     }
 
     private void showCustomUrlDialog() {
@@ -494,23 +643,29 @@ public class MainActivity extends Activity {
         container.addView(input);
 
         new AlertDialog.Builder(this)
-                .setTitle("URL do Servidor")
+                .setTitle("Server URL")
                 .setView(container)
-                .setPositiveButton("Conectar", (dialog, which) -> {
+                .setPositiveButton("Connect", (dialog, which) -> {
                     String entered = input.getText().toString();
-                    String valid = sanitizeServerUrl(entered);
+                    String valid = normalizeServerUrl(entered);
                     if (valid != null) {
                         saveAndLoadServerUrl(valid);
                     } else {
                         Toast.makeText(
                                 this,
-                                "URL inválida. Use http:// ou https://",
+                                "Invalid address. Use an IP, host:port or http(s)://",
                                 Toast.LENGTH_SHORT
                         ).show();
                     }
                 })
-                .setNegativeButton("Cancelar", null)
+                .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void toggleBoolPref(String key) {
+        boolean next = !prefs.getBoolean(key, false);
+        prefs.edit().putBoolean(key, next).apply();
+        Toast.makeText(this, next ? "Enabled" : "Disabled", Toast.LENGTH_SHORT).show();
     }
 
     private void saveAndLoadServerUrl(String url) {
@@ -528,28 +683,31 @@ public class MainActivity extends Activity {
             return;
         }
         String safeUrl = escapeHtml(failedUrl);
-        String safeReason = escapeHtml(reason != null ? reason : "Sem resposta do servidor");
-        String html = "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'>"
+        String safeReason = escapeHtml(reason != null ? reason : "No response from the server");
+        String html = "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
                 + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
                 + "<style>"
                 + "html,body{margin:0;height:100%;background:#000;color:#e6faff;"
                 + "font-family:sans-serif;display:flex;align-items:center;justify-content:center;}"
                 + ".card{max-width:540px;padding:24px;text-align:center;"
-                + "border:1px solid #00f0ff44;border-radius:16px;background:#070d12;}"
-                + "h2{color:#00f0ff;margin:0 0 10px 0;font-size:20px;}"
-                + "p{color:#9ab8c2;font-size:14px;line-height:1.45;word-break:break-all;}"
+                + "border:1px solid #56dcff44;border-radius:16px;background:#0b0f16;}"
+                + "h2{color:#56dcff;margin:0 0 10px 0;font-size:20px;}"
+                + "p{color:#93a3b5;font-size:14px;line-height:1.45;word-break:break-all;}"
                 + ".actions{display:flex;gap:12px;justify-content:center;margin-top:18px;flex-wrap:wrap;}"
-                + "button{background:#00f0ff22;color:#00f0ff;border:1px solid #00f0ff88;"
-                + "border-radius:10px;padding:10px 16px;font-size:14px;font-weight:bold;}"
+                + "button{background:#56dcff22;color:#c9f5ff;border:1px solid #56dcff88;"
+                + "border-radius:10px;padding:10px 16px;font-size:14px;font-weight:bold;cursor:pointer;}"
+                + "button:focus-visible{outline:2px solid #56dcff;outline-offset:2px;}"
                 + "</style></head><body><div class='card'>"
-                + "<h2>Servidor indisponível</h2>"
-                + "<p>Não foi possível conectar em:<br><strong>" + safeUrl + "</strong></p>"
+                + "<h2>Server unavailable</h2>"
+                + "<p>Could not connect to:<br><strong>" + safeUrl + "</strong></p>"
                 + "<p>" + safeReason + "</p>"
                 + "<div class='actions'>"
-                + "<button onclick='window.AndroidBridge.reloadApp()'>Tentar novamente</button>"
-                + "<button onclick='window.AndroidBridge.openServerMenu()'>Trocar servidor</button>"
+                + "<button onclick='window.AndroidBridge.reloadApp()'>Try again</button>"
+                + "<button onclick='window.AndroidBridge.openServerMenu()'>Switch server</button>"
                 + "</div></div></body></html>";
+        showingOfflinePage = true;
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
+        scheduleReconnect();
     }
 
     private static String escapeHtml(String value) {
@@ -566,6 +724,23 @@ public class MainActivity extends Activity {
 
     private class DeskWebViewClient extends WebViewClient {
         @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            if (url != null && url.startsWith("http")) {
+                mainFrameError = false;
+            }
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            // A real page (not our offline data page) loaded without a main-frame error: reset the backoff.
+            if (url != null && url.startsWith("http") && !mainFrameError) {
+                showingOfflinePage = false;
+                reconnectAttempt = 0;
+                mainHandler.removeCallbacks(reconnectRunnable);
+            }
+        }
+
+        @Override
         public void onReceivedSslError(
                 WebView view,
                 SslErrorHandler handler,
@@ -573,7 +748,7 @@ public class MainActivity extends Activity {
         ) {
             String errorUrl = error != null ? error.getUrl() : null;
             String host = errorUrl != null ? Uri.parse(errorUrl).getHost() : null;
-            // Aceita certificado autoassinado APENAS em hosts locais/privados da LAN.
+            // Accept a self-signed certificate ONLY on local/private LAN hosts.
             if (isPrivateOrLocalHost(host)) {
                 handler.proceed();
             } else {
@@ -590,6 +765,7 @@ public class MainActivity extends Activity {
             if (request == null || !request.isForMainFrame()) {
                 return;
             }
+            mainFrameError = true;
             String failingUrl = request.getUrl() != null ? request.getUrl().toString() : currentUrl;
             if (DEFAULT_USB_URL.equals(currentUrl) && !fallbackAttempted) {
                 fallbackAttempted = true;
@@ -644,7 +820,7 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Ponte JavaScript exposta em `window.AndroidBridge` para integração nativa no RG406H.
+     * JavaScript bridge exposed as `window.AndroidBridge` for native integration on the RG406H.
      */
     public class AndroidBridge {
         @JavascriptInterface
@@ -658,9 +834,13 @@ public class MainActivity extends Activity {
             int clampedMs = Math.max(1, Math.min(ms, 2000));
             Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             if (vibrator != null && vibrator.hasVibrator()) {
-                vibrator.vibrate(
-                        VibrationEffect.createOneShot(clampedMs, VibrationEffect.DEFAULT_AMPLITUDE)
-                );
+                if (Build.VERSION.SDK_INT >= 26) {
+                    vibrator.vibrate(
+                            VibrationEffect.createOneShot(clampedMs, VibrationEffect.DEFAULT_AMPLITUDE)
+                    );
+                } else {
+                    vibrator.vibrate((long) clampedMs);
+                }
             }
         }
 

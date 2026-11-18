@@ -1,0 +1,144 @@
+{
+  "version": 2,
+  "screen": {
+    "width": 480,
+    "height": 320
+  },
+  "layerOrder": [
+    "pose",
+    "collar"
+  ],
+  "headGroup": [
+    "pose"
+  ],
+  "layers": {
+    "pose": [
+      "neutral",
+      "happy",
+      "in-love",
+      "surprised",
+      "sleepy",
+      "angry",
+      "dizzy",
+      "winking",
+      "blink",
+      "curious",
+      "skeptical",
+      "sad"
+    ],
+    "collar": [
+      "off",
+      "lit"
+    ]
+  },
+  "default": {
+    "pose": "neutral",
+    "collar": "off"
+  },
+  "blink": {
+    "neutral": "blink"
+  },
+  "speech": {
+    "pose": "happy",
+    "threshold": 0.4
+  },
+  "expressions": {
+    "neutral": {},
+    "happy": {
+      "pose": "happy"
+    },
+    "excited": {
+      "pose": "happy"
+    },
+    "curious": {
+      "pose": "curious"
+    },
+    "skeptical": {
+      "pose": "skeptical"
+    },
+    "surprised": {
+      "pose": "surprised"
+    },
+    "sad": {
+      "pose": "sad"
+    },
+    "wink": {
+      "pose": "winking"
+    },
+    "love": {
+      "pose": "in-love"
+    },
+    "sleepy": {
+      "pose": "sleepy"
+    },
+    "angry": {
+      "pose": "angry"
+    },
+    "dizzy": {
+      "pose": "dizzy"
+    }
+  },
+  "states": {
+    "idle": {},
+    "listening": {
+      "tilt": 6
+    },
+    "thinking": {
+      "tilt": -6
+    },
+    "speaking": {
+      "collar": "lit",
+      "speaking": true
+    },
+    "error": {
+      "pose": "dizzy"
+    }
+  },
+  "tricks": {
+    "dance": {
+      "mode": "body",
+      "frames": [
+        "wave-1",
+        "wave-2"
+      ],
+      "intervalMs": 420,
+      "durationMs": 3400
+    },
+    "stretch": {
+      "mode": "body",
+      "frames": [
+        "stretch-1",
+        "stretch-2"
+      ],
+      "intervalMs": 700,
+      "durationMs": 3000
+    },
+    "nap": {
+      "mode": "body",
+      "frames": [
+        "nap-1",
+        "nap-2"
+      ],
+      "intervalMs": 900,
+      "durationMs": 3800
+    },
+    "sing": {
+      "mode": "bust",
+      "expression": "happy",
+      "effect": "notes",
+      "durationMs": 3000
+    },
+    "meditate": {
+      "mode": "bust",
+      "expression": "sleepy",
+      "effect": "rings",
+      "durationMs": 3400
+    },
+    "celebrate": {
+      "mode": "bust",
+      "expression": "excited",
+      "effect": "confetti",
+      "durationMs": 2600
+    }
+  }
+}

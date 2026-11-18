@@ -1,357 +1,391 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   />
   <meta name="theme-color" content="#000000" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="EMO Desk" />
-  <title>Desk Assistant</title>
+  <meta name="apple-mobile-web-app-title" content="Lupin Desk" />
+  <title>Lupin — Desk Assistant</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
   <link rel="apple-touch-icon" href="/static/icon.svg" />
-  <!-- Estilos do rosto animado e da interface principal -->
-  <link rel="stylesheet" href="/static/face.css" />
+  <!-- Styles for Lupin's face and the main interface -->
+  <link rel="stylesheet" href="/static/lupin.css" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="mode-pet">
-  <!-- Palco do rosto animado (tela cheia no modo Pet, compacto nos modos Dock e Display) -->
+  <!-- Animated face stage (full screen in Pet Mode) -->
   <main id="stage" class="stage">
-    <div id="face-container" aria-label="Rosto do assistente"></div>
+    <h1 class="sr-only">Lupin — Desk Assistant</h1>
+    <div id="face-container" role="img" aria-label="Lupin's animated face"></div>
 
-    <!-- Relógio OLED discreto no modo Pet -->
-    <div id="pet-clock" class="pet-clock" aria-label="Relógio atual">
+    <!-- Discreet OLED clock in Pet Mode -->
+    <div id="pet-clock" class="pet-clock" aria-label="Current time">
       <span id="pet-clock-time">00:00</span>
       <span id="pet-clock-date" class="pet-clock-date"></span>
     </div>
 
-    <!-- Chip discreto de Pomodoro ativo no modo Pet -->
-    <button
-      id="pet-pomodoro-chip"
-      type="button"
-      class="pet-pomodoro-chip hidden"
-      title="Abrir Smart Display / Pomodoro"
-    >
-      <span id="pet-pomodoro-text">🍅 25:00</span>
-    </button>
+    <!-- Small ambient strip in Pet Mode: Pomodoro and Now Playing on the Mac -->
+    <div id="pet-ambient" class="pet-ambient" aria-label="Pomodoro and music">
+      <div class="pet-ambient-pomo">
+        <span id="pomodoro-phase-label" class="panel-pill">Ready</span>
+        <span id="pomodoro-timer" class="pomodoro-timer">25:00</span>
+        <button id="btn-pomo-focus" type="button" class="btn-secondary btn-sm" title="Focus 25 minutes">▶ 25m</button>
+        <button id="btn-pomo-break" type="button" class="btn-secondary btn-sm" title="Break 5 minutes">☕ 5m</button>
+        <button id="btn-pomo-stop" type="button" class="btn-secondary btn-sm" aria-label="Stop Pomodoro" title="Stop Pomodoro">⏹</button>
+      </div>
+      <div class="pet-ambient-media">
+        <span id="now-playing-state" class="panel-pill">Paused</span>
+        <span id="now-playing-title" class="media-title">No active media</span>
+        <span id="now-playing-artist" class="media-artist">Spotify / Apple Music</span>
+        <button id="btn-media-prev" type="button" class="btn-secondary btn-sm" aria-label="Previous track" title="Previous track">⏮</button>
+        <button id="btn-media-play" type="button" class="btn-secondary btn-sm" aria-label="Play or pause" title="Play / Pause">⏯</button>
+        <button id="btn-media-next" type="button" class="btn-secondary btn-sm" aria-label="Next track" title="Next track">⏭</button>
+      </div>
+    </div>
   </main>
 
-  <!-- HUD superior com status, alternador de modos e controles rápidos -->
-  <header id="hud" class="hud" aria-label="Controles superiores">
-    <div class="hud-left">
-      <div class="status-pill" id="ws-status" title="Status da conexão WebSocket">
-        <span class="status-dot is-disconnected" id="ws-dot" aria-hidden="true"></span>
-        <span id="ws-status-text">Conectando...</span>
-      </div>
-      <div class="face-badge" id="face-badge" title="Estado e emoção atuais do rosto">
-        <span id="state-label">idle</span>
-        <span class="badge-sep" aria-hidden="true">·</span>
-        <span id="emotion-label">neutral</span>
-      </div>
-    </div>
+  <!-- Mini-pet controls: visible on pointer hover or keyboard navigation. -->
+  <nav id="mini-pet-controls" class="mini-pet-controls" aria-label="Mini-pet controls">
+    <button id="mini-pet-drag" type="button" aria-label="Move Lupin" aria-describedby="mini-pet-help" title="Drag to move; arrow keys move it from the keyboard">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" /></svg>
+      <span>Move</span>
+    </button>
+    <button id="mini-pet-open" type="button" aria-label="Open the Lupin panel" title="Open panel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></svg>
+      <span>Panel</span>
+    </button>
+    <button id="mini-pet-mute" type="button" aria-pressed="false" title="Mute the pet's voice and sounds">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14" /></svg>
+      <span id="mini-pet-mute-label">Mute</span>
+    </button>
+    <button id="mini-pet-hide" type="button" aria-label="Hide mini-pet" title="Hide mini-pet (Esc)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+      <span>Hide</span>
+    </button>
+    <button id="mini-pet-talk" type="button" class="mini-pet-talk" title="Open the panel to talk to Lupin">Talk to Lupin</button>
+  </nav>
+  <p id="mini-pet-help" class="sr-only">Drag the Move button or use the arrow keys. Hold Shift to move faster. Escape hides the mini-pet. Command, Shift and L show the mini-pet again.</p>
 
-    <!-- Seletor dos 4 modos de tela -->
-    <nav id="mode-switcher" class="mode-switcher" aria-label="Modos de tela">
-      <button type="button" class="mode-btn is-active" data-mode="pet" aria-pressed="true">
-        🐾 Pet
-      </button>
-      <button type="button" class="mode-btn" data-mode="dock" aria-pressed="false">
-        🎛️ Dock
-      </button>
-      <button type="button" class="mode-btn" data-mode="display" aria-pressed="false">
-        🖥️ Display
-      </button>
-      <button type="button" class="mode-btn" data-mode="diagnostics" aria-pressed="false">
-        🩺 Diagnóstico
-      </button>
-    </nav>
-
-    <nav class="hud-actions" aria-label="Ações da interface">
-      <button
-        id="btn-expressions"
-        type="button"
-        class="hud-btn"
-        aria-expanded="false"
-        aria-controls="expressions-bar"
-      >
-        🎭 Expressões
-      </button>
-      <button
-        id="btn-memory"
-        type="button"
-        class="hud-btn"
-        aria-expanded="false"
-        aria-controls="memory-drawer"
-      >
-        🧠 Memória (<span id="memory-count">0</span>)
-      </button>
-      <button
-        id="btn-pet-sounds"
-        type="button"
-        class="hud-btn is-active"
-        aria-pressed="true"
-        title="Ativar ou silenciar os sons procedurais do pet"
-      >
-        🔔 Sons Pet
-      </button>
-      <button
-        id="btn-tts"
-        type="button"
-        class="hud-btn is-active"
-        aria-pressed="true"
-        title="Ativar ou silenciar a voz do assistente"
-      >
-        🔊 Voz
-      </button>
-      <button
-        id="btn-tts-mode"
-        type="button"
-        class="hud-btn"
-        title="Alternar origem da voz TTS: Browser vs Servidor Mac"
-      >
-        🗣️ Browser
-      </button>
-      <button
-        id="btn-caption"
-        type="button"
-        class="hud-btn is-active"
-        aria-pressed="true"
-        title="Mostrar ou ocultar legenda"
-      >
-        💬 Legenda
-      </button>
-      <button
-        id="btn-fullscreen"
-        type="button"
-        class="hud-btn"
-        aria-pressed="false"
-        title="Alternar tela cheia"
-      >
-        ⛶ Tela Cheia
-      </button>
-      <button
-        id="btn-hud-pin"
-        type="button"
-        class="hud-btn hud-btn-icon"
-        aria-pressed="false"
-        title="Fixar barra superior (evita ocultar automaticamente)"
-      >
-        📌
-      </button>
-    </nav>
-  </header>
-
-  <!-- Barra rápida para testar as emoções e os estados com 1 clique -->
-  <section
-    id="expressions-bar"
-    class="expressions-bar hidden"
-    aria-label="Testar expressões faciais e estados"
+  <!-- The only fixed control: opens Settings (also via the gamepad Start button). The dot shows the connection to the Brain. -->
+  <button
+    id="btn-settings"
+    type="button"
+    class="settings-fab"
+    aria-expanded="false"
+    aria-controls="settings-panel"
+    aria-label="Open Settings"
+    title="Settings (Start)"
   >
-    <div class="expressions-group">
-      <span class="expressions-title">Emoções</span>
-      <div id="emotion-chips" class="chips-list"></div>
-    </div>
-    <div class="expressions-group">
-      <span class="expressions-title">Estados</span>
-      <div id="state-chips" class="chips-list"></div>
-    </div>
-  </section>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></svg>
+    <span class="status-dot is-disconnected" id="ws-dot" aria-hidden="true"></span>
+  </button>
+  <!-- Kept only for Electron: unlocks Nathan OS Mode in the L1/R1 cycle (cowork.js). -->
+  <button id="btn-mode-nathan" type="button" class="hidden" data-mode="nathan" tabindex="-1" aria-hidden="true"></button>
 
-  <!-- Banner discreto para destravar áudio no navegador se ainda não houve interação -->
+  <!-- Discreet banner to unlock audio in the browser if there has been no interaction yet -->
   <button
     id="audio-unlock-banner"
     type="button"
     class="audio-unlock-banner"
-    title="Toque para liberar áudio do pet e síntese de voz"
+    title="Tap to unlock the pet's audio and speech synthesis"
   >
-    🔊 Toque em qualquer lugar para ativar som e voz
+    🔊 Tap anywhere to enable sound and voice
   </button>
 
-  <!-- Toast discreto para ações executadas ([action:...], atalhos e avisos) -->
+  <!-- Discreet toast for executed actions ([action:...], shortcuts and notices) -->
   <div id="action-toast" class="action-toast hidden" role="status" aria-live="polite"></div>
 
-  <!-- Painel de Modo 2: Dock Viva & Stream Deck de Atalhos do Mac -->
-  <section id="mode-dock" class="workspace-panel hidden" aria-label="Dock Viva e Stream Deck do Mac">
-    <div class="dock-layout">
-      <!-- Dock Viva do macOS -->
-      <div class="panel-card">
-        <div class="panel-head">
-          <div class="panel-title-row">
-            <h2>🖥️ Dock Viva do Mac</h2>
-            <span id="dock-active-app" class="panel-pill">Ativo: —</span>
-          </div>
-          <button id="btn-refresh-apps" type="button" class="btn-secondary btn-sm">
-            ↻ Atualizar Apps
+  <!-- Mode 2 panel: live Dock & the Mac's virtual Stream Deck -->
+  <section id="mode-dock" class="workspace-panel hidden" aria-label="Dock: Pinned Shortcuts and open apps">
+    <div class="dock-layout dock-pages">
+      <!-- Pages 1..N: 3x3 grid of Pinned Shortcuts -->
+      <div id="shortcuts-grid" class="dock-grid" role="list" aria-label="Pinned Shortcuts"></div>
+
+      <!-- Last page: apps open on the Mac -->
+      <div id="dock-apps-page" class="dock-apps-page hidden" aria-label="Open apps">
+        <div class="dock-apps-head">
+          <h2 class="dock-live-title">Open apps</h2>
+          <span id="dock-active-app" class="panel-pill">Active: —</span>
+          <button
+            id="btn-refresh-apps"
+            type="button"
+            class="btn-secondary btn-sm"
+            title="Refresh the list of open apps"
+            aria-label="Refresh open apps"
+          >
+            ↻ Apps
           </button>
         </div>
-        <div id="dock-apps-grid" class="dock-apps-grid" role="list"></div>
+        <div id="dock-apps-grid" class="dock-apps-grid" role="list" aria-label="Mac apps"></div>
       </div>
 
-      <!-- Stream Deck de Atalhos -->
-      <div class="panel-card">
-        <div class="panel-head">
-          <div class="panel-title-row">
-            <h2>⚡ Stream Deck de Atalhos</h2>
-            <div id="shortcut-category-tabs" class="category-tabs" role="tablist">
-              <button type="button" class="cat-tab is-active" data-cat="all">Todos</button>
-              <button type="button" class="cat-tab" data-cat="spaces">Espaços</button>
-              <button type="button" class="cat-tab" data-cat="capture">Captura</button>
-              <button type="button" class="cat-tab" data-cat="editing">Edição</button>
-              <button type="button" class="cat-tab" data-cat="media">Mídia</button>
-              <button type="button" class="cat-tab" data-cat="apps">Apps</button>
-              <button type="button" class="cat-tab" data-cat="custom">Custom</button>
-            </div>
+      <div id="dock-page-dots" class="dock-dots" role="img" aria-label="Page 1"></div>
+    </div>
+  </section>
+
+  <!-- Dock corner: small Lupin (Active Body) or "Talk to Lupin" (other devices) + one-line speech -->
+  <div id="dock-corner" class="dock-corner">
+    <button id="btn-dock-talk" type="button" class="dock-talk-btn hidden" aria-label="Talk to Lupin (hold to talk, tap to type)">Talk to Lupin</button>
+    <p id="dock-speech-strip" class="dock-speech-strip is-empty" role="status" aria-live="polite"></p>
+  </div>
+
+  <!-- Settings: outside the Modes. L1/R1 switch section, B or Start close. -->
+  <section id="settings-panel" class="workspace-panel hidden" aria-label="Settings">
+    <div class="settings-head">
+      <div class="category-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="cat-tab settings-subtab is-active" data-subtab="voice" role="tab">Voice and sound</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="brain" role="tab">Brain</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="memory" role="tab">Memory</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="skills" role="tab">Skills</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="dock" role="tab">Dock</button>
+        <button type="button" class="cat-tab settings-subtab" data-subtab="diagnostics" role="tab">Diagnostics</button>
+      </div>
+      <button id="btn-settings-close" type="button" class="btn-secondary btn-sm" aria-label="Close settings">Close</button>
+    </div>
+
+    <div id="settings-tab-voice" class="settings-subpanel">
+      <ul class="settings-list">
+        <li>
+          <div class="settings-item-text">
+            <strong>Lupin's voice</strong>
+            <span>He speaks his replies out loud.</span>
           </div>
-          <div class="panel-head-actions">
-            <button id="btn-new-shortcut" type="button" class="btn-primary btn-sm">
-              ➕ Novo Atalho
-            </button>
-            <button id="btn-config-shortcuts" type="button" class="btn-secondary btn-sm">
-              ⚙️ Configurar Atalhos
-            </button>
+          <button id="btn-tts" type="button" class="hud-btn is-active" aria-pressed="true">On</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Voice source</strong>
+            <span>This device's browser voice or the Mac's voice.</span>
           </div>
+          <button id="btn-tts-mode" type="button" class="hud-btn" aria-pressed="false">Browser</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Lupin's language</strong>
+            <span>What he speaks and listens for, on every device.</span>
+          </div>
+          <select id="sel-lupin-language" class="hud-btn" aria-label="Lupin's language">
+            <option value="pt-BR">Português (Brasil)</option>
+            <option value="en">English</option>
+          </select>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Lupin's sounds</strong>
+            <span>Purring, clicks and Trick effects.</span>
+          </div>
+          <button id="btn-pet-sounds" type="button" class="hud-btn is-active" aria-pressed="true">On</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Caption</strong>
+            <span>Shows on screen what Lupin is saying.</span>
+          </div>
+          <button id="btn-caption" type="button" class="hud-btn is-active" aria-pressed="true">On</button>
+        </li>
+      </ul>
+    </div>
+
+    <div id="settings-tab-brain" class="settings-subpanel hidden">
+      <ul class="settings-list">
+        <li>
+          <div class="settings-item-text">
+            <strong>Connection</strong>
+            <span id="ws-status" role="status" aria-live="polite" aria-atomic="true"><span id="ws-status-text">Connecting...</span></span>
+          </div>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Mac address</strong>
+            <span id="brain-address">—</span>
+          </div>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Provider</strong>
+            <span id="brain-provider">—</span>
+          </div>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong>Model</strong>
+            <span id="brain-model">—</span>
+          </div>
+        </li>
+      </ul>
+      <p class="muted-note">To change the address, provider or model, use the Mac.</p>
+      <ul class="settings-list" aria-label="Privacy: what the provider can see">
+        <li>
+          <div class="settings-item-text">
+            <strong id="consent-calendar-label">Let the provider see your calendar</strong>
+            <span>Off by default. Applies only to this provider.</span>
+          </div>
+          <button id="btn-consent-calendar" type="button" class="hud-btn" role="switch" aria-checked="false" aria-labelledby="consent-calendar-label" disabled>Off</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong id="consent-email-label">Let the provider see your emails</strong>
+            <span>Only the sender and subject of today's unread emails, never the body.</span>
+          </div>
+          <button id="btn-consent-email" type="button" class="hud-btn" role="switch" aria-checked="false" aria-labelledby="consent-email-label" disabled>Off</button>
+        </li>
+        <li>
+          <div class="settings-item-text">
+            <strong id="consent-files-label">Let the provider see the contents of your files</strong>
+            <span>Used by smart search. Without it Lupin only looks at file names.</span>
+          </div>
+          <button id="btn-consent-files" type="button" class="hud-btn" role="switch" aria-checked="false" aria-labelledby="consent-files-label" disabled>Off</button>
+        </li>
+      </ul>
+      <p id="consent-note" class="muted-note">This can only be changed on the Mac.</p>
+    </div>
+
+    <div id="settings-tab-memory" class="settings-subpanel hidden">
+      <ul class="settings-list">
+        <li>
+          <div class="settings-item-text">
+            <strong>What Lupin remembers</strong>
+            <span>Facts saved about you and the current conversation.</span>
+          </div>
+          <button
+            id="btn-memory"
+            type="button"
+            class="hud-btn"
+            aria-expanded="false"
+            aria-controls="memory-drawer"
+          >
+            Open (<span id="memory-count">0</span>)
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <div id="settings-tab-skills" class="settings-subpanel hidden">
+      <div id="skills-root" class="skills-root"></div>
+      <div id="mcp-root" class="skills-root"></div>
+    </div>
+
+    <div id="settings-tab-dock" class="settings-subpanel hidden">
+      <p id="settings-dock-note" class="muted-note">Dock Shortcuts are created and edited on the Mac. Here you can only see the list.</p>
+      <div id="settings-dock-editor" class="settings-dock-editor hidden">
+        <button id="btn-settings-new-shortcut" type="button" class="btn-primary btn-sm">New shortcut</button>
+        <button id="btn-settings-manage-shortcuts" type="button" class="btn-secondary btn-sm">Manage and reorder</button>
+      </div>
+      <ul id="settings-shortcuts-list" class="settings-list"></ul>
+    </div>
+
+    <div id="settings-tab-diagnostics" class="settings-subpanel hidden">
+      <section class="expressions-bar" aria-label="Test facial expressions and states">
+        <div class="expressions-group">
+          <span class="expressions-title">Expressions</span>
+          <div id="emotion-chips" class="chips-list"></div>
         </div>
-        <div id="shortcuts-grid" class="shortcuts-grid" role="list"></div>
+        <div class="expressions-group">
+          <span class="expressions-title">States</span>
+          <div id="state-chips" class="chips-list"></div>
+        </div>
+        <div class="face-badge" id="face-badge" title="Current state and expression">
+          <span id="state-label">idle</span>
+          <span class="badge-sep" aria-hidden="true">·</span>
+          <span id="emotion-label">neutral</span>
+        </div>
+      </section>
+      <div id="diagnostics-root" class="diagnostics-root"></div>
+    </div>
+  </section>
+
+  <!-- Mac Electron-only panel: Nathan OS (Today and Sync, read-only) -->
+  <section id="mode-nathan" class="workspace-panel hidden" aria-label="Nathan OS workspace">
+    <div class="panel-card nathan-shell-card">
+      <div class="panel-head">
+        <div class="category-tabs">
+          <button type="button" class="cat-tab nathan-subtab is-active" data-subtab="today">Today</button>
+          <button type="button" class="cat-tab nathan-subtab" data-subtab="sync">Sync</button>
+        </div>
+        <span id="nathan-sync-badge" class="panel-pill">🟡 —</span>
+      </div>
+
+      <div id="nathan-tab-today" class="nathan-subpanel">
+        <h3 id="nathan-today-headline">Loading summary...</h3>
+        <ul id="nathan-today-top" class="first-wake-list"></ul>
+        <ul id="nathan-today-warnings" class="first-wake-list"></ul>
+      </div>
+
+      <div id="nathan-tab-sync" class="nathan-subpanel hidden">
+        <p id="nathan-sync-detail" class="muted-note">—</p>
       </div>
     </div>
   </section>
 
-  <!-- Painel de Modo 3: Smart Display Ambiente -->
-  <section id="mode-display" class="workspace-panel hidden" aria-label="Smart Display Ambiente">
-    <div class="display-grid">
-      <!-- Relógio & Data OLED grandes -->
-      <article class="panel-card display-clock-card">
-        <div class="display-eyebrow">Relógio Ambiente</div>
-        <div id="display-clock-time" class="display-clock-time">00:00:00</div>
-        <div id="display-clock-date" class="display-clock-date">—</div>
-      </article>
-
-      <!-- Pomodoro Interativo -->
-      <article class="panel-card display-pomo-card">
-        <div class="panel-head">
-          <h2>🍅 Pomodoro Foco</h2>
-          <span id="pomodoro-phase-label" class="panel-pill">Pronto</span>
-        </div>
-        <div id="pomodoro-timer" class="pomodoro-timer">25:00</div>
-        <div class="pomo-actions">
-          <button id="btn-pomo-focus" type="button" class="btn-primary">▶ Foco 25m</button>
-          <button id="btn-pomo-break" type="button" class="btn-secondary">☕ Pausa 5m</button>
-          <button id="btn-pomo-stop" type="button" class="btn-danger-ghost-sm">⏹ Parar</button>
-        </div>
-      </article>
-
-      <!-- Now Playing do Mac -->
-      <article class="panel-card display-media-card">
-        <div class="panel-head">
-          <h2>🎵 Tocando no Mac</h2>
-          <span id="now-playing-state" class="panel-pill">Pausado</span>
-        </div>
-        <div id="now-playing-title" class="media-title">Nenhuma mídia ativa</div>
-        <div id="now-playing-artist" class="media-artist">Spotify / Apple Music</div>
-        <div class="media-controls">
-          <button id="btn-media-prev" type="button" class="btn-secondary" title="Faixa anterior">⏮</button>
-          <button id="btn-media-play" type="button" class="btn-primary" title="Play / Pause">⏯ Play/Pause</button>
-          <button id="btn-media-next" type="button" class="btn-secondary" title="Próxima faixa">⏭</button>
-        </div>
-      </article>
-
-      <!-- Clima -->
-      <article class="panel-card display-weather-card">
-        <div class="panel-head">
-          <h2>🌤️ Clima</h2>
-          <button id="btn-refresh-weather" type="button" class="btn-secondary btn-sm">↻</button>
-        </div>
-        <div class="weather-main">
-          <span id="weather-icon" class="weather-icon">☀️</span>
-          <div>
-            <div id="weather-temp" class="weather-temp">--°C</div>
-            <div id="weather-desc" class="weather-desc">Carregando...</div>
-            <div id="weather-city" class="weather-city">—</div>
-          </div>
-        </div>
-      </article>
-
-      <!-- Telemetria do Mac & Afinidade do Pet -->
-      <article class="panel-card display-telemetry-card">
-        <div class="panel-head">
-          <h2>⚡ Mac & Estado do Pet</h2>
-          <span id="pet-mood-label" class="panel-pill">Humor: neutro</span>
-        </div>
-        <div class="telemetry-rows">
-          <div class="telemetry-kv">
-            <span>App Ativo</span>
-            <strong id="mac-telemetry-app">—</strong>
-          </div>
-          <div class="telemetry-kv">
-            <span>Bateria</span>
-            <strong id="mac-telemetry-battery">—</strong>
-          </div>
-          <div class="telemetry-kv">
-            <span>Volume</span>
-            <strong id="mac-telemetry-volume">—</strong>
-          </div>
-        </div>
-        <div class="pet-bars">
-          <div class="pet-bar-row">
-            <span>❤️ Afinidade (<strong id="pet-affinity-val">50</strong>)</span>
-            <div class="pet-bar-track"><div id="pet-affinity-bar" class="pet-bar-fill is-love"></div></div>
-          </div>
-          <div class="pet-bar-row">
-            <span>⚡ Energia (<strong id="pet-energy-val">85</strong>)</span>
-            <div class="pet-bar-track"><div id="pet-energy-bar" class="pet-bar-fill is-energy"></div></div>
-          </div>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <!-- Painel de Modo 4: Estúdio de Diagnóstico -->
-  <section id="mode-diagnostics" class="workspace-panel hidden" aria-label="Estúdio de Diagnóstico">
-    <div id="diagnostics-root" class="diagnostics-root"></div>
-  </section>
-
-  <!-- Área inferior fixa: aprovação rápida + legenda + Push-to-Talk + entrada de texto -->
+  <!-- Fixed bottom area: quick approval + caption + Push-to-Talk + text input -->
   <footer class="bottom-dock">
-    <!-- Confirmação rápida de tool_approval_request -->
-    <div id="approval-banner" class="approval-banner hidden" role="alertdialog" aria-live="assertive">
-      <span id="approval-text" class="approval-text">Confirmar execução?</span>
+    <!-- Quick confirmation for tool_approval_request -->
+    <div id="approval-banner" class="approval-banner hidden" role="alertdialog" aria-modal="true" aria-labelledby="approval-text" aria-live="assertive">
+      <div class="approval-info">
+        <span id="approval-text" class="approval-text">Confirm execution?</span>
+        <pre id="approval-diff" class="approval-diff hidden"></pre>
+      </div>
       <div class="approval-actions">
-        <button id="btn-approve-action" type="button" class="btn-primary btn-sm">✓ Autorizar</button>
-        <button id="btn-deny-action" type="button" class="btn-secondary btn-sm">✕ Recusar</button>
+        <button id="btn-approve-action" type="button" class="btn-primary btn-sm">✓ Approve</button>
+        <button id="btn-deny-action" type="button" class="btn-secondary btn-sm">✕ Deny</button>
       </div>
     </div>
 
-    <div id="caption-box" class="caption-box is-empty" aria-live="polite">
+    <div id="caption-box" class="caption-box is-empty" role="status" aria-live="polite" aria-atomic="true">
       <p id="caption-text" class="caption-text"></p>
     </div>
 
-    <form id="chat-form" class="chat-form" autocomplete="off">
+    <p id="vad-status" class="muted-note" role="status" aria-live="polite"></p>
+
+    <form id="chat-form" class="chat-form" autocomplete="off" aria-label="Message to Lupin">
       <button
         id="btn-ptt"
         type="button"
         class="ptt-btn"
-        title="Segure para falar (ou use Espaço / L2 / R2)"
+        title="Hold to talk (or use Space / L2 / R2)"
+        aria-label="Hold to talk"
         aria-pressed="false"
       >
-        🎤 Segure para falar
+        🎤 <span class="ptt-label">Hold to talk</span>
+      </button>
+      <button
+        id="btn-dictation"
+        type="button"
+        class="hud-btn"
+        title="Dictation: when on, touch Lupin to start and stop typing what you say"
+        aria-label="Dictation"
+        aria-pressed="false"
+      >
+        ⌨️ Dictation
+      </button>
+      <button
+        id="btn-vad-toggle"
+        type="button"
+        class="hud-btn"
+        title="Toggle continuous listening by voice activity detection (VAD)"
+        aria-pressed="false"
+      >
+        🎙️ VAD
       </button>
       <input
         id="chat-input"
         class="chat-input"
         type="text"
-        placeholder="Converse com o assistente..."
-        aria-label="Converse com o assistente"
+        placeholder="Talk to the assistant..."
+        aria-label="Talk to the assistant"
         maxlength="1000"
       />
-      <button id="btn-send" class="send-btn" type="submit">Enviar</button>
+      <button id="btn-send" class="send-btn" type="submit">Send</button>
     </form>
   </footer>
 
-  <!-- Backdrop e Modal CRUD completo de Atalhos -->
+  <!-- Backdrop and full CRUD modal for Shortcuts -->
   <div id="shortcut-modal-backdrop" class="modal-backdrop hidden" aria-hidden="true"></div>
   <section
     id="shortcut-modal"
@@ -361,71 +395,71 @@
     aria-labelledby="shortcut-modal-title"
   >
     <div class="modal-header">
-      <h2 id="shortcut-modal-title">⚙️ Configurar Atalhos do Mac</h2>
-      <button id="btn-close-shortcut-modal" type="button" class="icon-close-btn" aria-label="Fechar">
+      <h2 id="shortcut-modal-title">⚙️ Configure Mac Shortcuts</h2>
+      <button id="btn-close-shortcut-modal" type="button" class="icon-close-btn" aria-label="Close">
         ×
       </button>
     </div>
 
     <div class="modal-body">
-      <!-- Formulário de criação / edição -->
+      <!-- Create / edit form -->
       <form id="shortcut-form" class="shortcut-form" autocomplete="off">
         <input type="hidden" id="sc-id" value="" />
-        <h3 id="sc-form-heading" class="modal-subtitle">Novo Atalho</h3>
+        <h3 id="sc-form-heading" class="modal-subtitle">New Shortcut</h3>
 
         <div class="form-row-2">
           <label class="field">
-            <span>Título</span>
-            <input id="sc-title" type="text" required maxlength="60" placeholder="Ex: Pesquisar e Substituir" />
+            <span>Title</span>
+            <input id="sc-title" type="text" required maxlength="60" placeholder="E.g. Find and Replace" />
           </label>
           <label class="field field-icon">
-            <span>Ícone</span>
+            <span>Icon</span>
             <input id="sc-icon" type="text" maxlength="8" value="⚡" placeholder="⚡" />
           </label>
         </div>
 
-        <div class="emoji-quick-row" aria-label="Ícones rápidos">
-          <button type="button" class="emoji-chip" data-emoji="⚡">⚡</button>
-          <button type="button" class="emoji-chip" data-emoji="🔄">🔄</button>
-          <button type="button" class="emoji-chip" data-emoji="🔍">🔍</button>
-          <button type="button" class="emoji-chip" data-emoji="📸">📸</button>
-          <button type="button" class="emoji-chip" data-emoji="🖥️">🖥️</button>
-          <button type="button" class="emoji-chip" data-emoji="🎵">🎵</button>
-          <button type="button" class="emoji-chip" data-emoji="🍅">🍅</button>
-          <button type="button" class="emoji-chip" data-emoji="🚀">🚀</button>
-          <button type="button" class="emoji-chip" data-emoji="📋">📋</button>
-          <button type="button" class="emoji-chip" data-emoji="🔒">🔒</button>
+        <div class="emoji-quick-row" aria-label="Quick icons">
+          <button type="button" class="emoji-chip" data-emoji="⚡" aria-label="Icon ⚡">⚡</button>
+          <button type="button" class="emoji-chip" data-emoji="🔄" aria-label="Icon 🔄">🔄</button>
+          <button type="button" class="emoji-chip" data-emoji="🔍" aria-label="Icon 🔍">🔍</button>
+          <button type="button" class="emoji-chip" data-emoji="📸" aria-label="Icon 📸">📸</button>
+          <button type="button" class="emoji-chip" data-emoji="🖥️" aria-label="Icon 🖥️">🖥️</button>
+          <button type="button" class="emoji-chip" data-emoji="🎵" aria-label="Icon 🎵">🎵</button>
+          <button type="button" class="emoji-chip" data-emoji="🍅" aria-label="Icon 🍅">🍅</button>
+          <button type="button" class="emoji-chip" data-emoji="🚀" aria-label="Icon 🚀">🚀</button>
+          <button type="button" class="emoji-chip" data-emoji="📋" aria-label="Icon 📋">📋</button>
+          <button type="button" class="emoji-chip" data-emoji="🔒" aria-label="Icon 🔒">🔒</button>
         </div>
 
         <div class="form-row-3">
           <label class="field">
-            <span>Categoria</span>
+            <span>Category</span>
             <select id="sc-category">
-              <option value="spaces">Espaços</option>
-              <option value="capture">Captura</option>
-              <option value="editing">Edição</option>
-              <option value="media">Mídia</option>
+              <option value="spaces">Spaces</option>
+              <option value="capture">Capture</option>
+              <option value="editing">Editing</option>
+              <option value="media">Media</option>
               <option value="apps">Apps</option>
               <option value="custom" selected>Custom</option>
             </select>
           </label>
           <label class="field">
-            <span>Cor do Tile</span>
+            <span>Tile color</span>
             <select id="sc-color">
-              <option value="cyan">Ciano</option>
-              <option value="amber">Âmbar</option>
-              <option value="violet">Violeta</option>
-              <option value="emerald">Esmeralda</option>
-              <option value="rose">Rosa</option>
+              <option value="cyan">Cyan</option>
+              <option value="amber">Amber</option>
+              <option value="violet">Violet</option>
+              <option value="emerald">Emerald</option>
+              <option value="rose">Rose</option>
             </select>
           </label>
           <label class="field">
-            <span>Tipo de Ação</span>
+            <span>Action type</span>
             <select id="sc-action-type">
-              <option value="keystroke">Tecla / Atalho (keystroke)</option>
-              <option value="app_activate">Abrir / Focar App</option>
-              <option value="mac_command">Comando Seguro Mac</option>
-              <option value="agent_prompt">Prompt no Assistente</option>
+              <option value="keystroke">Key / Shortcut (keystroke)</option>
+              <option value="app_activate">Open / Focus App</option>
+              <option value="mac_command">Safe Mac Command</option>
+              <option value="agent_prompt">Prompt to the Assistant</option>
             </select>
           </label>
         </div>
@@ -433,24 +467,24 @@
         <!-- Payload: keystroke -->
         <div id="sc-payload-keystroke" class="payload-box">
           <div class="payload-head">
-            <span>Combinação de Teclas</span>
+            <span>Key combination</span>
             <button id="btn-record-keys" type="button" class="btn-secondary btn-sm">
-              🎹 Gravar no Teclado
+              🎹 Record from Keyboard
             </button>
           </div>
           <input
             id="sc-keys"
             type="text"
-            placeholder="Ex: cmd+opt+f"
-            aria-label="Combinação de teclas"
+            placeholder="E.g. cmd+opt+f"
+            aria-label="Key combination"
           />
-          <div class="builder-row" aria-label="Construtor por botões para toque">
+          <div class="builder-row" aria-label="Touch-friendly button builder">
             <button type="button" class="mod-toggle" data-mod="cmd">⌘ Cmd</button>
             <button type="button" class="mod-toggle" data-mod="opt">⌥ Opt</button>
             <button type="button" class="mod-toggle" data-mod="ctrl">⌃ Ctrl</button>
             <button type="button" class="mod-toggle" data-mod="shift">⇧ Shift</button>
-            <select id="sc-key-select" class="builder-key-select" aria-label="Selecionar tecla">
-              <option value="">+ Tecla...</option>
+            <select id="sc-key-select" class="builder-key-select" aria-label="Select key">
+              <option value="">+ Key...</option>
               <option value="a">A</option>
               <option value="c">C</option>
               <option value="d">D</option>
@@ -466,14 +500,14 @@
               <option value="4">4</option>
               <option value="5">5</option>
               <option value="tab">Tab</option>
-              <option value="grave">Crase (`)</option>
-              <option value="space">Espaço</option>
+              <option value="grave">Backtick (`)</option>
+              <option value="space">Space</option>
               <option value="enter">Enter</option>
               <option value="esc">Esc</option>
-              <option value="left">Seta ⬅️</option>
-              <option value="right">Seta ➡️</option>
-              <option value="up">Seta ⬆️</option>
-              <option value="down">Seta ⬇️</option>
+              <option value="left">Arrow ⬅️</option>
+              <option value="right">Arrow ➡️</option>
+              <option value="up">Arrow ⬆️</option>
+              <option value="down">Arrow ⬇️</option>
             </select>
           </div>
         </div>
@@ -481,33 +515,33 @@
         <!-- Payload: app_activate -->
         <div id="sc-payload-app" class="payload-box hidden">
           <label class="field">
-            <span>Nome do App no Mac</span>
-            <input id="sc-app-name" type="text" placeholder="Ex: Google Chrome" />
+            <span>App name on the Mac</span>
+            <input id="sc-app-name" type="text" placeholder="E.g. Google Chrome" />
           </label>
         </div>
 
         <!-- Payload: mac_command -->
         <div id="sc-payload-command" class="payload-box hidden">
           <label class="field">
-            <span>Comando Pré-Mapeado</span>
+            <span>Preset command</span>
             <select id="sc-mac-command">
               <option value="mission_control">Mission Control</option>
-              <option value="app_expose">Exposé do App</option>
-              <option value="space_left">Espaço à Esquerda</option>
-              <option value="space_right">Espaço à Direita</option>
-              <option value="screenshot_clipboard">Print Seleção → Clipboard</option>
-              <option value="screenshot_area_file">Print Seleção → Arquivo</option>
-              <option value="screenshot_full">Print Tela Inteira</option>
-              <option value="play_pause">Play / Pause Mídia</option>
-              <option value="next_track">Próxima Faixa</option>
-              <option value="prev_track">Faixa Anterior</option>
-              <option value="volume_up">Aumentar Volume</option>
-              <option value="volume_down">Diminuir Volume</option>
-              <option value="volume_mute">Mudo / Som</option>
-              <option value="toggle_dock">Mostrar / Ocultar Dock</option>
-              <option value="lock_screen">Bloquear Tela</option>
-              <option value="pomodoro_start">Iniciar Pomodoro 25m</option>
-              <option value="pomodoro_stop">Parar Pomodoro</option>
+              <option value="app_expose">App Exposé</option>
+              <option value="space_left">Space to the Left</option>
+              <option value="space_right">Space to the Right</option>
+              <option value="screenshot_clipboard">Screenshot Selection → Clipboard</option>
+              <option value="screenshot_area_file">Screenshot Selection → File</option>
+              <option value="screenshot_full">Screenshot Full Screen</option>
+              <option value="play_pause">Play / Pause Media</option>
+              <option value="next_track">Next Track</option>
+              <option value="prev_track">Previous Track</option>
+              <option value="volume_up">Volume Up</option>
+              <option value="volume_down">Volume Down</option>
+              <option value="volume_mute">Mute / Unmute</option>
+              <option value="toggle_dock">Show / Hide Dock</option>
+              <option value="lock_screen">Lock Screen</option>
+              <option value="pomodoro_start">Start Pomodoro 25m</option>
+              <option value="pomodoro_stop">Stop Pomodoro</option>
             </select>
           </label>
         </div>
@@ -515,40 +549,40 @@
         <!-- Payload: agent_prompt -->
         <div id="sc-payload-prompt" class="payload-box hidden">
           <label class="field">
-            <span>Prompt enviado ao Assistente</span>
-            <textarea id="sc-agent-prompt" rows="2" placeholder="Ex: Resuma minhas tarefas de hoje"></textarea>
+            <span>Prompt sent to the Assistant</span>
+            <textarea id="sc-agent-prompt" rows="2" placeholder="E.g. Summarize my tasks for today"></textarea>
           </label>
         </div>
 
         <label class="field">
-          <span>Gatilhos de voz (separados por vírgula)</span>
-          <input id="sc-voice-triggers" type="text" placeholder="Ex: pesquisar e substituir, substituir" />
+          <span>Voice triggers (comma-separated)</span>
+          <input id="sc-voice-triggers" type="text" placeholder="E.g. find and replace, replace" />
         </label>
 
         <div class="checkbox-row">
           <label class="check-item">
             <input id="sc-pinned" type="checkbox" checked />
-            <span>Fixar no Stream Deck</span>
+            <span>Pin to the Stream Deck</span>
           </label>
           <label class="check-item">
             <input id="sc-confirm" type="checkbox" />
-            <span>Pedir confirmação antes</span>
+            <span>Ask for confirmation first</span>
           </label>
         </div>
 
         <div class="modal-form-actions">
-          <button id="btn-sc-save" type="submit" class="btn-primary">💾 Salvar Atalho</button>
-          <button id="btn-sc-reset-form" type="button" class="btn-secondary">➕ Limpar / Novo</button>
-          <button id="btn-sc-delete" type="button" class="btn-danger-ghost-sm hidden">🗑️ Remover</button>
+          <button id="btn-sc-save" type="submit" class="btn-primary">💾 Save Shortcut</button>
+          <button id="btn-sc-reset-form" type="button" class="btn-secondary">➕ Clear / New</button>
+          <button id="btn-sc-delete" type="button" class="btn-danger-ghost-sm hidden">🗑️ Remove</button>
         </div>
       </form>
 
-      <!-- Lista de atalhos cadastrados para editar/trocar/reordenar/restaurar -->
+      <!-- List of saved shortcuts to edit/swap/reorder/restore -->
       <div class="shortcut-manage-pane">
         <div class="manage-head">
-          <h3 class="modal-subtitle">Atalhos Cadastrados</h3>
+          <h3 class="modal-subtitle">Saved Shortcuts</h3>
           <button id="btn-sc-reset-defaults" type="button" class="btn-secondary btn-sm">
-            ↺ Restaurar Padrões
+            ↺ Restore Defaults
           </button>
         </div>
         <ul id="sc-manage-list" class="sc-manage-list"></ul>
@@ -556,47 +590,49 @@
     </div>
   </section>
 
-  <!-- Fundo escuro da gaveta lateral de memória -->
+  <!-- Dark backdrop for the memory side drawer -->
   <div id="memory-backdrop" class="memory-backdrop hidden" aria-hidden="true"></div>
 
-  <!-- Gaveta lateral de memória de curto e longo prazo -->
+  <!-- Side drawer for short- and long-term memory -->
   <aside
     id="memory-drawer"
     class="memory-drawer hidden"
+    role="dialog"
+    aria-modal="true"
     aria-hidden="true"
     aria-labelledby="memory-drawer-title"
   >
     <div class="memory-header">
-      <h2 id="memory-drawer-title">🧠 Memória</h2>
+      <h2 id="memory-drawer-title">🧠 Memory</h2>
       <button
         id="btn-close-memory"
         type="button"
         class="icon-close-btn"
-        aria-label="Fechar painel de memória"
+        aria-label="Close memory panel"
       >
         ×
       </button>
     </div>
 
     <div class="memory-body">
-      <!-- Bloco da janela de curto prazo -->
+      <!-- Short-term window block -->
       <section class="memory-section">
         <div class="memory-section-head">
-          <h3>Conversa Atual</h3>
+          <h3>Current Conversation</h3>
           <span id="recent-messages-badge" class="count-pill">0 msgs</span>
         </div>
         <p class="memory-hint">
-          Mensagens recentes usadas como contexto imediato. Limpar não apaga o que aprendi sobre você.
+          Recent messages used as immediate context. Clearing does not erase what I learned about you.
         </p>
         <button id="btn-clear-chat" type="button" class="btn-secondary full-width">
-          Limpar conversa atual
+          Clear current conversation
         </button>
       </section>
 
-      <!-- Bloco de fatos aprendidos (longo prazo) -->
+      <!-- Learned facts block (long-term) -->
       <section class="memory-section memory-facts-section">
         <div class="memory-section-head">
-          <h3>Fatos Aprendidos</h3>
+          <h3>Learned Facts</h3>
           <span id="facts-count-badge" class="count-pill">0</span>
         </div>
 
@@ -605,56 +641,62 @@
             id="fact-input"
             class="fact-input"
             type="text"
-            placeholder="Adicionar fato manualmente..."
-            aria-label="Novo fato sobre você"
+            placeholder="Add a fact manually..."
+            aria-label="New fact about you"
             maxlength="240"
           />
           <div class="add-fact-row">
-            <select id="fact-category" class="fact-category" aria-label="Categoria do fato">
-              <option value="general">geral</option>
-              <option value="preference">preferência</option>
-              <option value="routine">rotina</option>
-              <option value="personal">pessoal</option>
-              <option value="work">trabalho</option>
+            <select id="fact-category" class="fact-category" aria-label="Fact category">
+              <option value="general">general</option>
+              <option value="preference">preference</option>
+              <option value="routine">routine</option>
+              <option value="personal">personal</option>
+              <option value="work">work</option>
             </select>
-            <button id="btn-add-fact" type="submit" class="btn-primary">Adicionar</button>
+            <button id="btn-add-fact" type="submit" class="btn-primary">Add</button>
           </div>
         </form>
 
         <p id="facts-empty" class="facts-empty">
-          Nenhum fato salvo ainda. Conte algo sobre você ou adicione acima.
+          No facts saved yet. Tell me something about yourself or add one above.
         </p>
         <ul id="facts-list" class="facts-list"></ul>
       </section>
     </div>
 
-    <!-- Rodapé discreto para reset completo com confirmação em duas etapas -->
+    <!-- Discreet footer for a full reset with two-step confirmation -->
     <div class="memory-footer">
       <button id="btn-reset-memory" type="button" class="btn-danger-ghost">
-        Resetar toda memória
+        Reset all memory
       </button>
       <div id="reset-confirm-box" class="reset-confirm-box hidden">
-        <span>Apagar fatos e conversa?</span>
+        <span>Delete facts and conversation?</span>
         <div class="reset-confirm-actions">
           <button id="btn-confirm-reset" type="button" class="btn-danger-solid">
-            Confirmar
+            Confirm
           </button>
           <button id="btn-cancel-reset" type="button" class="btn-secondary">
-            Cancelar
+            Cancel
           </button>
         </div>
       </div>
     </div>
   </aside>
 
-  <!-- Áudio oculto destravado no primeiro toque para TTS do servidor (iPhone Safari / Android) -->
+  <!-- Hidden audio element unlocked on first tap for server TTS (iPhone Safari / Android) -->
   <audio id="server-tts-audio" class="hidden" playsinline preload="auto"></audio>
 
-  <!-- Ordem obrigatória de carregamento dos módulos -->
+  <!-- Required module load order -->
   <script src="/static/audio_synth.js"></script>
-  <script src="/static/face.js"></script>
+  <script src="/static/device.js"></script>
+  <script src="/static/lupin.js"></script>
   <script src="/static/gamepad.js"></script>
   <script src="/static/diagnostics.js"></script>
+  <script src="/static/skills.js"></script>
+  <script src="/static/mcp_settings.js"></script>
+  <script src="/static/local_mode.js"></script>
+  <script src="/static/signals.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/cowork.js"></script>
 </body>
 </html>

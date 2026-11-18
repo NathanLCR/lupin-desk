@@ -1,16 +1,17 @@
-"""Configuração do aplicativo e logging com redação automática de segredos."""
+"""App configuration and logging with automatic secret redaction."""
 
 from __future__ import annotations
 
 import logging
 import os
 import re
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Diretório raiz do projeto resolvido a partir deste arquivo para funcionar de qualquer cwd
+# Project root resolved from this file so it works from any cwd
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 _DEFAULT_LLM_BASE_URL = "http://127.0.0.1:31415/v1"
@@ -23,23 +24,28 @@ _DEFAULT_KEY_FILE = BASE_DIR / "certs" / "key.pem"
 _DEFAULT_STT_MODEL = "base"
 _DEFAULT_STT_LANGUAGE = "pt"
 _DEFAULT_TTS_VOICE = "Luciana"
+_DEFAULT_TTS_VOICE_EN = "Samantha"
+_DEFAULT_LOCAL_LLM_SLOW_AFTER_S = 6.0
 _DEFAULT_WEATHER_LATITUDE = -23.5505
 _DEFAULT_WEATHER_LONGITUDE = -46.6333
 _DEFAULT_WEATHER_CITY = "São Paulo"
 _DEFAULT_MAX_SHORT_TERM_MESSAGES = 10
 _DEFAULT_MAX_USER_FACTS = 25
 _DEFAULT_DB_PATH = BASE_DIR / "data" / "memory.db"
+_DEFAULT_COWORK_WORKSPACE_PATH = Path.home() / "Cowork"
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"freellmapi-[A-Za-z0-9_-]+"), "[REDACTED]"),
     (re.compile(r"sk-[A-Za-z0-9_-]+"), "[REDACTED]"),
+    (re.compile(r"AIza[A-Za-z0-9_-]+"), "[REDACTED]"),
+    (re.compile(r"gsk_[A-Za-z0-9_-]+"), "[REDACTED]"),
     (re.compile(r"(Bearer\s+)[A-Za-z0-9._-]+", re.IGNORECASE), r"\1[REDACTED]"),
 )
 
 
 @dataclass(slots=True)
 class Settings:
-    """Parâmetros de configuração carregados do ambiente e do arquivo `.env`."""
+    """Configuration parameters loaded from the environment and the `.env` file."""
 
     llm_base_url: str = _DEFAULT_LLM_BASE_URL
     llm_api_key: str = ""
@@ -55,13 +61,25 @@ class Settings:
     stt_model: str = _DEFAULT_STT_MODEL
     stt_language: str = _DEFAULT_STT_LANGUAGE
     tts_voice: str = _DEFAULT_TTS_VOICE
+    tts_voice_en: str = _DEFAULT_TTS_VOICE_EN
+    # Lupin's voice is Kokoro; `say` is the fallback. TTS_KOKORO=0 forces `say`.
+    tts_kokoro: bool = True
+    # Seconds without a first token from a local model before Lupin says it is slow (0 = never).
+    local_llm_slow_after_s: float = _DEFAULT_LOCAL_LLM_SLOW_AFTER_S
     weather_latitude: float = _DEFAULT_WEATHER_LATITUDE
     weather_longitude: float = _DEFAULT_WEATHER_LONGITUDE
     weather_city: str = _DEFAULT_WEATHER_CITY
+    cowork_workspace_path: Path = _DEFAULT_COWORK_WORKSPACE_PATH
+    desk_access_token: str = ""
+    # Development only: turns off the access token for LAN clients.
+    desk_dev_no_token: bool = False
+    # LAN trust (ADR 0002): Panels connect without a token. Set DESK_REQUIRE_TOKEN=1 to
+    # require DESK_ACCESS_TOKEN (or an ephemeral one) from non-loopback clients again.
+    require_access_token: bool = False
 
 
 def _parse_int(raw: str | None, default: int) -> int:
-    """Converte variável de ambiente inteira com fallback seguro para o valor padrão."""
+    """Parse an integer environment variable, falling back safely to the default."""
     if raw is None:
         return default
     cleaned = raw.strip()
@@ -73,8 +91,13 @@ def _parse_int(raw: str | None, default: int) -> int:
         return default
 
 
+def _parse_bool(raw: str | None) -> bool:
+    """Enabled only by an explicit value (1, true, sim, yes, on); anything else is off."""
+    return (raw or "").strip().lower() in {"1", "true", "sim", "yes", "on"}
+
+
 def _parse_float(raw: str | None, default: float) -> float:
-    """Converte variável de ambiente em ponto flutuante com fallback seguro."""
+    """Parse a float environment variable, falling back safely to the default."""
     if raw is None:
         return default
     cleaned = raw.strip()
@@ -87,7 +110,7 @@ def _parse_float(raw: str | None, default: float) -> float:
 
 
 def _resolve_path(raw: str | None, default: Path) -> Path:
-    """Resolve caminho relativo ao `BASE_DIR` quando não for absoluto."""
+    """Resolve a path relative to `BASE_DIR` when it is not absolute."""
     if raw is None or not raw.strip():
         return default
     candidate = Path(raw.strip()).expanduser()
@@ -97,12 +120,12 @@ def _resolve_path(raw: str | None, default: Path) -> Path:
 
 
 def _resolve_db_path(raw: str | None) -> Path:
-    """Resolve o caminho do banco SQLite relativo ao `BASE_DIR` quando não for absoluto."""
+    """Resolve the SQLite database path relative to `BASE_DIR` when it is not absolute."""
     return _resolve_path(raw, _DEFAULT_DB_PATH)
 
 
 def load_settings(env_path: Path | None = None) -> Settings:
-    """Carrega variáveis do `.env` (em `BASE_DIR / '.env'`) e monta um `Settings`."""
+    """Load variables from `.env` (at `BASE_DIR / '.env'`) and build a `Settings`."""
     dotenv_target = env_path if env_path is not None else BASE_DIR / ".env"
     if dotenv_target.exists():
         load_dotenv(dotenv_path=dotenv_target, override=False)
@@ -123,6 +146,11 @@ def load_settings(env_path: Path | None = None) -> Settings:
     stt_model = os.getenv("STT_MODEL", _DEFAULT_STT_MODEL).strip() or _DEFAULT_STT_MODEL
     stt_language = os.getenv("STT_LANGUAGE", _DEFAULT_STT_LANGUAGE).strip() or _DEFAULT_STT_LANGUAGE
     tts_voice = os.getenv("TTS_VOICE", _DEFAULT_TTS_VOICE).strip() or _DEFAULT_TTS_VOICE
+    tts_voice_en = os.getenv("TTS_VOICE_EN", _DEFAULT_TTS_VOICE_EN).strip() or _DEFAULT_TTS_VOICE_EN
+    tts_kokoro = os.getenv("TTS_KOKORO", "1").strip().lower() not in {"0", "false", "no", "off"}
+    local_llm_slow_after_s = max(
+        0.0, _parse_float(os.getenv("LOCAL_LLM_SLOW_AFTER_S"), _DEFAULT_LOCAL_LLM_SLOW_AFTER_S)
+    )
     weather_latitude = _parse_float(os.getenv("WEATHER_LATITUDE"), _DEFAULT_WEATHER_LATITUDE)
     weather_longitude = _parse_float(os.getenv("WEATHER_LONGITUDE"), _DEFAULT_WEATHER_LONGITUDE)
     weather_city = os.getenv("WEATHER_CITY", _DEFAULT_WEATHER_CITY).strip() or _DEFAULT_WEATHER_CITY
@@ -135,6 +163,15 @@ def load_settings(env_path: Path | None = None) -> Settings:
         _parse_int(os.getenv("MAX_USER_FACTS"), _DEFAULT_MAX_USER_FACTS),
     )
     db_path = _resolve_db_path(os.getenv("DB_PATH"))
+    cowork_workspace_path = _resolve_path(
+        os.getenv("COWORK_WORKSPACE_PATH"), _DEFAULT_COWORK_WORKSPACE_PATH
+    )
+    desk_access_token = os.getenv("DESK_ACCESS_TOKEN", "").strip()
+    # DESK_DEV_SEM_TOKEN is the legacy name, honoured only when the new one is unset.
+    dev_no_token_raw = os.getenv("DESK_DEV_NO_TOKEN")
+    if dev_no_token_raw is None:
+        dev_no_token_raw = os.getenv("DESK_DEV_SEM_TOKEN")
+    desk_dev_no_token = _parse_bool(dev_no_token_raw)
 
     return Settings(
         llm_base_url=base_url,
@@ -151,14 +188,33 @@ def load_settings(env_path: Path | None = None) -> Settings:
         stt_model=stt_model,
         stt_language=stt_language,
         tts_voice=tts_voice,
+        tts_voice_en=tts_voice_en,
+        tts_kokoro=tts_kokoro,
+        local_llm_slow_after_s=local_llm_slow_after_s,
         weather_latitude=weather_latitude,
         weather_longitude=weather_longitude,
         weather_city=weather_city,
+        cowork_workspace_path=cowork_workspace_path,
+        desk_access_token=desk_access_token,
+        desk_dev_no_token=desk_dev_no_token,
+        require_access_token=_parse_bool(os.getenv("DESK_REQUIRE_TOKEN")),
     )
 
 
+def resolve_runtime_access_token(settings: Settings) -> tuple[str, bool]:
+    """Return `(token, auto_generated)` used to authenticate non-loopback clients."""
+    if settings.desk_dev_no_token or not settings.require_access_token:
+        return "", False
+    configured = (settings.desk_access_token or "").strip()
+    if configured:
+        return configured, False
+    if settings.host.strip().lower() in {"127.0.0.1", "::1", "localhost"}:
+        return "", False
+    return secrets.token_urlsafe(12), True
+
+
 class SecretRedactingFilter(logging.Filter):
-    """Filtro de logging que mascara chaves de API e tokens sensíveis com `[REDACTED]`."""
+    """Logging filter that masks API keys and sensitive tokens with `[REDACTED]`."""
 
     def __init__(self, secret: str = "") -> None:
         super().__init__()
@@ -166,7 +222,7 @@ class SecretRedactingFilter(logging.Filter):
         self._formatter = logging.Formatter()
 
     def redact(self, text: str) -> str:
-        """Substitui o segredo configurado e padrões conhecidos de chave por `[REDACTED]`."""
+        """Replace the configured secret and known key patterns with `[REDACTED]`."""
         if not text:
             return text
         sanitized = text
@@ -177,13 +233,19 @@ class SecretRedactingFilter(logging.Filter):
         return sanitized
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """Sanitiza a mensagem formatada e eventual traceback antes de emitir o registro."""
+        """Sanitize the formatted message and any traceback before emitting the record."""
         try:
             rendered = record.getMessage()
         except Exception:
             rendered = str(record.msg)
-        record.msg = self.redact(rendered)
-        record.args = None
+        if record.name == "uvicorn.access" and isinstance(record.args, tuple):
+            # AccessFormatter reads record.args as a 5-tuple; redact each string in place.
+            record.args = tuple(
+                self.redact(arg) if isinstance(arg, str) else arg for arg in record.args
+            )
+        else:
+            record.msg = self.redact(rendered)
+            record.args = None
 
         if record.exc_info and not record.exc_text:
             record.exc_text = self._formatter.formatException(record.exc_info)
@@ -193,19 +255,19 @@ class SecretRedactingFilter(logging.Filter):
 
 
 def _strip_existing_redactors(target: logging.Filterer) -> None:
-    """Remove filtros anteriores do tipo `SecretRedactingFilter` para evitar duplicação."""
+    """Remove earlier `SecretRedactingFilter` instances to avoid duplicates."""
     for existing in list(target.filters):
         if isinstance(existing, SecretRedactingFilter):
             target.removeFilter(existing)
 
 
 def configure_logging(secret: str = "", level: int = logging.INFO) -> SecretRedactingFilter:
-    """Configura logging da aplicação garantindo redação de segredos em todos os handlers."""
+    """Configure application logging, ensuring secret redaction on every handler."""
     redactor = SecretRedactingFilter(secret=secret)
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
-    # Garante ao menos um StreamHandler padrão caso ainda não exista handler de saída.
+    # Ensure at least one default StreamHandler exists when there is no output handler yet.
     has_stream_handler = any(
         isinstance(handler, logging.StreamHandler) for handler in root_logger.handlers
     )
@@ -216,14 +278,14 @@ def configure_logging(secret: str = "", level: int = logging.INFO) -> SecretReda
         )
         root_logger.addHandler(stream_handler)
 
-    # Aplica o filtro em todos os handlers do logger raiz (incluindo caplog nos testes).
+    # Apply the filter to every root logger handler (including caplog in tests).
     _strip_existing_redactors(root_logger)
     root_logger.addFilter(redactor)
     for handler in root_logger.handlers:
         _strip_existing_redactors(handler)
         handler.addFilter(redactor)
 
-    # Reduz verbosidade de bibliotecas HTTP e aplica redação em seus loggers específicos.
+    # Quiet down HTTP libraries and apply redaction to their specific loggers.
     for lib_name in ("httpx", "httpcore", "uvicorn.access"):
         lib_logger = logging.getLogger(lib_name)
         _strip_existing_redactors(lib_logger)

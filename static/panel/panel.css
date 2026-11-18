@@ -1,0 +1,348 @@
+/*
+ * Desk Panel styles. No CSS grid, no CSS variables: old Android WebView,
+ * old Safari and Kindle browsers. Flex and transforms use -webkit- prefixes.
+ */
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0b0d10;
+  color: #e6edf3;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#panel-root {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding-top: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+  padding-top: constant(safe-area-inset-top);
+  padding-right: constant(safe-area-inset-right);
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-left: constant(safe-area-inset-left);
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  box-sizing: border-box;
+  background: #0b0d10;
+  overflow: hidden;
+}
+
+/* Pages: each one is full size; the runtime sets left = (index - current) * 100%. */
+.pn-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pn-page {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  -webkit-transition: left 250ms ease;
+  transition: left 250ms ease;
+}
+
+.pn-noanim,
+.pn-noanim * {
+  -webkit-transition: none !important;
+  transition: none !important;
+}
+
+/* Layout pages: the stage is the coordinate space for the tiles (percentages). */
+.pn-stage {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.pn-tile {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.pn-tile-inner {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: #161a20;
+  overflow: hidden;
+}
+
+.pn-error {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-box-pack: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  text-align: center;
+  background: #2a1214;
+  color: #ffb4b4;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.pn-error strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+
+.pn-error span {
+  display: block;
+  word-wrap: break-word;
+}
+
+.pn-placeholder {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-pack: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  text-align: center;
+  color: #7d8794;
+  font-size: 16px;
+}
+
+/* Clock widget */
+.pn-clock {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-box-pack: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  text-align: center;
+}
+
+.pn-clock-time {
+  color: #e6edf3;
+  font-weight: 300;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pn-clock-date {
+  margin-top: 0.2em;
+  color: #9aa4b2;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Pet page: the Lupin face fills the page on black. */
+.pn-pet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+/* Dots and status */
+.pn-dots {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  font-size: 0;
+  line-height: 0;
+  pointer-events: none;
+}
+
+.pn-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 4px;
+  border-radius: 50%;
+  background: #3a4450;
+}
+
+.pn-dot.pn-dot-on {
+  background: #e6edf3;
+}
+
+.pn-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  padding: 0 16px;
+  text-align: center;
+  color: #9aa4b2;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.pn-error-status {
+  color: #ffb4b4;
+}
+
+/* Arrange mode */
+.pn-arranging .pn-tile {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+
+.pn-arranging .pn-tile-inner {
+  border: 2px dashed #5a6b80;
+}
+
+.pn-toolbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  top: constant(safe-area-inset-top);
+  top: env(safe-area-inset-top);
+  z-index: 20;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 6px 8px;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  background: rgba(11, 13, 16, 0.94);
+  border-bottom: 1px solid #242b35;
+}
+
+.pn-toolbar select,
+.pn-toolbar button {
+  box-sizing: border-box;
+  min-height: 40px;
+  margin: 0 0 0 6px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #1f2630;
+  color: #e6edf3;
+  font-size: 16px;
+  font-family: inherit;
+}
+
+.pn-toolbar select {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 0;
+}
+
+.pn-toolbar button {
+  min-width: 64px;
+}
+
+.pn-toolbar button:disabled {
+  opacity: 0.4;
+}
+
+.pn-toolbar .pn-toolbar-msg {
+  margin-left: 6px;
+  color: #ffb4b4;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* Remove (x) in the top-right corner of a tile in arrange mode */
+.pn-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0 10px 0 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 36px;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* Resize handle in the bottom-right corner of a tile in arrange mode */
+.pn-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  box-sizing: border-box;
+  border-radius: 10px 0 10px 0;
+  background: rgba(159, 179, 200, 0.35);
+  -webkit-box-shadow: inset -3px -3px 0 rgba(230, 237, 243, 0.8);
+  box-shadow: inset -3px -3px 0 rgba(230, 237, 243, 0.8);
+  cursor: nwse-resize;
+  touch-action: none;
+}

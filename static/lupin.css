@@ -1,0 +1,136 @@
+/**
+ * Lupin face (/static/lupin.css)
+ * 480x320 stage scaled by JS; SVG layers stacked on the same screen.
+ */
+.lupin-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0; /* fitScale() shrinks the 480x320 stage to any height */
+  overflow: hidden;
+  background-color: #000;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.lupin-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 480px;
+  height: 320px;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+}
+
+.lupin-breath,
+.lupin-head-group,
+.lupin-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.lupin-breath {
+  transform-origin: 240px 320px;
+}
+
+.lupin-head-group {
+  transform-origin: 240px 270px;
+}
+
+.lupin-variant,
+.lupin-body {
+  position: absolute;
+  inset: 0;
+  width: 480px;
+  height: 320px;
+  pointer-events: none;
+}
+
+.lupin-variant[hidden],
+.lupin-body[hidden] {
+  display: none;
+}
+
+/* Full-body Trick: the bust is hidden while the Trick frames play. */
+.lupin-full-body .lupin-breath {
+  visibility: hidden;
+}
+
+.lupin-root[data-state="listening"] .lupin-head-group {
+  filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35));
+}
+
+.lupin-layer-collar {
+  transition: filter 120ms linear;
+}
+
+body.is-minipet .lupin-root {
+  min-height: 0;
+  background-color: transparent;
+}
+
+/* Effects for the bust Tricks (sing, meditate, celebrate) */
+.lupin-effect {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.lupin-effect-notes {
+  left: calc(10% + var(--x) * 0.8%);
+  bottom: 60%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22d3ee;
+  opacity: 0;
+  animation: lupin-rise 2.4s ease-out calc(var(--i) * 0.35s) infinite;
+}
+
+.lupin-effect-rings {
+  left: 50%;
+  top: 50%;
+  width: 80px;
+  height: 80px;
+  margin: -40px 0 0 -40px;
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+  opacity: 0;
+  animation: lupin-ring 2.4s ease-out calc(var(--i) * 0.6s) infinite;
+}
+
+.lupin-effect-confetti {
+  left: calc(var(--x) * 1%);
+  top: -8px;
+  width: 7px;
+  height: 12px;
+  background: #22d3ee;
+  opacity: 0;
+  animation: lupin-fall 1.8s ease-in calc(var(--i) * 0.07s) infinite;
+}
+
+.lupin-effect-confetti:nth-child(3n) { background: #f4f4f5; }
+.lupin-effect-confetti:nth-child(3n + 1) { background: #f9a8d4; }
+
+@keyframes lupin-rise {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-140px); opacity: 0; }
+}
+
+@keyframes lupin-ring {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+
+@keyframes lupin-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(340px) rotate(360deg); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lupin-effect { display: none; }
+  .lupin-layer-collar { transition: none; }
+}

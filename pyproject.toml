@@ -1,13 +1,14 @@
 [project]
 name = "desk-assistant"
 version = "0.1.0"
-description = "Assistente de mesa com rosto estilo EMO, memória em duas camadas e streaming via WebSocket."
+description = "Lupin, a desk companion that actually works: a Mac Brain with an LLM, memory and voice, plus Bodies and Panels on old devices."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.115.6",
     "uvicorn[standard]==0.34.0",
     "httpx==0.28.1",
     "python-dotenv==1.0.1",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -15,6 +16,15 @@ dev = [
     "pytest==8.3.4",
     "pytest-asyncio==0.25.2",
     "websockets==14.1",
+]
+# Local speech-to-text on Apple silicon (the Mac listens for Lupin).
+stt = [
+    "mlx-whisper==0.4.3",
+]
+# Lupin's voice (Kokoro, local TTS). Also needs `brew install espeak-ng` for Portuguese; the first use downloads the model.
+tts = [
+    "kokoro>=0.9.4",
+    "numpy",
 ]
 
 [tool.pytest.ini_options]

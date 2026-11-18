@@ -1,0 +1,13 @@
+{
+  "name": "desk-assistant-electron",
+  "version": "0.2.0",
+  "description": "macOS Electron shell for the Desk Assistant mini-pet (frozen)",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^35.0.0"
+  }
+}
