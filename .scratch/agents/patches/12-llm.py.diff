@@ -1,0 +1,11 @@
+--- a/app/llm.py
++++ b/app/llm.py
+@@ -38,7 +38,7 @@
+ _SHORT_EMOTION_TAG_RE = re.compile(r"^\[\s*([a-zA-Z0-9_-]+)\s*\]$")
+ _FACT_TAG_RE = re.compile(r"^\[fact\s*:\s*(.*?)\s*\]$", re.IGNORECASE | re.DOTALL)
+ _ACTION_TAG_RE = re.compile(
+-    r"^\[action\s*:\s*(shortcut|app|pomodoro|today|task|note|habit)\s*:\s*(.*?)\s*\]$",
++    r"^\[action\s*:\s*(shortcut|app|pomodoro|today|task|note|habit|mcp)\s*:\s*(.*?)\s*\]$",
+     re.IGNORECASE | re.DOTALL,
+ )
+ _KNOWN_TAG_PREFIXES: tuple[str, ...] = (
