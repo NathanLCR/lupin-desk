@@ -336,8 +336,9 @@ test('destroy swallows errors thrown by instance.destroy', () => {
   assert.equal(handle.failed, false);
 });
 
-test('destroy on a failed handle does nothing', () => {
+test('a tile that failed after mount still has its instance destroyed (timers stop)', () => {
   let destroyed = 0;
+  let timerRunning = true;
   const registry = registryWith({
     id: 'clock',
     title: 'Clock',
@@ -345,7 +346,8 @@ test('destroy on a failed handle does nothing', () => {
     render() {
       return {
         onTopic() { throw new Error('boom'); },
-        destroy() { destroyed += 1; }
+        onResize() { throw new Error('resize boom'); },
+        destroy() { destroyed += 1; timerRunning = false; }
       };
     }
   });
@@ -353,7 +355,15 @@ test('destroy on a failed handle does nothing', () => {
   handle.onTopic('tick', {});
   assert.equal(handle.failed, true);
   assert.doesNotThrow(() => handle.destroy());
-  assert.equal(destroyed, 0);
+  handle.destroy();
+  assert.equal(destroyed, 1);
+  assert.equal(timerRunning, false);
+
+  const second = PanelRegistry.mount(registry, tile(), { id: 'w2', type: 'clock', x: 0, y: 0, w: 4, h: 2 }, {});
+  second.resize();
+  assert.equal(second.failed, true);
+  second.destroy();
+  assert.equal(destroyed, 2);
 });
 
 test('a render that returns nothing still mounts with no-op hooks', () => {
