@@ -25,6 +25,10 @@ HANDLED_TYPES = frozenset({"subscribe", "unsubscribe", "action"})
 _KIND_RANK = {"esp32": 3, "rg406h-web": 2}
 _DEFAULT_KIND_RANK = 1
 
+# Kinds a legacy hello used for Bodies. A device first seen with one of these keeps its
+# Body role (stored as Body + Panel); any other new device starts as a Panel only.
+LEGACY_BODY_KINDS = frozenset({"esp32", "rg406h-web", "web"})
+
 _TOPIC_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]{0,63}")
 _MAX_TOPICS = 64
 
@@ -131,7 +135,13 @@ class DeviceHub:
         self._seq += 1
         entry: dict[str, Any]
         if isinstance(device_id, str) and DEVICE_ID_RE.match(device_id):
-            record = self.store.upsert_hello(device_id, name=name, kind=kind, screen=screen)
+            record = self.store.upsert_hello(
+                device_id,
+                name=name,
+                kind=kind,
+                screen=screen,
+                default_roles=["body", "panel"] if kind in LEGACY_BODY_KINDS else ["panel"],
+            )
             entry = {
                 "body": kind,
                 "device_id": device_id,

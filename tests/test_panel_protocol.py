@@ -26,7 +26,7 @@ def _client(tmp_path: Path) -> tuple[Any, TestClient]:
 def test_new_device_is_a_panel_and_roles_change_live(tmp_path: Path) -> None:
     app, client = _client(tmp_path)
     with client.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "hello", "body": "web", "protocol": 1, "device_id": "dev-aaaa1111", "name": "Old iPad"})
+        ws.send_json({"type": "hello", "body": "panel", "protocol": 1, "device_id": "dev-aaaa1111", "name": "Old iPad"})
         welcome = ws.receive_json()
         assert welcome["roles"] == ["panel"]
         assert welcome["active"] is False and welcome["active_body"] is None
@@ -44,10 +44,10 @@ def test_new_device_is_a_panel_and_roles_change_live(tmp_path: Path) -> None:
 def test_priority_and_failover_between_two_bodies(tmp_path: Path) -> None:
     app, client = _client(tmp_path)
     with client.websocket_connect("/ws") as low, client.websocket_connect("/ws") as high:
-        low.send_json({"type": "hello", "body": "web", "device_id": "dev-low00001"})
+        low.send_json({"type": "hello", "body": "panel", "device_id": "dev-low00001"})
         low.receive_json()
         client.put("/api/devices/dev-low00001", json={"roles": ["body"]})
-        high.send_json({"type": "hello", "body": "web", "device_id": "dev-high0001"})
+        high.send_json({"type": "hello", "body": "panel", "device_id": "dev-high0001"})
         high.receive_json()
         client.put("/api/devices/dev-high0001", json={"roles": ["body"]})
         client.put("/api/devices/priority", json={"order": ["dev-high0001", "dev-low00001"]})
@@ -60,7 +60,7 @@ def test_topics_and_actions_over_ws(tmp_path: Path) -> None:
     calls: list[dict[str, Any]] = []
     app.state.actions.register("test.ping", lambda args: calls.append(args) or "pong")
     with client.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "hello", "body": "web", "device_id": "dev-cccc3333"})
+        ws.send_json({"type": "hello", "body": "panel", "device_id": "dev-cccc3333"})
         ws.receive_json()
         ws.send_json({"type": "subscribe", "topics": ["clock", "Bad Topic"]})
         assert ws.receive_json() == {"type": "subscribed", "topics": ["clock"]}

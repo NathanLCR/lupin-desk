@@ -47,7 +47,7 @@ def _hello(hub: DeviceHub, data: dict[str, Any]) -> tuple[dict[str, Any], list[d
 
 def test_get_devices_lists_connected_device_after_hello(tmp_path: Path) -> None:
     app, hub = _app(tmp_path)
-    _hello(hub, {"body": "esp32", "device_id": "route-dev-0001", "name": "Desk"})
+    _hello(hub, {"body": "panel", "device_id": "route-dev-0001", "name": "Desk"})
     client = TestClient(app)
 
     response = client.get("/api/devices")
@@ -63,7 +63,7 @@ def test_get_devices_lists_connected_device_after_hello(tmp_path: Path) -> None:
 
 def test_put_roles_takes_effect_and_notifies_the_connected_device(tmp_path: Path) -> None:
     app, hub = _app(tmp_path)
-    _, messages = _hello(hub, {"body": "esp32", "device_id": "route-dev-0002"})
+    _, messages = _hello(hub, {"body": "panel", "device_id": "route-dev-0002"})
     client = TestClient(app)
 
     response = client.put("/api/devices/route-dev-0002", json={"roles": ["body"]})
@@ -86,7 +86,7 @@ def test_put_unknown_device_is_404(tmp_path: Path) -> None:
 
 def test_put_invalid_role_is_422(tmp_path: Path) -> None:
     app, hub = _app(tmp_path)
-    _hello(hub, {"body": "esp32", "device_id": "route-dev-0003"})
+    _hello(hub, {"body": "panel", "device_id": "route-dev-0003"})
     client = TestClient(app)
 
     response = client.put("/api/devices/route-dev-0003", json={"roles": ["wizard"]})
@@ -97,7 +97,7 @@ def test_put_invalid_role_is_422(tmp_path: Path) -> None:
 
 def test_explicit_null_clears_layout_and_omitted_field_keeps_it(tmp_path: Path) -> None:
     app, hub = _app(tmp_path)
-    _hello(hub, {"body": "esp32", "device_id": "route-dev-0004"})
+    _hello(hub, {"body": "panel", "device_id": "route-dev-0004"})
     client = TestClient(app)
     url = "/api/devices/route-dev-0004"
 
@@ -115,8 +115,8 @@ def test_explicit_null_clears_layout_and_omitted_field_keeps_it(tmp_path: Path) 
 
 def test_priority_endpoint_sets_order_and_returns_device_list(tmp_path: Path) -> None:
     app, hub = _app(tmp_path)
-    _hello(hub, {"body": "esp32", "device_id": "route-prio-0001"})
-    _hello(hub, {"body": "esp32", "device_id": "route-prio-0002"})
+    _hello(hub, {"body": "panel", "device_id": "route-prio-0001"})
+    _hello(hub, {"body": "panel", "device_id": "route-prio-0002"})
     client = TestClient(app)
 
     response = client.put(
