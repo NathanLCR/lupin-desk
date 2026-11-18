@@ -395,7 +395,7 @@
     shortcuts: [],
     dockPage: 0,
     isMac: false,
-    dataConsent: { calendar: false, email: false, receiver: '', can_edit: false },
+    dataConsent: { calendar: false, email: false, receiver: '', can_edit: false, local: false },
     // Speech in the Dock: sentence count per turn and automatic return to Pet.
     dockSentenceCount: 0,
     autoPetFromDock: false,
@@ -704,6 +704,27 @@
   // Data Consent: who receives the calendar and emails. On the Mac it can be toggled; on other devices it is read-only.
   function renderDataConsent() {
     const dc = state.dataConsent;
+    const view = window.LupinLocalMode ? window.LupinLocalMode.consentView(dc) : null;
+    if (view && view.local) {
+      // Ollama on this Mac: nothing leaves it, so the switches are locked on.
+      const localRows = [
+        [els.consentCalendar, els.consentCalendarLabel, view.rowText.calendar],
+        [els.consentEmail, els.consentEmailLabel, view.rowText.email],
+      ];
+      for (const [btn, label, text] of localRows) {
+        if (label) label.textContent = text;
+        if (!btn) continue;
+        btn.textContent = 'On';
+        btn.setAttribute('aria-checked', 'true');
+        btn.classList.add('is-active');
+        btn.disabled = true;
+      }
+      if (els.consentNote) {
+        els.consentNote.textContent = view.noteText;
+        els.consentNote.classList.remove('hidden');
+      }
+      return;
+    }
     const receiver = dc.receiver || 'the provider';
     const rows = [
       ['calendar', els.consentCalendar, els.consentCalendarLabel, 'your calendar'],
@@ -731,6 +752,7 @@
         email: Boolean(data.email),
         receiver: String(data.receiver || ''),
         can_edit: Boolean(data.can_edit),
+        local: Boolean(data.local),
       };
       renderDataConsent();
     } catch {
@@ -1758,6 +1780,15 @@
       }
       case 'memory_updated': {
         renderMemoryState(msg.facts, msg.recent_messages_count);
+        break;
+      }
+      case 'notice': {
+        // A local model is slow: show the thinking state and the caption (the server also speaks it).
+        const slowCaption = window.LupinLocalMode ? window.LupinLocalMode.slowNoticeCaption(msg) : null;
+        if (slowCaption) {
+          applyFaceState('thinking');
+          setCaption(slowCaption);
+        }
         break;
       }
       case 'error': {
