@@ -226,6 +226,18 @@ def test_main_activity_kiosk_behaviour() -> None:
     # No API above 24 may be used without a SDK_INT guard (spot check of the known ones).
     assert source.count("VibrationEffect.createOneShot") == 1
 
+    # Reconnect must survive the onPageFinished fired for a failed main-frame load.
+    assert re.search(
+        r"onReceivedError\b.*?isForMainFrame\(\).*?mainFrameError\s*=\s*true;",
+        source,
+        flags=re.DOTALL,
+    )
+    assert re.search(
+        r"onPageFinished\b.*?&&\s*!mainFrameError\b",
+        source,
+        flags=re.DOTALL,
+    )
+
 
 def test_build_script_targets_min_sdk_24() -> None:
     script = (MANIFEST_PATH.parents[1] / "scripts" / "build_android_apk.py").read_text(

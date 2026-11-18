@@ -7,6 +7,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
@@ -90,6 +91,7 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingPermissionRequest = null;
     private int reconnectAttempt = 0;
     private boolean showingOfflinePage = false;
+    private boolean mainFrameError = false;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
 
@@ -445,6 +447,7 @@ public class MainActivity extends Activity {
             return;
         }
         currentUrl = cleanUrl;
+        mainFrameError = false;
         mainHandler.removeCallbacks(reconnectRunnable);
         webView.loadUrl(withStartPath(cleanUrl));
     }
@@ -721,9 +724,16 @@ public class MainActivity extends Activity {
 
     private class DeskWebViewClient extends WebViewClient {
         @Override
-        public void onPageFinished(WebView view, String url) {
-            // A real page (not our offline data page) loaded: reset the backoff.
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
             if (url != null && url.startsWith("http")) {
+                mainFrameError = false;
+            }
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            // A real page (not our offline data page) loaded without a main-frame error: reset the backoff.
+            if (url != null && url.startsWith("http") && !mainFrameError) {
                 showingOfflinePage = false;
                 reconnectAttempt = 0;
                 mainHandler.removeCallbacks(reconnectRunnable);
@@ -755,6 +765,7 @@ public class MainActivity extends Activity {
             if (request == null || !request.isForMainFrame()) {
                 return;
             }
+            mainFrameError = true;
             String failingUrl = request.getUrl() != null ? request.getUrl().toString() : currentUrl;
             if (DEFAULT_USB_URL.equals(currentUrl) && !fallbackAttempted) {
                 fallbackAttempted = true;
