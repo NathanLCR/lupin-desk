@@ -15,8 +15,6 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 | File or folder | Owner (agent / task) | Since |
 |---|---|---|
 | static/editor/ (new), app/panels/credentials.py (new), app/panels/templates.py, tests/test_panels.py (template asserts only), tests/test_panel_credentials.py, tests/test_panel_templates.py, tests/frontend/editor-*.test.cjs | lead-p03 / P03 | 2026-11-18 |
-| `app/search/` , `tests/test_search_*.py`, `docs/smart-search.md` | lead-06 / 06 | 2026-11-18 |
-| `app/speech_en.py`, `app/speech_pt_br.py`, `app/llm.py` (search additions only) | lead-06 / 06 | 2026-11-18 |
 | static/panel/widget-kit.js, widgets-info.js, widgets-productivity.js, widgets-timers.js, widgets.js (clock only), static/panel/index.html (script tags only), app/panels/everyday.py, tests/test_panels_everyday.py, tests/frontend/panel-everyday-*.test.cjs | lead-p07 / P07 | 2026-11-18 |
 | app/mac_control.py (add pomodoro_state() only) | lead-p07 / P07 | 2026-11-18 |
 
@@ -29,6 +27,7 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 
 ## Requests
 
+- 06 (lead-06): apply `.scratch/agents/patches/06-main.py.diff`, `06-app.js.diff`, `06-index.html.diff` (search route, files consent PUT/payload + toggle, register_search). Needed for the voice path and the Files consent switch.
 - P05: apply `.scratch/agents/patches/P05-main.py.diff` (register_eink(fastapi_app) after register_panels) so GET /eink is live. Kindle URL: `/eink?device=<id>` (optional layout, page, orientation, refresh minutes).
 - (all wave 1–3 patches applied: P01, P06, 05, P02, 12 and their fix-ups.)
 
