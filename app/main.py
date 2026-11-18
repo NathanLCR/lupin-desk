@@ -1292,6 +1292,7 @@ def create_app(
             emotion = "neutral"
             audio_queue: asyncio.Queue[str | None] | None = None
             audio_task: asyncio.Task[None] | None = None
+            slow_notice: SlowModelNotice | None = None
             # Reply on the Active Body (ADR 0001, addendum): if the asker is not the Active Body,
             # the voice, the Expression and the sentences also go to it, tagged with `from_body`.
             asker_name = str(body_info["body"] or "unknown")
@@ -1437,6 +1438,8 @@ def create_app(
                 await safe_send({"type": "state", "state": "error"})
                 await safe_send({"type": "error", "message": speech.FRIENDLY_LLM_ERROR})
             finally:
+                if slow_notice is not None:
+                    slow_notice.stop()
                 if audio_task is not None and not audio_task.done():
                     audio_task.cancel()
                     try:
