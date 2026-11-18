@@ -1,6 +1,6 @@
 # 05 - Tasks, notes and habits by voice
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -23,3 +23,10 @@ Inspired by Taby (focus and habits): Lupin helps capture tasks, notes and habits
 
 - Where does the data live, if Cowork is read-only?
 - Do habit reminders belong to this issue or to Presence?
+
+## Decisions (grill 2026-11-18)
+
+- Tasks, notes and habits live in the Brain's sqlite. Cowork stays read-only.
+- The same store backs the notes, checklist and habit widgets (panels P07): ticking on a Panel and asking Lupin by voice see the same items.
+- This issue owns habits and their schedules. A due habit emits a Signal (panels P06); Lupin mentions it under the "important only, respects focus" rule; the habit widget shows streaks.
+- Lupin confirms by voice what he recorded.

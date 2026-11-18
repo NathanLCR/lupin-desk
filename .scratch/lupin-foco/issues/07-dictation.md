@@ -1,6 +1,6 @@
 # 07 - Dictation
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -24,3 +24,10 @@ Inspired by Taby (dictation): the user speaks and the text appears in the focuse
 
 - Local or cloud recognition?
 - How to insert the text (Accessibility, paste, keystrokes)?
+
+## Decisions (grill 2026-11-18)
+
+- Recognition: local mlx-whisper (already in the Brain); audio never leaves the Mac.
+- Insertion: clipboard paste into the focused app, then the previous clipboard is restored.
+- Touch the Body to start and stop; Lupin shows a listening Expression.
+- This is the **baseline feature** for the workflow report: it is built twice, by the agent team and by a Sonnet-only run in its own worktree, and only one version is merged.

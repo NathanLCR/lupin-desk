@@ -1,6 +1,6 @@
 # 11 - Fully local mode
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -18,3 +18,11 @@ The market survey (`docs/market-research.md`) found that Taby works with Wi-Fi o
 - Which local STT and TTS keep Lupin's voice good enough?
 
 Comes after 03. Do not start without revisiting ADR 0001.
+
+## Decisions (grill 2026-11-18)
+
+- Built this push. Ollama becomes a provider in Settings. STT is already local (whisper).
+- Kokoro becomes Lupin's TTS everywhere (local and cloud modes), in pt-BR and English; macOS `say` stays as the fallback.
+- Ollama runs on the Mac, so it needs no Data Consent.
+- When a local model is slow, Lupin shows a thinking Expression and says so.
+- ADR 0002 revisits ADR 0001 for this issue; offline operation is possible, still not required.

@@ -1,6 +1,6 @@
 # Desk Assistant
 
-A desk companion, Lupin, whose Brain runs on the user's Mac and whose Body is a small screen standing on the desk; he can also act on the user's Mac and Cowork.
+Two pillars on one Brain running on the user's Mac: Lupin, a desk companion whose Body is a small screen standing on the desk and who can act on the user's Mac and Cowork; and Panels, old devices the user owns turned into desk panels of widgets (ADR 0002).
 
 ## Language
 
@@ -23,11 +23,30 @@ A physical device that shows Lupin, plays his sounds and senses the user (touch,
 _Avoid_: client, device, frontend (when the role is meant)
 
 **Active Body**:
-The one Body Lupin lives in right now: the ESP32 whenever it is connected, otherwise the RG406H. Lupin is never in two Bodies at once. The user can talk to Lupin from any device, but Lupin always answers in the Active Body; the device the user spoke from only shows the reply as text.
+The one Body Lupin lives in right now: the highest-ranked connected Body in the priority list the user sets on the Mac (by default the ESP32, then the RG406H). Lupin is never in two Bodies at once. The user can talk to Lupin from any device, but Lupin always answers in the Active Body; the device the user spoke from only shows the reply as text.
 
 **Dock**:
-A role a device plays: a control surface for the user's Mac (its Pinned Shortcuts and its open apps). The RG406H is the Dock and can also be a Body.
+A control surface for the user's Mac (its Pinned Shortcuts and its open apps), shown as a Dock page on a Panel. The RG406H is the Dock and can also be a Body.
 _Avoid_: Stream Deck, control panel
+
+**Panel**:
+A device role: a screen that shows the pages of its Layout (widgets) and sends actions by ID. Any old phone, tablet, iPad, laptop or Kindle can be a Panel; it decides nothing on its own.
+_Avoid_: dashboard, deck, client
+
+**Device Role**:
+What the user chose a connected device to be: Body, Panel, or Body + Panel. Chosen per device; a Body + Panel device shows Lupin as one of its pages.
+_Avoid_: mode, device type
+
+**Layout**:
+A named set of pages of widgets on a grid (12 × 6, with portrait and landscape variants), assigned to one or more devices. Edited in the Mac editor; a device can only arrange it (move, resize, add, remove widgets).
+_Avoid_: dashboard, theme, template (a template is a starting Layout)
+
+**Widget**:
+One tile on a Layout page that shows a data source or offers controls (clock, Mac stats, Claude Code sessions, now playing, notes…). Its settings and credentials live on the Mac.
+_Avoid_: card, tile, component
+
+**E-ink Mode**:
+How a Panel runs on an e-ink device such as the Kindle: black and white, rendered on the Brain, no animation, refreshed every few minutes over HTTP.
 
 ### Lupin's inner life
 
@@ -48,8 +67,16 @@ The part of Mood that measures how awake and lively Lupin is.
 ### What Lupin can do
 
 **Action**:
-Anything Lupin asks the Desk Assistant to perform on its behalf during a conversation: a Trick, a Shortcut, a Cowork Task, a Pomodoro start/stop.
+Anything Lupin asks the Desk Assistant to perform on its behalf during a conversation: a Trick, a Shortcut, a Cowork Task, a Pomodoro start/stop, a tool on an external MCP server.
 _Avoid_: tool call, command
+
+**Agent Request**:
+Something an outside agent (Claude Code, another MCP client on the Mac) asks Lupin to do through Lupin's local MCP server: say a sentence, show an Expression, read Today, post a Signal. Each carries a risk level; nothing runs outside the existing whitelists. The opposite direction of an Action.
+_Avoid_: Action (when an outside agent is the one asking), command
+
+**Signal**:
+An event a data source emits that Lupin may react to (Claude Code needs the user, CI failed, a timer ended, a habit is due, a meeting is soon). Lupin reacts with an Expression; he speaks up unprompted only for important Signals, and stays quiet during a Pomodoro except when Claude Code needs the user.
+_Avoid_: notification, alert, event (when this is meant)
 
 **Skill**:
 A behaviour pack the user switches on to shape how Lupin thinks and talks (e.g. focus coach, coding buddy). A Skill is not an Action.
@@ -82,7 +109,7 @@ The daily summary of the user's day, built from Cowork, the calendar and the inb
 _Avoid_: briefing, digest
 
 **Data Consent**:
-The user's permission, given on the Mac, for one named LLM provider to see their calendar or their email (one permission for each). It lapses by itself when the provider changes. Without it, calendar and email never leave the Mac.
+The user's permission, given on the Mac, for one named LLM provider to see their calendar, their email or the contents of their files (one permission for each). It lapses by itself when the provider changes. Without it, calendar, email and file contents never leave the Mac. A local provider (Ollama) runs on the Mac and needs none.
 _Avoid_: privacy setting, sharing
 
 **First Wake**:
@@ -100,7 +127,7 @@ _Avoid_: Jarvis Clipboard
 ### Surfaces
 
 **Mode**:
-One of the two full-screen layouts the user switches between on a device that is both Body and Dock: Pet (Lupin, with a quiet clock, Pomodoro and Now Playing around him) and Dock. The user switches with `L1`/`R1` or a swipe. A device that is only a Dock, because Lupin is in another Active Body, has no Pet Mode.
+One of the two full-screen layouts the user switches between on a device that is both Body and Dock: Pet (Lupin, with a quiet clock, Pomodoro and Now Playing around him) and Dock. The user switches with `L1`/`R1` or a swipe. A device that is only a Dock, because Lupin is in another Active Body, has no Pet Mode. On a device with a Layout, the Modes are its pages: the Pet page (if it is a Body) and the Layout's pages.
 _Avoid_: screen, tab, view, Ambient Display
 
 **Settings**:

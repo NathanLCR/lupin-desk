@@ -1,6 +1,6 @@
 # 06 - Smart search
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -23,3 +23,10 @@ Inspired by Taby (smart search): the user asks by voice and Lupin finds things o
 
 - Which sources come first?
 - Local indexing or on-demand lookup?
+
+## Decisions (grill 2026-11-18)
+
+- Sources: the notes/tasks store (05), Lupin's memory, Cowork state files (read-only), and Mac files through Spotlight (`mdfind`, whitelisted folders, read-only). No web search.
+- On-demand lookup at question time; no index of our own.
+- File contents reach the LLM only with a new third Data Consent (files). Without it, Lupin answers with file names and paths only.
+- Answers don't claim what the sources don't contain.

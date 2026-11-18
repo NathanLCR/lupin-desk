@@ -1,6 +1,6 @@
 # 04 - Presence
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -27,3 +27,13 @@ Presence is Lupin being on the desk while the user works, reacting to what happe
 
 - What is the default break interval, and how does the user adjust it?
 - What counts as "continuous work" (keyboard activity, active app)?
+
+## Decisions (grill 2026-11-18)
+
+- Continuous work = the Mac's keyboard/mouse input within the last 5 minutes, read from HIDIdleTime (`ioreg`, added to the whitelist). A break = 5+ minutes idle. No app logging.
+- Break reminder after 50 minutes of continuous work by default; adjustable in Settings and by voice ("remind me every hour"). A touch snoozes 10 minutes. At most one reminder per 20 minutes. Muted during a Pomodoro.
+- Time of day drives Energy: sleepy late at night, brighter in the morning.
+- Touch/petting raises Affinity with a happy Expression; voice reactions through the normal turn.
+- Now Playing's tempo/genre nudges tone (calmer/livelier), never triggers speech.
+- Break reminders go through Signals (panels P06).
+- The "1 week of real use" criterion is replaced by the spec-then-code gate (ADR 0002); daily use is checked after.

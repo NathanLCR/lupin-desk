@@ -1,6 +1,6 @@
 # 12 - Lupin as an MCP server
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Context
 
@@ -18,3 +18,10 @@ The Autonomous Lamp and xiaozhi-esp32 plug into the agent ecosystem through MCP 
 - Is it an Action, or a new concept for the glossary?
 
 Comes after the ESP32 port.
+
+## Decisions (grill 2026-11-18)
+
+- Both directions.
+- Expose: the Brain serves a local MCP server so agents on the Mac (Claude Code…) can make Lupin say a sentence, show an Expression, read Today and post a Signal. These are **Agent Requests** (new glossary term), each with a risk level; nothing runs outside the existing whitelists.
+- Consume: the user adds external MCP servers in the Mac Settings. Calling their tools is an Action. Each tool gets a risk level (read, write, external) like Cowork Tasks; anything beyond read needs the user's approval on the Active Body or the Mac. Tool results are data, never instructions.
+- No longer waits for the ESP32 port.
