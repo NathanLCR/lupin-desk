@@ -148,13 +148,6 @@ end tell
 _STATUS_CACHE_TTL_SECONDS = 3.0
 _WEATHER_CACHE_TTL_SECONDS = 900.0
 
-# Clipboard paste (dictation): absolute binaries only, text travels through stdin.
-_PBPASTE_BIN = "/usr/bin/pbpaste"
-_PBCOPY_BIN = "/usr/bin/pbcopy"
-_PASTE_MAX_CHARS = 20000
-# Time the target app gets to read the clipboard before the previous one is restored.
-_PASTE_SETTLE_SECONDS = 0.15
-
 
 # Today's calendar (read-only): one line per event with
 # "seconds since midnight<TAB>true/false (all day)<TAB>title".
@@ -303,7 +296,7 @@ class MacController:
 
     @staticmethod
     def _default_runner(
-        argv: list[str], timeout: float = 5.0, input_text: str | None = None
+        argv: list[str], timeout: float = 5.0
     ) -> subprocess.CompletedProcess[str]:
         """Run an external process without a shell (`shell=False`) and with a timeout."""
         return subprocess.run(
@@ -312,18 +305,15 @@ class MacController:
             capture_output=True,
             text=True,
             timeout=timeout,
-            input=input_text,
         )
 
     def _run_cmd(
-        self, argv: list[str], timeout: float = 5.0, input_text: str | None = None
+        self, argv: list[str], timeout: float = 5.0
     ) -> subprocess.CompletedProcess[str]:
         """Dispatch execution to the default runner or a mock injected in tests."""
         try:
             if self._custom_runner is None:
-                if input_text is None:
-                    return self._default_runner(argv, timeout=timeout)
-                return self._default_runner(argv, timeout=timeout, input_text=input_text)
+                return self._default_runner(argv, timeout=timeout)
 
             try:
                 sig = inspect.signature(self._custom_runner)
@@ -331,20 +321,12 @@ class MacController:
                     p.kind == inspect.Parameter.VAR_KEYWORD
                     for p in sig.parameters.values()
                 )
-                accepts_input = "input_text" in sig.parameters or any(
-                    p.kind == inspect.Parameter.VAR_KEYWORD
-                    for p in sig.parameters.values()
-                )
             except (TypeError, ValueError):
                 accepts_timeout = False
-                accepts_input = False
 
-            kwargs: dict[str, Any] = {}
             if accepts_timeout:
-                kwargs["timeout"] = timeout
-            if input_text is not None and accepts_input:
-                kwargs["input_text"] = input_text
-            return self._custom_runner(argv, **kwargs)
+                return self._custom_runner(argv, timeout=timeout)
+            return self._custom_runner(argv)
         except subprocess.TimeoutExpired:
             return subprocess.CompletedProcess(
                 args=argv,
@@ -540,45 +522,6 @@ class MacController:
             "needs_accessibility": False,
             "keys": normalized_spec,
             "error": stderr or "Failed to send the keyboard shortcut.",
-        }
-
-    def paste_text(self, text: str) -> dict[str, Any]:
-        """Insert text into the focused app via clipboard paste, then restore the previous clipboard.
-
-        The text is passed to `pbcopy` through stdin, never through argv or a shell.
-        The text is never included in returned errors.
-        """
-        if not isinstance(text, str) or not text.strip():
-            return {"ok": False, "error": "Nothing to paste."}
-        if len(text) > _PASTE_MAX_CHARS:
-            return {"ok": False, "error": "Text too long to paste."}
-
-        previous_proc = self._run_cmd([_PBPASTE_BIN], timeout=3.0)
-        previous: str | None = (
-            (previous_proc.stdout or "") if previous_proc.returncode == 0 else None
-        )
-
-        copy_proc = self._run_cmd([_PBCOPY_BIN], timeout=3.0, input_text=text)
-        if copy_proc.returncode != 0:
-            return {
-                "ok": False,
-                "error": (copy_proc.stderr or "").strip() or "Could not set the clipboard.",
-            }
-
-        try:
-            keystroke = self.execute_keystroke("cmd+v")
-            time.sleep(_PASTE_SETTLE_SECONDS)
-        finally:
-            # Always restore the previous clipboard, even when the keystroke failed.
-            if previous is not None:
-                self._run_cmd([_PBCOPY_BIN], timeout=3.0, input_text=previous)
-
-        if keystroke.get("ok"):
-            return {"ok": True, "chars": len(text)}
-        return {
-            "ok": False,
-            "needs_accessibility": bool(keystroke.get("needs_accessibility", False)),
-            "error": keystroke.get("error") or "Could not paste the text.",
         }
 
     def _has_spotify(self) -> bool:
