@@ -64,14 +64,16 @@ One row per finished task. Fill it from the agent's task-notification usage bloc
 | P04 shell, boot receiver, tests (lead did it directly, no coder) | P04 | nested | sonnet | 100,533 | 14 | 2m44s | pass, +3 tests | 0 | no Haiku spawned: change was one Java file + small tests |
 | eink.py render module | P05 | nested | haiku | 96,396 | 5 | 1m10s | pass | 0 | 7 widget renderers + render_page |
 | test_panels_eink.py | P05 | nested | haiku | 81,791 | 8 | 1m15s | pass, +17 tests | 0 | |
-| lead P05 | P05 | nested | sonnet | ? | ? | ? | py 665 pass; +4 wiring tests | 0 | route written by lead |
+| lead P05 | P05 | nested | sonnet | 116,888 | 22 | 4m16s | py 665 pass; +4 wiring tests | 0 | route written by lead |
 | 06 files search | 06 | nested | haiku | 90,437 | 10 | 1m02s | pass, +19 tests | 0 | mdfind argv, roots whitelist |
 | 06 sources+consent | 06 | nested | haiku | 93,553 | 8 | 0m46s | pass, +23 tests | 0 | FilesConsent third consent |
 | 06 orchestrator module | 06 | nested | haiku | 95,225 | 11 | 0m57s | pass, +15 tests | 0 | SmartSearch, docs |
-| 06 lead | 06 | nested | sonnet | ? | ? | ? | py 738/1 other-agent fail; fe 423/1 known | 0 | patches 06-* pending |
+| 06 lead | 06 | nested | sonnet | 123,802 | 23 | 6m23s | py 738/1 other-agent fail; fe 423/1 known | 0 | patches 06-* pending |
 | backend everyday service | P07 | nested | haiku | 112,157 | 13 | 4m55s | pass, +35 py | 0 | |
 | clock upgrade | P07 | nested | haiku | 112,659 | 13 | 2m00s | pass, +9 fe | 0 | |
 | info widgets | P07 | nested | haiku | 120,266 | 11 | 2m19s | pass, +22 fe | 0 | |
 | productivity widgets | P07 | nested | haiku | 123,767 | 9 | 2m38s | pass, +17 fe | 0 | |
 | timers widgets | P07 | nested | haiku | 124,271 | 9 | 2m38s | pass, +14 fe | 0 | |
-| P07 lead | P07 | nested | sonnet | ? | ? | ? | py 739, fe 440/1 known | 0 | |
+| P07 lead | P07 | nested | sonnet | 143,129 | 28 | 8m27s | py 739, fe 440/1 known | 0 | |
+| reviewer P04 | P04 | nested | sonnet | 90,200 | 5 | 2m42s | CHANGES REQUESTED, 1 blocking (onPageFinished cancels reconnect) | 0 | fix-up not sent: user stopped the push |
+| lead P03 (stopped) | P03 | nested | sonnet | ? | ? | ? | unfinished, uncommitted | — | stopped by the orchestrator when the user ended the push |
