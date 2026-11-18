@@ -9,6 +9,7 @@ that are not hidden, secret or dependency folders.
 from __future__ import annotations
 
 import subprocess
+import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -21,14 +22,21 @@ TEXT_EXTENSIONS = frozenset(
      ".log", ".py", ".js", ".html", ".tex"}
 )
 EXCLUDED_DIR_NAMES = frozenset({"node_modules", "Library", "certs"})
+_EXCLUDED_DIR_LOWER = frozenset(name.lower() for name in EXCLUDED_DIR_NAMES)
 EXCLUDED_SUFFIXES = (".pem", ".key", ".p12")
 
 Runner = Callable[..., "subprocess.CompletedProcess[str]"]
 
 
+def _fold(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
 def sanitize_query(query: str) -> str:
     """Keep only letters, digits and single spaces; cap the length."""
-    kept = "".join(ch for ch in query if ch == " " or ch.isalnum())
+    normalized = unicodedata.normalize("NFC", query)
+    kept = "".join(ch for ch in normalized if ch == " " or ch.isalnum())
     return " ".join(kept.split())[:MAX_QUERY_CHARS].strip()
 
 
@@ -37,7 +45,7 @@ def _is_excluded(parts: Sequence[str]) -> bool:
         # Covers hidden entries, including every ".env*" file name.
         if part.startswith("."):
             return True
-        if part in EXCLUDED_DIR_NAMES:
+        if part.lower() in _EXCLUDED_DIR_LOWER:
             return True
     return parts[-1].lower().endswith(EXCLUDED_SUFFIXES)
 
@@ -95,7 +103,7 @@ class FileSearch:
                     timeout=self._timeout,
                     check=False,
                 )
-            except (subprocess.TimeoutExpired, OSError):
+            except (subprocess.TimeoutExpired, OSError, UnicodeDecodeError):
                 continue
             if completed.returncode != 0:
                 continue
@@ -131,7 +139,7 @@ class FileSearch:
     def snippet(self, path: str, query: str) -> str | None:
         """Return the first line matching any query word, or None."""
         try:
-            words = [word.lower() for word in sanitize_query(query).split()]
+            words = [_fold(word) for word in sanitize_query(query).split() if _fold(word)]
             if not words:
                 return None
             candidate = Path(path).expanduser().resolve()
@@ -144,7 +152,9 @@ class FileSearch:
                 return None
             text = candidate.read_text(encoding="utf-8", errors="ignore")
             for line in text.splitlines():
-                lowered = line.lower()
+                if "\x00" in line:
+                    continue
+                lowered = _fold(line)
                 if any(word in lowered for word in words):
                     return line.strip()[:MAX_SNIPPET_CHARS]
             return None
