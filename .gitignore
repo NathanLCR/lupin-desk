@@ -13,8 +13,10 @@ android/build/
 electron/node_modules/
 electron/dist/
 build/
+*.egg-info/
 custom/
-.claude/worktrees/
+.claude/
+* 2.*
 *.db
 *.db-shm
 *.db-wal
@@ -23,3 +25,6 @@ custom/
 .scratch/research/
 .scratch/reviews/
 .scratch/agents/antigravity-handoff.md
+
+# agent scratch notes (local only)
+.scratch/
