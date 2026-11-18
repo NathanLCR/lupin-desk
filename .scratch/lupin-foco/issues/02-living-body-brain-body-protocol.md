@@ -4,7 +4,7 @@ Status: done, in daily use (1-week check pending)
 
 ## Context
 
-Feature 1 in the queue. The main Body will be an ESP32-S3 JC4832W535 (3.5" 480x320, touch, Arduino + LVGL) once it arrives; then it becomes the Active Body and the RG406H becomes Dock (and a Body when the ESP32 is off). So that porting is only a matter of writing firmware, the RG406H web Body must talk to the Brain exclusively through the protocol the ESP32 will use (ADR 0001).
+Feature 1 in the queue. The main Body will be an ESP32-S3 Guition JC3248W535 (3.5" 480x320, touch, Arduino + LVGL) once it arrives; then it becomes the Active Body and the RG406H becomes Dock (and a Body when the ESP32 is off). So that porting is only a matter of writing firmware, the RG406H web Body must talk to the Brain exclusively through the protocol the ESP32 will use (ADR 0001).
 
 ## Scope
 
