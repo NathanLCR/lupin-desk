@@ -302,7 +302,7 @@ def build_apk(
             "--java",
             str(gen_dir),
             "--min-sdk-version",
-            "26",
+            "24",
             "--target-sdk-version",
             "34",
             "--auto-add-overlay",
@@ -342,7 +342,7 @@ def build_apk(
         [
             str(resolved.d8_bin),
             "--min-api",
-            "26",
+            "24",
             "--lib",
             str(resolved.android_jar),
             "--output",

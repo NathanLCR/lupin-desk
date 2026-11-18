@@ -58,7 +58,7 @@ def test_android_manifest_structure() -> None:
 
     uses_sdk = root.find("uses-sdk")
     assert uses_sdk is not None
-    assert uses_sdk.attrib[f"{ANDROID_NS}minSdkVersion"] == "26"
+    assert uses_sdk.attrib[f"{ANDROID_NS}minSdkVersion"] == "24"
     assert uses_sdk.attrib[f"{ANDROID_NS}targetSdkVersion"] == "34"
 
     perms = {el.attrib[f"{ANDROID_NS}name"] for el in root.findall("uses-permission")}
@@ -69,6 +69,7 @@ def test_android_manifest_structure() -> None:
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.VIBRATE",
         "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
     }
 
     features = {
@@ -187,6 +188,51 @@ def test_main_activity_requirements_and_ssl_guard() -> None:
     assert "handler.cancel();" in ssl_block
     # Never allows `handler.proceed()` outside a strict conditional
     assert source.count("handler.proceed()") == 1
+
+
+def test_boot_receiver_is_declared_and_opt_in() -> None:
+    """Start on boot / USB power is declared in the manifest and gated by a preference."""
+    root = ET.parse(MANIFEST_PATH).getroot()
+    receiver = root.find("application").find("receiver")
+    assert receiver is not None
+    assert receiver.attrib[f"{ANDROID_NS}name"] == ".BootReceiver"
+    actions = {el.attrib[f"{ANDROID_NS}name"] for el in receiver.iter("action")}
+    assert actions == {
+        "android.intent.action.BOOT_COMPLETED",
+        "android.intent.action.ACTION_POWER_CONNECTED",
+    }
+    source = (MAIN_ACTIVITY_PATH.parent / "BootReceiver.java").read_text(encoding="utf-8")
+    assert "KEY_START_ON_BOOT" in source
+    assert "getBoolean(MainActivity.KEY_START_ON_BOOT, false)" in source
+    assert "getRuntime" not in source and "exec(" not in source
+
+
+def test_main_activity_kiosk_behaviour() -> None:
+    """Reconnect backoff, first-run address, old-Android guards and Panel page option."""
+    source = MAIN_ACTIVITY_PATH.read_text(encoding="utf-8")
+    for token in (
+        "scheduleReconnect()",
+        "RECONNECT_MAX_MS",
+        "registerDefaultNetworkCallback",
+        "showFirstRunDialog()",
+        "normalizeServerUrl(",
+        "KEY_OPEN_PANEL_PAGE",
+        '"/panel"',
+        "FLAG_KEEP_SCREEN_ON",
+    ):
+        assert token in source, f"Missing kiosk element: {token}"
+    # VibrationEffect is API 26; the shell now supports API 24.
+    assert re.search(r"SDK_INT >= 26\)\s*\{\s*vibrator\.vibrate\(\s*VibrationEffect", source)
+    # No API above 24 may be used without a SDK_INT guard (spot check of the known ones).
+    assert source.count("VibrationEffect.createOneShot") == 1
+
+
+def test_build_script_targets_min_sdk_24() -> None:
+    script = (MANIFEST_PATH.parents[1] / "scripts" / "build_android_apk.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"26"' not in script
+    assert script.count('"24"') == 2
 
 
 def test_build_script_uses_no_shell_true_and_discovers_mocked_toolchain(
