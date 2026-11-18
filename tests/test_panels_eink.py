@@ -257,7 +257,16 @@ def test_page_id_selects_second_page_and_unknown_falls_back_to_first() -> None:
 
 
 def test_widget_types_on_page_returns_only_eink_types() -> None:
-    assert EINK_WIDGET_TYPES == {"clock", "today", "calendar", "weather", "notes", "tasks", "lupin_line"}
+    assert EINK_WIDGET_TYPES == {
+        "clock",
+        "today",
+        "calendar",
+        "weather",
+        "notes",
+        "tasks",
+        "checklist",
+        "lupin_line",
+    }
     page = {
         "id": "home",
         "title": "Home",
@@ -265,8 +274,31 @@ def test_widget_types_on_page_returns_only_eink_types() -> None:
             _widget("c", "clock"),
             _widget("p", "placeholder"),
             _widget("k", "tasks"),
+            _widget("cl", "checklist"),
         ],
         "portrait": [_widget("w", "weather")],
     }
-    assert widget_types_on_page(page, "landscape") == {"clock", "tasks"}
+    assert widget_types_on_page(page, "landscape") == {"clock", "tasks", "checklist"}
     assert widget_types_on_page(page, "portrait") == {"weather"}
+
+
+def test_checklist_renders_open_tasks_and_corrupt_inputs_stay_safe() -> None:
+    tasks = [{"id": "1", "title": "Call Alex", "done": False}]
+    html = render_widget(_widget("cl", "checklist"), _data(tasks=tasks))
+    assert html is not None
+    assert "Call Alex" in html
+
+    bad_cal = render_widget(_widget("cal", "calendar"), _data(calendar="corrupt"))
+    assert bad_cal is not None and "unavailable" in bad_cal
+
+    nan_weather = render_widget(
+        _widget("w", "weather"),
+        _data(weather={"ok": True, "city": "Lisbon", "temperature_c": float("nan"), "apparent_c": float("inf")}),
+    )
+    assert nan_weather is not None and "--" in nan_weather
+
+    limited_cal = render_widget(
+        _widget("cal", "calendar", config={"max": 1}),
+        _data(calendar=[{"start": "09:00", "title": "First"}, {"start": "10:00", "title": "Second"}]),
+    )
+    assert limited_cal is not None and "First" in limited_cal and "Second" not in limited_cal

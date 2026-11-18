@@ -78,3 +78,74 @@ def test_eink_does_not_touch_the_calendar_without_a_calendar_widget(tmp_path) ->
     app, client = _client(tmp_path)
     client.get("/eink")
     assert app.state.mac.calendar_calls == 0
+
+
+def test_eink_supports_checklist_widget_and_handles_corrupt_pages_and_missing_layouts(tmp_path) -> None:
+    app, client = _client(tmp_path)
+    layout = app.state.layouts.create("Checklist", "starter")
+    layout["pages"][0]["portrait"] = [
+        {"id": "cl", "type": "checklist", "x": 0, "y": 0, "w": 6, "h": 4, "config": {}},
+    ]
+    app.state.layouts.save(layout["id"], layout)
+    res = client.get(f"/eink?layout={layout['id']}&orientation=portrait")
+    assert res.status_code == 200
+    assert "Buy milk" in res.text
+
+    # Corrupt pages: None and missing id on a second page do not crash or mismatch page selection.
+    class _CorruptLayouts:
+        def get(self, layout_id: str):
+            if layout_id == "none-pages":
+                return {"id": "none-pages", "name": "Bad", "pages": None}
+            if layout_id == "missing-id":
+                return {
+                    "id": "missing-id",
+                    "name": "Missing",
+                    "pages": [
+                        {"id": "p1", "title": "One", "portrait": [{"id": "c", "type": "clock", "x": 0, "y": 0, "w": 6, "h": 4, "config": {}}]},
+                        {"title": "Two", "portrait": [{"id": "cl", "type": "checklist", "x": 0, "y": 0, "w": 6, "h": 4, "config": {}}]},
+                    ],
+                }
+            return None
+
+    app.state.layouts = _CorruptLayouts()
+    assert client.get("/eink?layout=none-pages").status_code == 200
+    missing_res = client.get("/eink?layout=missing-id")
+    assert missing_res.status_code == 200
+    assert "Buy milk" not in missing_res.text
+
+    app.state.layouts = None
+    assert client.get("/eink").status_code == 503
+
+
+def test_eink_device_refresh_url_and_page_rotation(tmp_path) -> None:
+    app, client = _client(tmp_path)
+    layout = app.state.layouts.create("Multi", "starter")
+    layout["pages"] = [
+        {"id": "p1", "title": "First", "landscape": [], "portrait": [{"id": "c", "type": "clock", "x": 0, "y": 0, "w": 6, "h": 4, "config": {}}]},
+        {"id": "p2", "title": "Second", "landscape": [], "portrait": [{"id": "cl", "type": "checklist", "x": 0, "y": 0, "w": 6, "h": 4, "config": {}}]},
+    ]
+    saved = app.state.layouts.save(layout["id"], layout)
+
+    touched: list[str] = []
+
+    class _Devices:
+        def get(self, device_id: str):
+            return {"id": device_id, "layout_id": saved["id"], "screen": {"orientation": "portrait"}}
+
+        def touch(self, device_id: str):
+            touched.append(device_id)
+
+    app.state.device_store = _Devices()
+    res = client.get("/eink?device=kindle-1")
+    assert res.status_code == 200
+    assert touched == ["kindle-1"]
+    assert "device=kindle-1" in res.text
+    assert "page=p2" in res.text
+    # Do not pin layout= or orientation= in refresh URL when inferred from device record.
+    assert "layout=" not in res.text
+    assert "orientation=" not in res.text
+
+    res2 = client.get("/eink?device=kindle-1&page=p2")
+    assert res2.status_code == 200
+    assert "Buy milk" in res2.text
+    assert "page=p1" in res2.text
