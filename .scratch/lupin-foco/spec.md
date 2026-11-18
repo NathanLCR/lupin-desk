@@ -25,7 +25,7 @@ Direction (ADR 0001): Lupin is the product. Mac control, Cowork, Shortcuts and a
 | 09 | Dock redesign | done (RG406H test pending) |
 | 10 | Lupin's look: layered husky | first art delivered |
 | 11 | Fully local mode | done (Kokoro install and live voice check pending) |
-| 12 | Lupin as an MCP server | in-progress |
+| 12 | Lupin as an MCP server | done (real Claude Code registration and an external server pending) |
 | 13 | Showcase: README, video and opening the repo | needs-triage |
 | 14 | Translate the project to English | done |
 | 15 | Lupin's language setting | done (RG406H test pending) |
