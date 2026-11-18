@@ -50,6 +50,7 @@ def persona_prompt(emotions_list: str) -> str:
         "   - [action:note:add:<texto>] ou [action:note:list] para notas\n"
         "   - [action:habit:add:<nome>@HH:MM] (o horário @HH:MM é opcional), "
         "[action:habit:check:<nome>] ou [action:habit:list] para hábitos\n"
+        "   - [action:search:<o que procurar>] quando o usuário pedir para achar algo nas tarefas, notas, memória, Cowork ou arquivos do Mac (somente leitura)\n"
         "   Use estas tags quando o usuário pedir para criar ou consultar tarefas, notas ou hábitos. "
         "A confirmação do Lupin é falada automaticamente a partir do resultado, então o seu texto "
         "deve ser apenas uma introdução muito curta (ou nada) e NÃO deve repetir o conteúdo.\n"
@@ -455,3 +456,38 @@ def voice_action_failed() -> str:
 
 def habit_due_line(name: str) -> str:
     return f"Hora do seu hábito: {name}."
+
+
+# ---------------------------------------------------------------------------
+# Busca inteligente (issue 06)
+# ---------------------------------------------------------------------------
+
+_SEARCH_SOURCE_PT = {
+    "tasks": "tarefa",
+    "notes": "nota",
+    "memory": "memória",
+    "cowork": "Cowork",
+    "files": "arquivo",
+}
+
+
+def search_nothing(query: str) -> str:
+    return f"Não achei nada sobre {query} nas suas tarefas, notas, memória, Cowork ou arquivos."
+
+
+def search_found(items: list[tuple[str, str]], total: int) -> str:
+    """Fala os primeiros resultados como pares (fonte, título); `total` é a contagem completa."""
+    parts = [f"{_SEARCH_SOURCE_PT.get(source, source)}: {title}" for source, title in items]
+    if total == 1:
+        return f"Achei 1 resultado. {parts[0]}."
+    if total > len(items):
+        return f"Achei {total} resultados. Os primeiros {len(items)} são: {join_items(parts)}."
+    return f"Achei {total} resultados: {join_items(parts)}."
+
+
+def search_snippet(name: str, snippet: str) -> str:
+    return f"No arquivo {name} diz: {snippet}"
+
+
+def search_files_names_only() -> str:
+    return "Só olhei os nomes dos arquivos, porque você não me deixou ler o conteúdo deles."

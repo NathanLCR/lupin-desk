@@ -44,6 +44,7 @@ def persona_prompt(emotions_list: str) -> str:
         "   - [action:note:add:<text>] or [action:note:list] for notes\n"
         "   - [action:habit:add:<name>@HH:MM] (the @HH:MM time is optional), "
         "[action:habit:check:<name>] or [action:habit:list] for habits\n"
+        "   - [action:search:<what to look for>] when the user asks to find something in their tasks, notes, memory, Cowork or Mac files (read-only)\n"
         "   Use these when the user asks to create or query tasks, notes or habits. Lupin's "
         "confirmation is spoken automatically from the result, so your own text must be only a "
         "very short lead-in (or nothing) and must NOT repeat the content.\n"
@@ -449,3 +450,38 @@ def voice_action_failed() -> str:
 
 def habit_due_line(name: str) -> str:
     return f"Time for your habit: {name}."
+
+
+# ---------------------------------------------------------------------------
+# Smart search (issue 06)
+# ---------------------------------------------------------------------------
+
+_SEARCH_SOURCE_EN = {
+    "tasks": "task",
+    "notes": "note",
+    "memory": "memory",
+    "cowork": "Cowork",
+    "files": "file",
+}
+
+
+def search_nothing(query: str) -> str:
+    return f"I found nothing about {query} in your tasks, notes, memory, Cowork or files."
+
+
+def search_found(items: list[tuple[str, str]], total: int) -> str:
+    """Speak the first hits as (source, title) pairs; `total` is the full hit count."""
+    parts = [f"{_SEARCH_SOURCE_EN.get(source, source)}: {title}" for source, title in items]
+    if total == 1:
+        return f"I found 1 match. {parts[0]}."
+    if total > len(items):
+        return f"I found {total} matches. The first {len(items)} are: {join_items(parts)}."
+    return f"I found {total} matches: {join_items(parts)}."
+
+
+def search_snippet(name: str, snippet: str) -> str:
+    return f"In the file {name} it says: {snippet}"
+
+
+def search_files_names_only() -> str:
+    return "I only looked at file names, because you haven't allowed me to read file contents."
