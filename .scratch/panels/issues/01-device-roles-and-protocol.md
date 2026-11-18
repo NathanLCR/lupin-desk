@@ -1,6 +1,6 @@
 # P01 - Device Roles and protocol extension
 
-Status: ready-for-agent
+Status: done (live on the Mac browser 2026-11-18; RG406H test pending)
 
 ## Context
 

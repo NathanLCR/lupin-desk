@@ -23,12 +23,12 @@ Target devices: RG406H (Android 13), Moto G5 (Android 7), an iPad and an old iPh
 
 | # | Issue | Depends on | Status |
 |---|-------|-----------|--------|
-| P01 | Device Roles and protocol extension | — | ready-for-agent |
-| P02 | Panel web runtime, Layouts and widget framework | P01 | ready-for-agent |
+| P01 | Device Roles and protocol extension | — | done (RG406H test pending) |
+| P02 | Panel web runtime, Layouts and widget framework | P01 | in-progress |
 | P03 | Mac Layout editor | P02 | ready-for-agent |
 | P04 | Android kiosk shell for old devices | P01 | ready-for-agent |
 | P05 | E-ink Mode (Kindle) | P02 | ready-for-agent |
-| P06 | Signals | P01 | ready-for-agent |
+| P06 | Signals | P01 | in-progress (approved, follow-ups) |
 | P07 | Widgets: Everyday | P02, P06 | ready-for-agent |
 | P08 | Widgets: Mac monitoring | P02 | ready-for-agent |
 | P09 | Widgets: AI coding | P02, P06 | ready-for-agent |

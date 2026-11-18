@@ -1,6 +1,6 @@
 # P06 - Signals
 
-Status: ready-for-agent
+Status: in-progress (approved; review follow-ups being fixed)
 Blocked by: P01
 
 ## Scope

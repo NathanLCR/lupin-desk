@@ -18,14 +18,14 @@ Direction (ADR 0001): Lupin is the product. Mac control, Cowork, Shortcuts and a
 | 02 | Living Body: Brain-Body protocol | done, in daily use |
 | 03 | Morning: First Wake | done, in daily use |
 | 04 | Presence | ready-for-agent |
-| 05 | Tasks, notes and habits by voice | ready-for-agent |
+| 05 | Tasks, notes and habits by voice | in-progress |
 | 06 | Smart search | ready-for-agent |
-| 07 | Dictation | ready-for-agent |
+| 07 | Dictation | done (real-app paste and daily use pending) |
 | 08 | Image editor | ready-for-agent |
 | 09 | Dock redesign | done (RG406H test pending) |
 | 10 | Lupin's look: layered husky | first art delivered |
-| 11 | Fully local mode | ready-for-agent |
-| 12 | Lupin as an MCP server | ready-for-agent |
+| 11 | Fully local mode | done (Kokoro install and live voice check pending) |
+| 12 | Lupin as an MCP server | in-progress |
 | 13 | Showcase: README, video and opening the repo | needs-triage |
 | 14 | Translate the project to English | done |
 | 15 | Lupin's language setting | done (RG406H test pending) |

@@ -1,6 +1,6 @@
 # 11 - Fully local mode
 
-Status: ready-for-agent
+Status: done (Kokoro install and live voice check pending)
 
 ## Context
 
