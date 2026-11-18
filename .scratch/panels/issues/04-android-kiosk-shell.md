@@ -1,6 +1,6 @@
 # P04 - Android kiosk shell for old devices
 
-Status: done (device test pending)
+Status: done (RG406H verified 2026-11-18; Moto G5 and boot/USB trigger test pending)
 Blocked by: P01
 
 ## Scope

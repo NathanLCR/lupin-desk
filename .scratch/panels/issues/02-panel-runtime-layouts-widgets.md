@@ -1,6 +1,6 @@
 # P02 - Panel web runtime, Layouts and widget framework
 
-Status: done (device test pending)
+Status: done (RG406H verified 2026-11-18; Moto G5, iPad, physical L1/R1, rotation and on-device arrange test pending)
 Blocked by: P01
 
 ## Scope

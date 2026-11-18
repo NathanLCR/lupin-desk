@@ -1,6 +1,6 @@
 # P07 - Widgets: Everyday
 
-Status: done (device test pending)
+Status: done (RG406H render verified 2026-11-18 — follow-up UI note: form/button styling appears unstyled on WebView and narrow 3x3 notes tile clips the Add button; iPad and voice cross-check pending)
 Blocked by: P02, P06
 
 ## Scope
