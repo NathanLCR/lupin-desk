@@ -309,7 +309,7 @@ function makeHarness({ fetch: fetchStub, navigator: navigatorStub, speech = true
       initGamepad, moveGamepadFocus, activateGamepadFocused, getNavigableTiles,
       renderShortcutsGrid, runShortcut, openShortcutModal, closeShortcutModal,
       openMemoryDrawer, closeMemoryDrawer, trapDialogFocus, setSettingsOpen, cycleSettingsTab, setMode, cycleMode,
-      promptForPairingToken, fetchMacStatus, enqueueServerAudio,
+      promptForPairingToken, fetchMacStatus, enqueueServerAudio, fetchDataConsent, renderDataConsent, toggleDataConsent,
     };\n})();`
   );
   assert.notEqual(instrumentedSource, appSource, 'the app IIFE must accept instrumentation only in the test');
@@ -646,4 +646,55 @@ test('dictation: armed recording sends audio flagged as dictation and shows the 
 
   app.handleWsMessage({ type: 'dictation_result', ok: true, message: 'Inserted.' });
   assert.equal(app.els.captionText.textContent, 'Inserted.');
+});
+
+test('data consent renders and toggles files in cloud and local Ollama modes', async () => {
+  let serverPayload = {
+    calendar: false,
+    email: false,
+    files: false,
+    receiver: 'Claude',
+    can_edit: true,
+    local: false,
+  };
+  const putBodies = [];
+  const harness = makeHarness({
+    fetch: async (url, init = {}) => {
+      if (url === '/api/data-consent' && init.method === 'PUT') {
+        const body = JSON.parse(init.body);
+        putBodies.push(body);
+        serverPayload = { ...serverPayload, ...body };
+        return { ok: true, status: 200, json: async () => serverPayload };
+      }
+      if (url === '/api/data-consent') {
+        return { ok: true, status: 200, json: async () => serverPayload };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    },
+  });
+  harness.window.LupinLocalMode = require('../../static/local_mode.js');
+  const { app, elements } = harness;
+
+  await app.fetchDataConsent();
+  assert.equal(elements.get('consent-files-label').textContent, 'Let Claude see the contents of your files');
+  assert.equal(elements.get('btn-consent-files').textContent, 'Off');
+  assert.equal(elements.get('btn-consent-files').disabled, false);
+
+  await app.toggleDataConsent('files');
+  assert.deepEqual(putBodies, [{ files: true }]);
+  assert.equal(elements.get('btn-consent-files').textContent, 'On');
+  assert.equal(elements.get('btn-consent-files').getAttribute('aria-checked'), 'true');
+
+  serverPayload = {
+    calendar: true,
+    email: true,
+    files: true,
+    receiver: 'Ollama',
+    can_edit: false,
+    local: true,
+  };
+  await app.fetchDataConsent();
+  assert.equal(elements.get('consent-files-label').textContent, 'Your files stay on this Mac');
+  assert.equal(elements.get('btn-consent-files').textContent, 'On');
+  assert.equal(elements.get('btn-consent-files').disabled, true);
 });

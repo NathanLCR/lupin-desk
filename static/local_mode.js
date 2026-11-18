@@ -19,8 +19,9 @@
         rowText: {
           calendar: 'Your calendar stays on this Mac',
           email: 'Your emails stay on this Mac',
+          files: 'Your files stay on this Mac',
         },
-        on: { calendar: true, email: true },
+        on: { calendar: true, email: true, files: true },
       };
     }
 
@@ -34,10 +35,12 @@
       rowText: {
         calendar: 'Let ' + receiver + ' see your calendar',
         email: 'Let ' + receiver + ' see your emails',
+        files: 'Let ' + receiver + ' see the contents of your files',
       },
       on: {
         calendar: Boolean(data.calendar),
         email: Boolean(data.email),
+        files: Boolean(data.files),
       },
     };
   }

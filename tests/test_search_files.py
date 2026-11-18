@@ -261,3 +261,24 @@ def test_snippet_none_for_file_outside_roots(tmp_path: Path) -> None:
     root.mkdir()
     outside = _make(tmp_path, "outside.txt", "budget")
     assert FileSearch(roots=[root], runner=FakeMdfind()).snippet(str(outside), "budget") is None
+
+
+def test_sanitize_and_snippet_handle_nfd_accents_case_insensitive_dirs_and_binary_lines(tmp_path: Path) -> None:
+    root = tmp_path / "Documents"
+    _make(root, "CERTS/secret.txt", "café")
+    good = _make(root, "cafe.txt", "\x00café hidden\nRelatório de Café pronto\n")
+
+    assert sanitize_query("cafe\u0301") == "café"
+    runner = FakeMdfind({str(root.resolve()): [str(root / "CERTS/secret.txt"), str(good)]})
+    hits = FileSearch(roots=[root], runner=runner).search("cafe\u0301")
+    assert hits == [{"path": str(good.resolve()), "name": "cafe.txt"}]
+
+    snippet = FileSearch(roots=[root], runner=runner).snippet(str(good), "cafe\u0301")
+    assert snippet == "Relatório de Café pronto"
+
+
+def test_search_tolerates_unicode_decode_error_from_runner(tmp_path: Path) -> None:
+    root = tmp_path / "Documents"
+    root.mkdir()
+    runner = FakeMdfind(errors_by_root={str(root.resolve()): UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")})
+    assert FileSearch(roots=[root], runner=runner).search("budget") == []

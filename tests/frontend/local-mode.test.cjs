@@ -4,18 +4,19 @@ const test = require('node:test');
 
 const LocalMode = require(path.join(__dirname, '../../static/local_mode.js'));
 
-test('local payload locks consent and turns both sources on', () => {
-  const view = LocalMode.consentView({ local: true, calendar: false, email: false, can_edit: true });
+test('local payload locks consent and turns all three sources on', () => {
+  const view = LocalMode.consentView({ local: true, calendar: false, email: false, files: false, can_edit: true });
 
   assert.equal(view.local, true);
   assert.equal(view.editable, false);
-  assert.deepEqual(view.on, { calendar: true, email: true });
+  assert.deepEqual(view.on, { calendar: true, email: true, files: true });
   assert.equal(
     view.noteText,
     'Runs on this Mac with Ollama, so no permission is needed. Nothing leaves this Mac.',
   );
   assert.equal(view.rowText.calendar, 'Your calendar stays on this Mac');
   assert.equal(view.rowText.email, 'Your emails stay on this Mac');
+  assert.equal(view.rowText.files, 'Your files stay on this Mac');
 });
 
 test('non-local payload that can be edited reflects settings and names the receiver', () => {
@@ -23,6 +24,7 @@ test('non-local payload that can be edited reflects settings and names the recei
     local: false,
     calendar: true,
     email: false,
+    files: true,
     can_edit: true,
     receiver: 'Claude',
   });
@@ -30,27 +32,30 @@ test('non-local payload that can be edited reflects settings and names the recei
   assert.equal(view.local, false);
   assert.equal(view.editable, true);
   assert.equal(view.noteText, '');
-  assert.deepEqual(view.on, { calendar: true, email: false });
+  assert.deepEqual(view.on, { calendar: true, email: false, files: true });
   assert.equal(view.rowText.calendar, 'Let Claude see your calendar');
   assert.equal(view.rowText.email, 'Let Claude see your emails');
+  assert.equal(view.rowText.files, 'Let Claude see the contents of your files');
 });
 
 test('non-local payload that cannot be edited is read-only with a Mac note', () => {
-  const view = LocalMode.consentView({ calendar: true, email: true, can_edit: false, receiver: 'OpenAI' });
+  const view = LocalMode.consentView({ calendar: true, email: true, files: false, can_edit: false, receiver: 'OpenAI' });
 
   assert.equal(view.local, false);
   assert.equal(view.editable, false);
   assert.equal(view.noteText, 'This can only be changed on the Mac.');
-  assert.deepEqual(view.on, { calendar: true, email: true });
+  assert.deepEqual(view.on, { calendar: true, email: true, files: false });
   assert.equal(view.rowText.calendar, 'Let OpenAI see your calendar');
+  assert.equal(view.rowText.files, 'Let OpenAI see the contents of your files');
 });
 
 test('non-local payload without a receiver falls back to "the provider"', () => {
-  const view = LocalMode.consentView({ calendar: false, email: true, can_edit: true });
+  const view = LocalMode.consentView({ calendar: false, email: true, files: false, can_edit: true });
 
   assert.equal(view.rowText.calendar, 'Let the provider see your calendar');
   assert.equal(view.rowText.email, 'Let the provider see your emails');
-  assert.deepEqual(view.on, { calendar: false, email: true });
+  assert.equal(view.rowText.files, 'Let the provider see the contents of your files');
+  assert.deepEqual(view.on, { calendar: false, email: true, files: false });
 });
 
 test('consentView tolerates a missing payload', () => {
@@ -58,8 +63,9 @@ test('consentView tolerates a missing payload', () => {
 
   assert.equal(view.local, false);
   assert.equal(view.editable, false);
-  assert.deepEqual(view.on, { calendar: false, email: false });
+  assert.deepEqual(view.on, { calendar: false, email: false, files: false });
   assert.equal(view.rowText.email, 'Let the provider see your emails');
+  assert.equal(view.rowText.files, 'Let the provider see the contents of your files');
 });
 
 test('slowNoticeCaption returns the trimmed text of a valid slow_model notice', () => {

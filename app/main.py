@@ -25,6 +25,7 @@ from app.device_routes import setup_devices
 from app.panels.routes import register as register_panels
 from app.panels.eink import register as register_eink
 from app.productivity import register as register_productivity
+from app.search import register as register_search
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
 from app.cowork import CoworkStore, get_git_sync_status
 from app.llm import LLMClient, LLMError
@@ -125,6 +126,7 @@ class DataConsentRequest(BaseModel):
 
     calendar: bool | None = None
     email: bool | None = None
+    files: bool | None = None
 
 
 class SkillToggleRequest(BaseModel):
@@ -581,6 +583,7 @@ def create_app(
         host = request.client.host if request.client else None
         return {
             **data_consent.get(),
+            "files": fastapi_app.state.files_consent.get(),
             "receiver": data_consent.receiver_name(),
             "local": data_consent.is_local(),
             "can_edit": is_mac_client(host),
@@ -596,6 +599,8 @@ def create_app(
         """Turn calendar and/or e-mail consent on or off. Mac only."""
         require_mac_client(request, "Data Consent can only be changed on the Mac.")
         data_consent.update(calendar=body.calendar, email=body.email)
+        if body.files is not None:
+            fastapi_app.state.files_consent.update(body.files)
         return data_consent_payload(request)
 
     @fastapi_app.post("/api/shortcuts", status_code=status.HTTP_201_CREATED)
@@ -911,6 +916,11 @@ def create_app(
             ) from exc
         active_provider_state.clear()
         active_provider_state.update(updated)
+        # Re-read consent immediately so switching provider A -> B -> A always clears A's consent.
+        data_consent.get()
+        files_consent = getattr(fastapi_app.state, "files_consent", None)
+        if files_consent is not None:
+            files_consent.get()
         return {"ok": True, "active": updated}
 
     @fastapi_app.get("/api/skills")
@@ -1023,6 +1033,18 @@ def create_app(
 
     # Tasks, notes and habits (issue 05): store, REST, Panel actions, habit scheduler.
     register_productivity(fastapi_app, resolved_settings.db_path)
+
+    # Smart search (issue 06): tasks, notes, memory, Cowork and Mac files, read-only.
+    register_search(
+        fastapi_app,
+        store=fastapi_app.state.productivity.store,
+        memory=resolved_memory,
+        cowork=resolved_cowork,
+        signature=lambda: (
+            str(active_provider_state.get("provider_id") or "custom"),
+            resolved_settings.llm_base_url,
+        ),
+    )
 
     @fastapi_app.websocket("/ws")
     async def websocket_chat(websocket: WebSocket) -> None:
@@ -1453,8 +1475,11 @@ def create_app(
                     elif event_type == "action":
                         kind = str(event.get("kind") or "")
                         target = str(event.get("target") or "")
-                        if kind in ("task", "note", "habit") and target:
-                            voice_result = await fastapi_app.state.productivity.handle_voice(kind, target)
+                        if kind in ("task", "note", "habit", "search") and target:
+                            if kind == "search":
+                                voice_result = await fastapi_app.state.smart_search.handle_voice(kind, target)
+                            else:
+                                voice_result = await fastapi_app.state.productivity.handle_voice(kind, target)
                             await safe_send(
                                 {
                                     "type": "action_executed",
