@@ -48,6 +48,8 @@ def _make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "host": "0.0.0.0",
         "desk_access_token": "lan-secret-123",
         "llm_api_key": "sk-super-secret-1234",
+        # The token path is off by default (ADR 0002); these tests exercise it.
+        "require_access_token": True,
     }
     defaults.update(overrides)
     return Settings(**defaults)
@@ -209,3 +211,8 @@ def test_ws_app_requires_confirmation(tmp_path: Path) -> None:
             assert app_cancelled["ok"] is False
             assert app_cancelled["cancelled"] is True
             assert fake_mac.activated_apps == []
+
+
+def test_access_token_is_off_by_default_for_panels(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path, require_access_token=False)
+    assert resolve_runtime_access_token(settings) == ("", False)
