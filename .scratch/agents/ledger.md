@@ -69,3 +69,9 @@ One row per finished task. Fill it from the agent's task-notification usage bloc
 | 06 sources+consent | 06 | nested | haiku | 93,553 | 8 | 0m46s | pass, +23 tests | 0 | FilesConsent third consent |
 | 06 orchestrator module | 06 | nested | haiku | 95,225 | 11 | 0m57s | pass, +15 tests | 0 | SmartSearch, docs |
 | 06 lead | 06 | nested | sonnet | ? | ? | ? | py 738/1 other-agent fail; fe 423/1 known | 0 | patches 06-* pending |
+| backend everyday service | P07 | nested | haiku | 112,157 | 13 | 4m55s | pass, +35 py | 0 | |
+| clock upgrade | P07 | nested | haiku | 112,659 | 13 | 2m00s | pass, +9 fe | 0 | |
+| info widgets | P07 | nested | haiku | 120,266 | 11 | 2m19s | pass, +22 fe | 0 | |
+| productivity widgets | P07 | nested | haiku | 123,767 | 9 | 2m38s | pass, +17 fe | 0 | |
+| timers widgets | P07 | nested | haiku | 124,271 | 9 | 2m38s | pass, +14 fe | 0 | |
+| P07 lead | P07 | nested | sonnet | ? | ? | ? | py 739, fe 440/1 known | 0 | |
