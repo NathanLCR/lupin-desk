@@ -1,4 +1,4 @@
-"""Controle seguro do macOS via argv whitelisted, Dock Viva, status e clima."""
+"""Safe macOS control via whitelisted argv, Live Dock, status and weather."""
 
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ DEFAULT_FAVORITE_APPS: tuple[str, ...] = (
     "Spotify",
 )
 
-# Regex estrita para nomes de apps no macOS (bloqueia metacaracteres de shell/script)
+# Strict regex for macOS app names (blocks shell/script metacharacters)
 _APP_NAME_RE = re.compile(r"^[A-Za-z0-9À-ÿ ._+-]{1,80}$")
 
-# Whitelist fechada de modificadores e teclas permitidas para keystrokes
+# Closed whitelist of modifiers and keys allowed for keystrokes
 _MODIFIER_MAP: dict[str, str] = {
     "cmd": "command down",
     "command": "command down",
@@ -149,31 +149,141 @@ _STATUS_CACHE_TTL_SECONDS = 3.0
 _WEATHER_CACHE_TTL_SECONDS = 900.0
 
 
+# Today's calendar (read-only): one line per event with
+# "seconds since midnight<TAB>true/false (all day)<TAB>title".
+_CALENDAR_TODAY_SCRIPT = """
+set todayStart to current date
+set time of todayStart to 0
+set tomorrowStart to todayStart + (1 * days)
+set outputText to ""
+tell application "Calendar"
+    repeat with cal in calendars
+        set todayEvents to (every event of cal whose start date ≥ todayStart and start date < tomorrowStart)
+        repeat with ev in todayEvents
+            set startOffset to ((start date of ev) - todayStart) as integer
+            set outputText to outputText & startOffset & tab & ((allday event of ev) as string) & tab & (summary of ev) & linefeed
+        end repeat
+    end repeat
+end tell
+return outputText
+"""
+
+
+def parse_calendar_output(stdout: str) -> list[dict[str, Any]]:
+    """Convert the Calendar script output into events sorted by time."""
+    events: list[tuple[int, dict[str, Any]]] = []
+    for line in (stdout or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        try:
+            seconds = int(parts[0].strip())
+        except ValueError:
+            continue
+        title = " ".join(p.strip() for p in parts[2:] if p.strip())
+        if not title or not 0 <= seconds < 86400:
+            continue
+        events.append(
+            (
+                seconds,
+                {
+                    "start": f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}",
+                    "title": title[:120],
+                    "all_day": parts[1].strip().lower() == "true",
+                },
+            )
+        )
+    events.sort(key=lambda item: item[0])
+    return [ev for _, ev in events]
+
+
+# Mail.app inbox (read-only): the first line is the unread count of the unified inbox
+# (all accounts); the rest are "sender<TAB>subject" of unread messages from the last 24h
+# (newest first, at most 10; only looks at the 300 newest messages). Never reads the body or alters messages.
+_MAIL_INBOX_SCRIPT = """
+set outputText to ""
+tell application "Mail"
+    set outputText to ((unread count of inbox) as string) & linefeed
+    set cutoff to (current date) - (1 * days)
+    set foundCount to 0
+    set inboxMessages to messages of inbox
+    set messageCount to count of inboxMessages
+    if messageCount > 300 then set messageCount to 300
+    repeat with i from 1 to messageCount
+        set m to item i of inboxMessages
+        if (date received of m) < cutoff then exit repeat
+        if read status of m is false then
+            set outputText to outputText & (sender of m) & tab & (subject of m) & linefeed
+            set foundCount to foundCount + 1
+            if foundCount ≥ 10 then exit repeat
+        end if
+    end repeat
+end tell
+return outputText
+"""
+
+
+def parse_mail_output(stdout: str) -> dict[str, Any] | None:
+    """Convert the Mail.app script output into an unread count and recent items.
+
+    Returns None if the first line is not a valid count.
+    """
+    lines = (stdout or "").splitlines()
+    if not lines:
+        return None
+    try:
+        unread = int(lines[0].strip())
+    except ValueError:
+        return None
+    if unread < 0:
+        return None
+    recent: list[dict[str, str]] = []
+    for line in lines[1:]:
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        sender = parts[0].strip()
+        subject = " ".join(p.strip() for p in parts[1:] if p.strip())
+        if not sender and not subject:
+            continue
+        recent.append({"sender": sender[:80], "subject": subject[:120]})
+        if len(recent) >= 10:
+            break
+    return {"unread": unread, "recent": recent}
+
+
 def _is_accessibility_error(stderr: str) -> bool:
-    """Detecta erros de permissão de Acessibilidade do macOS no stderr do `osascript`."""
+    """Detect macOS Accessibility permission errors in the `osascript` stderr."""
     lowered = (stderr or "").lower()
     return any(marker in lowered for marker in _ACCESSIBILITY_ERROR_MARKERS)
 
 
 def _interpret_weather_code(code: int | None) -> tuple[str, str]:
-    """Traduz código WMO do Open-Meteo para descrição em PT-BR e efeito visual."""
+    """Translate an Open-Meteo WMO code into a description and a visual effect."""
     if code is None:
-        return ("Desconhecido", "none")
+        return ("Unknown", "none")
     if code == 0:
-        return ("Céu limpo", "sun")
+        return ("Clear sky", "sun")
     if code in {1, 2}:
-        return ("Parcialmente nublado", "sun")
+        return ("Partly cloudy", "sun")
     if code in {3, 45, 48}:
-        return ("Nublado", "none")
+        return ("Cloudy", "none")
     if code in {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99}:
-        return ("Chuva", "rain")
+        return ("Rain", "rain")
     if code in {71, 73, 75, 77, 85, 86}:
-        return ("Neve", "snow")
-    return ("Variável", "none")
+        return ("Snow", "snow")
+    return ("Variable", "none")
+
+
+_PBPASTE_BIN = "/usr/bin/pbpaste"
+_PBCOPY_BIN = "/usr/bin/pbcopy"
+_MAX_PASTE_CHARS = 20000
 
 
 class MacController:
-    """Executor seguro de comandos do macOS usando exclusivamente listas `argv`."""
+    """Safe executor of macOS commands using only `argv` lists."""
+
+    PASTE_SETTLE_SECONDS = 0.25
 
     def __init__(
         self,
@@ -193,24 +303,27 @@ class MacController:
 
     @staticmethod
     def _default_runner(
-        argv: list[str], timeout: float = 5.0
+        argv: list[str], timeout: float = 5.0, input: str | None = None
     ) -> subprocess.CompletedProcess[str]:
-        """Executa processo externo sem shell (`shell=False`) e com timeout."""
+        """Run an external process without a shell (`shell=False`) and with a timeout."""
         return subprocess.run(
             argv,
             shell=False,
             capture_output=True,
             text=True,
             timeout=timeout,
+            input=input,
         )
 
     def _run_cmd(
-        self, argv: list[str], timeout: float = 5.0
+        self, argv: list[str], timeout: float = 5.0, input: str | None = None
     ) -> subprocess.CompletedProcess[str]:
-        """Despacha execução para o runner padrão ou mock injetado em testes."""
+        """Dispatch execution to the default runner or a mock injected in tests."""
         try:
             if self._custom_runner is None:
-                return self._default_runner(argv, timeout=timeout)
+                if input is None:
+                    return self._default_runner(argv, timeout=timeout)
+                return self._default_runner(argv, timeout=timeout, input=input)
 
             try:
                 sig = inspect.signature(self._custom_runner)
@@ -221,15 +334,18 @@ class MacController:
             except (TypeError, ValueError):
                 accepts_timeout = False
 
+            kwargs: dict[str, Any] = {}
             if accepts_timeout:
-                return self._custom_runner(argv, timeout=timeout)
-            return self._custom_runner(argv)
+                kwargs["timeout"] = timeout
+            if input is not None:
+                kwargs["input"] = input
+            return self._custom_runner(argv, **kwargs)
         except subprocess.TimeoutExpired:
             return subprocess.CompletedProcess(
                 args=argv,
                 returncode=124,
                 stdout="",
-                stderr="Tempo limite excedido ao executar comando.",
+                stderr="Timed out while running the command.",
             )
         except OSError as exc:
             return subprocess.CompletedProcess(
@@ -239,8 +355,22 @@ class MacController:
                 stderr=str(exc),
             )
 
+    def read_today_calendar(self) -> list[dict[str, Any]] | None:
+        """Read today's events from Calendar.app (read-only). None if it cannot be read."""
+        proc = self._run_cmd(["/usr/bin/osascript", "-e", _CALENDAR_TODAY_SCRIPT], timeout=8.0)
+        if proc.returncode != 0:
+            return None
+        return parse_calendar_output(proc.stdout)
+
+    def read_inbox(self) -> dict[str, Any] | None:
+        """Read the Mail.app inbox (read-only). None if it cannot be read."""
+        proc = self._run_cmd(["/usr/bin/osascript", "-e", _MAIL_INBOX_SCRIPT], timeout=15.0)
+        if proc.returncode != 0:
+            return None
+        return parse_mail_output(proc.stdout)
+
     def list_running_apps(self) -> list[dict[str, Any]]:
-        """Lista apps abertos no Mac (com destaque ao frontal) + favoritos padrão."""
+        """List the apps open on the Mac (frontmost highlighted) plus the default favorites."""
         proc = self._run_cmd(["/usr/bin/osascript", "-e", _LIST_APPS_SCRIPT], timeout=4.0)
 
         running_entries: list[dict[str, Any]] = []
@@ -269,7 +399,7 @@ class MacController:
                     }
                 )
 
-        # Ordena mantendo o app em primeiro plano no topo da lista
+        # Sort keeping the frontmost app at the top of the list
         running_entries.sort(key=lambda item: (not item["frontmost"], item["name"].lower()))
 
         for fav in DEFAULT_FAVORITE_APPS:
@@ -287,7 +417,7 @@ class MacController:
 
     @staticmethod
     def validate_app_name(app_name: str) -> str | None:
-        """Valida nome de aplicativo contra regex seguro e bloqueia traversal/opções."""
+        """Validate an app name against a safe regex and block traversal/options."""
         if not isinstance(app_name, str):
             return None
         cleaned = app_name.strip()
@@ -300,13 +430,13 @@ class MacController:
         return cleaned
 
     def activate_app(self, app_name: str) -> dict[str, Any]:
-        """Abre ou traz um aplicativo do macOS para o primeiro plano com `open -a`."""
+        """Open or bring a macOS app to the foreground with `open -a`."""
         safe_name = self.validate_app_name(app_name)
         if safe_name is None:
             return {
                 "ok": False,
                 "app": app_name,
-                "error": "Nome de aplicativo inválido ou não permitido.",
+                "error": "Invalid or disallowed app name.",
             }
 
         proc = self._run_cmd(["/usr/bin/open", "-a", safe_name], timeout=5.0)
@@ -315,17 +445,17 @@ class MacController:
             return {
                 "ok": True,
                 "app": safe_name,
-                "message": f"Aplicativo {safe_name} ativado.",
+                "message": f"App {safe_name} activated.",
             }
         return {
             "ok": False,
             "app": safe_name,
-            "error": (proc.stderr or "").strip() or f"Não foi possível abrir '{safe_name}'.",
+            "error": (proc.stderr or "").strip() or f"Could not open '{safe_name}'.",
         }
 
     @staticmethod
     def _parse_keys_spec(keys_spec: str) -> tuple[list[str], str] | None:
-        """Valida especificação de atalho (ex. `cmd+opt+f`) contra whitelist fechada."""
+        """Validate a shortcut spec (e.g. `cmd+opt+f`) against a closed whitelist."""
         if not isinstance(keys_spec, str):
             return None
         raw = keys_spec.strip().lower()
@@ -354,22 +484,62 @@ class MacController:
             return ordered_modifiers, key_token
         return None
 
+    def paste_text(self, text: str) -> dict[str, Any]:
+        """Dictation insertion: put `text` on the clipboard, paste it into the focused app
+        with Cmd+V, then restore the previous (text) clipboard.
+
+        Only fixed argv lists run (`pbpaste`, `pbcopy`, the keystroke whitelist); `text` goes
+        through stdin, never through a shell or a script. A non-text clipboard (image, files)
+        cannot be restored and is replaced by the dictated text.
+        """
+        if not isinstance(text, str) or not text:
+            return {"ok": False, "error": "Nothing to insert."}
+        if len(text) > _MAX_PASTE_CHARS:
+            return {"ok": False, "error": "Dictated text is too long to insert."}
+
+        with self._lock:
+            previous = self._run_cmd([_PBPASTE_BIN], timeout=3.0)
+            previous_text = previous.stdout if previous.returncode == 0 else None
+
+            copied = self._run_cmd([_PBCOPY_BIN], timeout=3.0, input=text)
+            if copied.returncode != 0:
+                return {"ok": False, "error": "Could not write to the clipboard."}
+
+            restored = True
+            try:
+                pasted = self.execute_keystroke("cmd+v")
+                time.sleep(self.PASTE_SETTLE_SECONDS)  # let the app read the clipboard first
+            finally:
+                if previous_text is not None:
+                    restored = (
+                        self._run_cmd([_PBCOPY_BIN], timeout=3.0, input=previous_text).returncode
+                        == 0
+                    )
+
+        if not pasted.get("ok"):
+            return {
+                "ok": False,
+                "needs_accessibility": bool(pasted.get("needs_accessibility")),
+                "error": pasted.get("error") or "Could not paste into the focused app.",
+            }
+        return {"ok": True, "chars": len(text), "clipboard_restored": restored}
+
     def execute_keystroke(self, keys_spec: str) -> dict[str, Any]:
-        """Executa combinação de teclas no macOS via AppleScript `System Events`."""
+        """Run a key combination on macOS via AppleScript `System Events`."""
         parsed = self._parse_keys_spec(keys_spec)
         if parsed is None:
             return {
                 "ok": False,
                 "needs_accessibility": False,
                 "keys": keys_spec,
-                "error": f"Especificação de tecla inválida ou não permitida: '{keys_spec}'.",
+                "error": f"Invalid or disallowed key spec: '{keys_spec}'.",
             }
 
         modifiers, key_token = parsed
         if key_token in _SPECIAL_KEY_CODES:
             action_expr = f"key code {_SPECIAL_KEY_CODES[key_token]}"
         else:
-            # `key_token` já foi validado como caractere único [a-z0-9]
+            # `key_token` was already validated as a single [a-z0-9] character
             action_expr = f'keystroke "{key_token}"'
 
         if modifiers:
@@ -395,8 +565,8 @@ class MacController:
                 "needs_accessibility": True,
                 "keys": normalized_spec,
                 "error": (
-                    "Permissão de Acessibilidade necessária no macOS. "
-                    "Ative em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade."
+                    "Accessibility permission required on macOS. "
+                    "Enable it in System Settings → Privacy & Security → Accessibility."
                 ),
             }
 
@@ -404,15 +574,15 @@ class MacController:
             "ok": False,
             "needs_accessibility": False,
             "keys": normalized_spec,
-            "error": stderr or "Falha ao enviar atalho de teclado.",
+            "error": stderr or "Failed to send the keyboard shortcut.",
         }
 
     def _has_spotify(self) -> bool:
-        """Indica se o bloco AppleScript de Spotify deve ser incluído."""
+        """Report whether the Spotify AppleScript block should be included."""
         return self._custom_runner is not None or Path("/Applications/Spotify.app").exists()
 
     def _has_music(self) -> bool:
-        """Indica se o bloco AppleScript de Music deve ser incluído."""
+        """Report whether the Music AppleScript block should be included."""
         return (
             self._custom_runner is not None
             or Path("/System/Applications/Music.app").exists()
@@ -420,7 +590,7 @@ class MacController:
         )
 
     def _build_mac_status_script(self) -> str:
-        """Monta AppleScript de status omitindo players não instalados para evitar erro de compilação."""
+        """Build the status AppleScript, omitting players that are not installed to avoid compile errors."""
         parts: list[str] = [
             'set activeApp to ""',
             "try",
@@ -480,8 +650,8 @@ class MacController:
         return "\n".join(parts)
 
     def _run_media_applescript(self, action: str) -> dict[str, Any]:
-        """Executa comando de mídia seguro em Spotify ou Music via `osascript`."""
-        # `action` vem exclusivamente da whitelist interna deste método
+        """Run a safe media command on Spotify or Music via `osascript`."""
+        # `action` comes exclusively from this method's internal whitelist
         branches: list[str] = []
         if self._has_spotify():
             branches.append(
@@ -504,17 +674,17 @@ class MacController:
             return {"ok": True, "output": (proc.stdout or "").strip()}
         return {
             "ok": False,
-            "error": (proc.stderr or "").strip() or "Falha ao controlar reprodução de mídia.",
+            "error": (proc.stderr or "").strip() or "Failed to control media playback.",
         }
 
     def execute_mac_command(self, command_name: str) -> dict[str, Any]:
-        """Executa um comando pré-aprovado do macOS pertencente à whitelist fechada."""
+        """Run a pre-approved macOS command from the closed whitelist."""
         cmd = str(command_name or "").strip().lower()
         if cmd not in VALID_MAC_COMMANDS:
             return {
                 "ok": False,
                 "command": command_name,
-                "error": f"Comando não permitido: '{command_name}'.",
+                "error": f"Command not allowed: '{command_name}'.",
             }
 
         if cmd == "mission_control":
@@ -535,8 +705,8 @@ class MacController:
                     "needs_accessibility": True,
                     "command": cmd,
                     "error": (
-                        "Permissão de Acessibilidade necessária no macOS. "
-                        "Ative em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade."
+                        "Accessibility permission required on macOS. "
+                        "Enable it in System Settings → Privacy & Security → Accessibility."
                     ),
                 }
             return {
@@ -575,7 +745,7 @@ class MacController:
 
         if cmd in {"screenshot_area_file", "screenshot_file"}:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            target = Path.home() / "Desktop" / f"Captura_{stamp}.png"
+            target = Path.home() / "Desktop" / f"Screenshot_{stamp}.png"
             proc = self._run_cmd(
                 ["/usr/sbin/screencapture", "-i", str(target)], timeout=30.0
             )
@@ -588,7 +758,7 @@ class MacController:
 
         if cmd == "screenshot_full":
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            target = Path.home() / "Desktop" / f"Captura_Tela_{stamp}.png"
+            target = Path.home() / "Desktop" / f"Screenshot_Full_{stamp}.png"
             proc = self._run_cmd(["/usr/sbin/screencapture", str(target)], timeout=10.0)
             return {
                 "ok": proc.returncode == 0,
@@ -690,9 +860,9 @@ class MacController:
             }
 
     def run_shortcut(self, shortcut: dict[str, Any]) -> dict[str, Any]:
-        """Despacha a execução de um atalho conforme seu `action_type` e `payload`."""
+        """Dispatch the execution of a shortcut according to its `action_type` and `payload`."""
         if not isinstance(shortcut, dict):
-            return {"ok": False, "error": "Atalho inválido."}
+            return {"ok": False, "error": "Invalid shortcut."}
 
         action_type = str(shortcut.get("action_type") or "").strip()
         payload = shortcut.get("payload") or {}
@@ -712,7 +882,7 @@ class MacController:
                 "prompt": str(payload.get("prompt") or ""),
             }
         else:
-            result = {"ok": False, "error": f"action_type não suportado: '{action_type}'"}
+            result = {"ok": False, "error": f"Unsupported action_type: '{action_type}'"}
 
         if "slug" in shortcut:
             result.setdefault("slug", shortcut["slug"])
@@ -721,13 +891,23 @@ class MacController:
         result.setdefault("action_type", action_type)
         return result
 
+    def pomodoro_active(self) -> bool:
+        """True while a Pomodoro focus session is running (Signals use it as the focus rule)."""
+        with self._lock:
+            return bool(self._pomodoro_state.get("active"))
+
+    def pomodoro_state(self) -> dict[str, Any]:
+        """Return a copy of the Pomodoro state (active, duration_minutes, started_at)."""
+        with self._lock:
+            return dict(self._pomodoro_state)
+
     def _invalidate_status_cache(self) -> None:
-        """Invalida o cache de status após ações que alteram volume/mídia/foco."""
+        """Invalidate the status cache after actions that change volume/media/focus."""
         with self._lock:
             self._status_cache = None
 
     def get_mac_status(self) -> dict[str, Any]:
-        """Retorna telemetria leve do Mac com cache de 3 segundos."""
+        """Return lightweight Mac telemetry with a 3-second cache."""
         now = time.monotonic()
         with self._lock:
             if self._status_cache is not None:
@@ -797,7 +977,7 @@ class MacController:
         longitude: float = -46.6333,
         city: str = "São Paulo",
     ) -> dict[str, Any]:
-        """Consulta clima atual via Open-Meteo com cache de 15 min e fallback offline."""
+        """Fetch current weather via Open-Meteo with a 15-minute cache and an offline fallback."""
         cache_key = (round(float(latitude), 3), round(float(longitude), 3), str(city))
         now = time.monotonic()
 
@@ -863,7 +1043,7 @@ class MacController:
                 "wind_kmh": None,
                 "is_day": True,
                 "weather_code": None,
-                "condition": "Indisponível (offline)",
+                "condition": "Unavailable (offline)",
                 "effect": "none",
                 "error": str(exc),
             }

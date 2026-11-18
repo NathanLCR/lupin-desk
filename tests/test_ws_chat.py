@@ -1,4 +1,4 @@
-"""Testes de API HTTP, WebSocket, ações Mac, STT/TTS e streaming LLM para o Desk Assistant."""
+"""Tests for the HTTP API, WebSocket, Mac actions, STT/TTS and LLM streaming of the Desk Assistant."""
 
 from __future__ import annotations
 
@@ -30,14 +30,14 @@ from app.tts import ServerTTS
 
 
 def _build_sse_stream(chunks: list[dict]) -> bytes:
-    """Serializa uma lista de payloads delta OpenAI-compatible no formato SSE."""
+    """Serialize a list of OpenAI-compatible delta payloads into SSE format."""
     lines = [f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n" for chunk in chunks]
     lines.append("data: [DONE]\n\n")
     return "".join(lines).encode("utf-8")
 
 
-def _make_settings(tmp_path: Path, api_key: str = "freellmapi-segredo-teste-123") -> Settings:
-    """Cria Settings isolado apontando para banco SQLite temporário."""
+def _make_settings(tmp_path: Path, api_key: str = "freellmapi-test-secret-123") -> Settings:
+    """Create isolated Settings pointing to a temporary SQLite database."""
     return Settings(
         llm_base_url="http://127.0.0.1:31415/v1",
         llm_api_key=api_key,
@@ -51,7 +51,7 @@ def _make_settings(tmp_path: Path, api_key: str = "freellmapi-segredo-teste-123"
 
 
 def _make_mock_mac(recorded_calls: list[list[str]] | None = None) -> MacController:
-    """Cria MacController com subprocess e clima simulados para testes rápidos e seguros."""
+    """Create a MacController with simulated subprocess and weather for fast, safe tests."""
 
     def runner(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
         if recorded_calls is not None:
@@ -96,51 +96,51 @@ def _make_mock_mac(recorded_calls: list[list[str]] | None = None) -> MacControll
 
 
 # ----------------------------------------------------------------------
-# Testes da Fase 1 (Preservados integralmente)
+# Phase 1 tests (kept intact)
 # ----------------------------------------------------------------------
 
 
-def test_tag_stream_parser_quebra_tags_e_fallback_emocao() -> None:
-    """Garante que tags quebradas entre chunks não vazam e emoção inválida vira neutral."""
+def test_tag_stream_parser_split_tags_and_emotion_fallback() -> None:
+    """Ensure tags split across chunks do not leak and an invalid emotion becomes neutral."""
     parser = TagStreamParser()
     chunks = ["[emo", "tion:hap", "py] Olá! [fact: Gosta", " de café]"]
-    eventos = []
+    events = []
     for chunk in chunks:
-        eventos.extend(parser.feed(chunk))
-    finais, clean_text, raw_text, emotion = parser.finish()
-    eventos.extend(finais)
+        events.extend(parser.feed(chunk))
+    finals, clean_text, raw_text, emotion = parser.finish()
+    events.extend(finals)
 
     assert emotion == "happy"
     assert clean_text == "Olá!"
     assert "[fact: Gosta de café]" in raw_text
-    assert eventos[0] == {"type": "emotion", "emotion": "happy"}
-    deltas = "".join(ev["text"] for ev in eventos if ev["type"] == "delta")
+    assert events[0] == {"type": "emotion", "emotion": "happy"}
+    deltas = "".join(ev["text"] for ev in events if ev["type"] == "delta")
     assert "[" not in deltas
     assert "fact" not in deltas
     assert "emotion" not in deltas
     assert deltas.strip() == "Olá!"
 
-    # Testa fallback para neutral quando emoção não é suportada.
-    parser_invalido = TagStreamParser()
-    ev_inv = parser_invalido.feed("[emotion:alienigena] Tudo bem?")
-    f_inv, clean_inv, _, emo_inv = parser_invalido.finish()
-    ev_inv.extend(f_inv)
-    assert emo_inv == "neutral"
-    assert clean_inv == "Tudo bem?"
-    assert ev_inv[0] == {"type": "emotion", "emotion": "neutral"}
+    # Test the neutral fallback when the emotion is not supported.
+    parser_invalid = TagStreamParser()
+    ev_invalid = parser_invalid.feed("[emotion:alienigena] Tudo bem?")
+    f_invalid, clean_invalid, _, emo_invalid = parser_invalid.finish()
+    ev_invalid.extend(f_invalid)
+    assert emo_invalid == "neutral"
+    assert clean_invalid == "Tudo bem?"
+    assert ev_invalid[0] == {"type": "emotion", "emotion": "neutral"}
 
-    # Testa resposta sem tag de emoção inicial.
-    parser_sem_tag = TagStreamParser()
-    ev_sem = parser_sem_tag.feed("Sem tag inicial.")
-    f_sem, clean_sem, _, emo_sem = parser_sem_tag.finish()
-    ev_sem.extend(f_sem)
-    assert emo_sem == "neutral"
-    assert clean_sem == "Sem tag inicial."
-    assert ev_sem[0] == {"type": "emotion", "emotion": "neutral"}
+    # Test a reply without an initial emotion tag.
+    parser_no_tag = TagStreamParser()
+    ev_no_tag = parser_no_tag.feed("Sem tag inicial.")
+    f_no_tag, clean_no_tag, _, emo_no_tag = parser_no_tag.finish()
+    ev_no_tag.extend(f_no_tag)
+    assert emo_no_tag == "neutral"
+    assert clean_no_tag == "Sem tag inicial."
+    assert ev_no_tag[0] == {"type": "emotion", "emotion": "neutral"}
 
 
-def test_http_endpoints_e_crud_memoria(tmp_path: Path) -> None:
-    """Valida /, /health e todos os endpoints HTTP de memória."""
+def test_http_endpoints_and_memory_crud(tmp_path: Path) -> None:
+    """Validate /, /health and all the HTTP memory endpoints."""
     settings = _make_settings(tmp_path)
     store = MemoryStore(db_path=settings.db_path)
     app = create_app(
@@ -163,11 +163,11 @@ def test_http_endpoints_e_crud_memoria(tmp_path: Path) -> None:
         assert res_mem.status_code == 200
         assert res_mem.json() == {"facts": [], "recent_messages_count": 0}
 
-        # Fato vazio deve retornar 400.
+        # An empty fact must return 400.
         res_empty = client.post("/api/memory/facts", json={"fact": "   "})
         assert res_empty.status_code == 400
 
-        # Criação válida retorna 201.
+        # A valid creation returns 201.
         res_created = client.post(
             "/api/memory/facts",
             json={"fact": "Prefere café sem açúcar", "category": "preference"},
@@ -178,12 +178,12 @@ def test_http_endpoints_e_crud_memoria(tmp_path: Path) -> None:
         assert created["category"] == "preference"
         fact_id = created["id"]
 
-        # Deleção e 404 subsequente.
+        # Deletion and the subsequent 404.
         res_del = client.delete(f"/api/memory/facts/{fact_id}")
         assert res_del.status_code == 200
         assert client.delete(f"/api/memory/facts/{fact_id}").status_code == 404
 
-        # Adiciona mensagem e novo fato para testar /api/memory/clear.
+        # Add a message and a new fact to test /api/memory/clear.
         store.add_message("user", "Oi")
         client.post("/api/memory/facts", json={"fact": "Mora em São Paulo"})
 
@@ -200,8 +200,8 @@ def test_http_endpoints_e_crud_memoria(tmp_path: Path) -> None:
     store.close()
 
 
-def test_websocket_fluxo_completo_e_quirk_reasoning(tmp_path: Path) -> None:
-    """Valida typing, streaming com tag quebrada, reasoning ignorado, fatos e clear_history."""
+def test_websocket_full_flow_and_reasoning_quirk(tmp_path: Path) -> None:
+    """Validate typing, streaming with a split tag, ignored reasoning, facts and clear_history."""
     captured_requests: list[dict] = []
 
     sse_payload = _build_sse_stream(
@@ -242,19 +242,19 @@ def test_websocket_fluxo_completo_e_quirk_reasoning(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
-            # 1. Typing ativo e inativo.
+            # 1. Typing active and inactive.
             ws.send_json({"type": "typing", "active": True})
             assert ws.receive_json() == {"type": "state", "state": "listening"}
 
             ws.send_json({"type": "typing", "active": False})
             assert ws.receive_json() == {"type": "state", "state": "idle"}
 
-            # 2. Mensagem vazia retorna erro sem chamar o LLM.
+            # 2. An empty message returns an error without calling the LLM.
             ws.send_json({"type": "text", "text": "   "})
             err_empty = ws.receive_json()
             assert err_empty["type"] == "error"
 
-            # 3. Envio de mensagem de texto válida.
+            # 3. Sending a valid text message.
             ws.send_json({"type": "text", "text": "Bom dia! Eu adoro café."})
 
             events = []
@@ -292,18 +292,18 @@ def test_websocket_fluxo_completo_e_quirk_reasoning(tmp_path: Path) -> None:
             assert any("Nathan" in f["fact"] for f in mem_ev["facts"])
             assert any("café" in f["fact"].lower() for f in mem_ev["facts"])
 
-            # 4. Limpar histórico via WebSocket preserva fatos.
+            # 4. Clearing the history over WebSocket preserves facts.
             ws.send_json({"type": "clear_history"})
             cleared = ws.receive_json()
             assert cleared["type"] == "memory_updated"
             assert cleared["recent_messages_count"] == 0
             assert len(cleared["facts"]) >= 2
 
-    # Verifica contrato HTTP enviado ao provedor LLM.
+    # Verify the HTTP contract sent to the LLM provider.
     assert len(captured_requests) == 1
     req = captured_requests[0]
     assert req["url"] == "http://127.0.0.1:31415/v1/chat/completions"
-    assert req["auth"] == "Bearer freellmapi-segredo-teste-123"
+    assert req["auth"] == "Bearer freellmapi-test-secret-123"
     assert req["json"]["stream"] is True
     assert req["json"]["max_tokens"] >= 500
     assert req["json"]["temperature"] == 0.7
@@ -312,15 +312,15 @@ def test_websocket_fluxo_completo_e_quirk_reasoning(tmp_path: Path) -> None:
     store.close()
 
 
-def test_websocket_erro_gracioso_sem_vazar_segredo(
+def test_websocket_graceful_error_without_leaking_secret(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Garante erro amigável no WS e ausência da API key nos logs e respostas."""
-    secret = "freellmapi-chave-super-secreta-999"
+    """Ensure a friendly error on the WS and no API key in logs and responses."""
+    secret = "freellmapi-super-secret-key-999"
 
     def failing_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError(
-            f"Falha ao conectar usando {secret}",
+            f"Failed to connect using {secret}",
             request=request,
         )
 
@@ -353,8 +353,8 @@ def test_websocket_erro_gracioso_sem_vazar_segredo(
     store.close()
 
 
-def test_websocket_erro_http_500_gracioso(tmp_path: Path) -> None:
-    """Garante tratamento amigável quando o provedor retorna HTTP 500."""
+def test_websocket_graceful_http_500_error(tmp_path: Path) -> None:
+    """Ensure friendly handling when the provider returns HTTP 500."""
 
     def server_error_handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": "internal server error"})
@@ -371,7 +371,7 @@ def test_websocket_erro_http_500_gracioso(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
-            ws.send_json({"type": "text", "text": "Teste erro 500"})
+            ws.send_json({"type": "text", "text": "Test error 500"})
             assert ws.receive_json() == {"type": "state", "state": "thinking"}
             assert ws.receive_json() == {"type": "state", "state": "error"}
             err = ws.receive_json()
@@ -381,30 +381,30 @@ def test_websocket_erro_http_500_gracioso(tmp_path: Path) -> None:
     store.close()
 
 
-def test_tag_stream_parser_tag_abreviada_e_colchete_comum() -> None:
-    """Aceita forma abreviada `[<emocao>]` dividida em chunks e mantém `[nota]` no texto."""
+def test_tag_stream_parser_short_tag_and_plain_bracket() -> None:
+    """Accept the short form `[<emotion>]` split across chunks and keep `[nota]` in the text."""
     parser = TagStreamParser()
-    eventos = []
+    events = []
     for chunk in ("[ha", "ppy] Olá! Veja ", "[nota]", " importante."):
-        eventos.extend(parser.feed(chunk))
-    finais, clean_text, _, emotion = parser.finish()
-    eventos.extend(finais)
+        events.extend(parser.feed(chunk))
+    finals, clean_text, _, emotion = parser.finish()
+    events.extend(finals)
 
     assert emotion == "happy"
-    assert eventos[0] == {"type": "emotion", "emotion": "happy"}
+    assert events[0] == {"type": "emotion", "emotion": "happy"}
     assert clean_text == "Olá! Veja [nota] importante."
-    deltas = "".join(ev["text"] for ev in eventos if ev["type"] == "delta")
+    deltas = "".join(ev["text"] for ev in events if ev["type"] == "delta")
     assert deltas == "Olá! Veja [nota] importante."
     assert "[happy]" not in deltas
 
 
 # ----------------------------------------------------------------------
-# Novos Testes da Fase 2 (Ações, Sentenças, Barge-in, Voz e Endpoints)
+# New Phase 2 tests (actions, sentences, barge-in, voice and endpoints)
 # ----------------------------------------------------------------------
 
 
-def test_tag_stream_parser_actions_sentences_e_12_emocoes() -> None:
-    """Valida 12 emoções, emissão incremental de sentenças e parsing de `[action:...]`."""
+def test_tag_stream_parser_actions_sentences_and_12_emotions() -> None:
+    """Validate 12 emotions, incremental sentence emission and parsing of `[action:...]`."""
     assert len(SUPPORTED_EMOTIONS) == 12
     assert "angry" in SUPPORTED_EMOTIONS
     assert "dizzy" in SUPPORTED_EMOTIONS
@@ -419,29 +419,29 @@ def test_tag_stream_parser_actions_sentences_e_12_emocoes() -> None:
         " Agora foco total",
         "[action:pomodoro:start]",
     ]
-    eventos: list[dict[str, str]] = []
+    events: list[dict[str, str]] = []
     for chunk in chunks:
-        eventos.extend(parser.feed(chunk))
-    finais, clean_text, _, emotion = parser.finish()
-    eventos.extend(finais)
+        events.extend(parser.feed(chunk))
+    finals, clean_text, _, emotion = parser.finish()
+    events.extend(finals)
 
     assert emotion == "angry"
     assert clean_text == "Ei!  Versão 3.14 pronta.  Agora foco total"
 
-    actions = [ev for ev in eventos if ev["type"] == "action"]
+    actions = [ev for ev in events if ev["type"] == "action"]
     assert actions == [
         {"type": "action", "kind": "shortcut", "target": "find_replace"},
         {"type": "action", "kind": "app", "target": "Google Chrome"},
         {"type": "action", "kind": "pomodoro", "target": "start"},
     ]
 
-    sentences = [ev["text"] for ev in eventos if ev["type"] == "sentence"]
+    sentences = [ev["text"] for ev in events if ev["type"] == "sentence"]
     assert sentences == ["Ei!", "Versão 3.14 pronta.", "Agora foco total"]
     assert "[action" not in clean_text
 
 
-def test_build_system_prompt_injeta_atalhos_e_regras() -> None:
-    """Garante que o prompt inclui catálogo de atalhos, humor, âncora temporal e Show Don't Tell."""
+def test_build_system_prompt_injects_shortcuts_and_rules() -> None:
+    """Ensure the prompt includes the shortcut catalog, mood, temporal anchor and Show Don't Tell."""
     prompt = build_system_prompt(
         memory_context="- Prefere tema escuro",
         shortcuts_context="- [find_replace] Pesquisar e Substituir",
@@ -456,9 +456,9 @@ def test_build_system_prompt_injeta_atalhos_e_regras() -> None:
     assert "22:15" in prompt
 
 
-def test_http_novos_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) -> None:
-    """Testa todas as novas rotas REST adicionadas na Fase 2."""
-    secret = "freellmapi-segredo-nao-vazar"
+def test_http_new_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) -> None:
+    """Test all the new REST routes added in Phase 2."""
+    secret = "freellmapi-secret-do-not-leak"
     settings = _make_settings(tmp_path, api_key=secret)
     memory = MemoryStore(db_path=settings.db_path)
     shortcuts = ShortcutStore(db_path=settings.db_path)
@@ -503,7 +503,7 @@ def test_http_novos_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) 
         assert res_manifest.status_code == 200
         assert res_manifest.json()["short_name"] == "EMO Desk"
 
-        # Memória expandida: /api/memory/state, PATCH pinned/importance, consolidate
+        # Expanded memory: /api/memory/state, PATCH pinned/importance, consolidate
         fact = client.post("/api/memory/facts", json={"fact": "Gosta de café"}).json()
         res_patch = client.patch(
             f"/api/memory/facts/{fact['id']}",
@@ -524,7 +524,7 @@ def test_http_novos_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) 
         assert res_cons.status_code == 200
         assert "consolidated" in res_cons.json()
 
-        # Atalhos CRUD + Run + Reorder + Reset
+        # Shortcuts CRUD + Run + Reorder + Reset
         res_sc_list = client.get("/api/shortcuts")
         assert res_sc_list.status_code == 200
         initial_shortcuts = res_sc_list.json()["shortcuts"]
@@ -572,7 +572,7 @@ def test_http_novos_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) 
         assert res_sc_reset.status_code == 200
         assert any(s["slug"] == "find_replace" for s in res_sc_reset.json()["shortcuts"])
 
-        # Mac Dock Viva, Status e Clima
+        # Live Mac Dock, Status and Weather
         res_apps = client.get("/api/mac/apps")
         assert res_apps.status_code == 200
         assert any(a["name"] == "Google Chrome" and a["frontmost"] for a in res_apps.json()["apps"])
@@ -611,7 +611,7 @@ def test_http_novos_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) 
 
         assert client.post("/api/tts", json={"text": "   "}).status_code == 400
 
-        # STT (JSON base64 e multipart)
+        # STT (base64 JSON and multipart)
         b64_audio = base64.b64encode(b"WEBM_BYTES").decode("ascii")
         res_stt_json = client.post(
             "/api/stt",
@@ -628,7 +628,7 @@ def test_http_novos_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) 
         assert res_stt_mp.status_code == 200
         assert "11b" in res_stt_mp.json()["text"]
 
-        # Diagnósticos (sem vazar LLM_API_KEY)
+        # Diagnostics (without leaking LLM_API_KEY)
         res_diag = client.get("/api/diagnostics")
         assert res_diag.status_code == 200
         diag = res_diag.json()
@@ -641,8 +641,8 @@ def test_http_novos_endpoints_shortcuts_mac_tts_stt_diagnostics(tmp_path: Path) 
     memory.close()
 
 
-def test_websocket_action_tags_sentences_e_confirmacao(tmp_path: Path) -> None:
-    """Valida execução de `[action:shortcut:find_replace]`, `[action:app:...]`, `sentence` e confirmação."""
+def test_websocket_action_tags_sentences_and_confirmation(tmp_path: Path) -> None:
+    """Validate running `[action:shortcut:find_replace]`, `[action:app:...]`, `sentence` and confirmation."""
     recorded_calls: list[list[str]] = []
     sse_payload = _build_sse_stream(
         [
@@ -665,8 +665,8 @@ def test_websocket_action_tags_sentences_e_confirmacao(tmp_path: Path) -> None:
     shortcuts = ShortcutStore(db_path=settings.db_path)
     shortcuts.create_shortcut(
         {
-            "slug": "acao_sensivel",
-            "title": "Ação Sensível",
+            "slug": "sensitive_action",
+            "title": "Sensitive Action",
             "action_type": "mac_command",
             "payload": {"command": "lock_screen"},
             "requires_confirmation": True,
@@ -700,10 +700,15 @@ def test_websocket_action_tags_sentences_e_confirmacao(tmp_path: Path) -> None:
                 a["kind"] == "shortcut" and a["target"] == "find_replace" and a["ok"] is True
                 for a in actions
             )
-            assert any(
-                a["kind"] == "app" and a["target"] == "Safari" and a["ok"] is True
-                for a in actions
+            app_approval = next(
+                ev for ev in events
+                if ev.get("type") == "tool_approval_request"
+                and ev.get("kind") == "mac_app"
+                and ev.get("target") == "Safari"
             )
+            ws.send_json({"type": "confirm_action", "approval_id": app_approval["approval_id"], "approved": True})
+            app_done = ws.receive_json()
+            assert app_done["kind"] == "app" and app_done["target"] == "Safari" and app_done["ok"] is True
             assert any(
                 a["kind"] == "pomodoro" and a["command"] == "pomodoro_start" and a["ok"] is True
                 for a in actions
@@ -716,10 +721,10 @@ def test_websocket_action_tags_sentences_e_confirmacao(tmp_path: Path) -> None:
                 call[:3] == ["/usr/bin/open", "-a", "Safari"] for call in recorded_calls
             )
 
-            # Testa atalho com `requires_confirmation=True` via LLM mockado
+            # Test a shortcut with `requires_confirmation=True` via a mocked LLM
             async def approval_stream(**_kwargs):
                 yield {"type": "emotion", "emotion": "curious"}
-                yield {"type": "action", "kind": "shortcut", "target": "acao_sensivel"}
+                yield {"type": "action", "kind": "shortcut", "target": "sensitive_action"}
                 yield {"type": "delta", "text": "Posso bloquear a tela?"}
                 yield {"type": "sentence", "text": "Posso bloquear a tela?"}
                 yield {
@@ -740,7 +745,7 @@ def test_websocket_action_tags_sentences_e_confirmacao(tmp_path: Path) -> None:
                     break
 
             assert approval_req is not None
-            assert approval_req["target"] == "acao_sensivel"
+            assert approval_req["target"] == "sensitive_action"
 
             ws.send_json(
                 {
@@ -751,15 +756,15 @@ def test_websocket_action_tags_sentences_e_confirmacao(tmp_path: Path) -> None:
             )
             confirm_res = ws.receive_json()
             assert confirm_res["type"] == "action_executed"
-            assert confirm_res["target"] == "acao_sensivel"
+            assert confirm_res["target"] == "sensitive_action"
             assert confirm_res["ok"] is True
 
     shortcuts.close()
     memory.close()
 
 
-def test_websocket_barge_in_interrupt_e_audio_pet(tmp_path: Path) -> None:
-    """Valida interrupção imediata (barge-in), áudio STT -> LLM, pet, run_shortcut e activate_app."""
+def test_websocket_barge_in_interrupt_and_pet_audio(tmp_path: Path) -> None:
+    """Validate immediate interruption (barge-in), STT audio -> LLM, pet, run_shortcut and activate_app."""
 
     async def slow_or_fast_stream(user_text: str, **_kwargs):
         if "lento" in user_text.lower():
@@ -809,7 +814,7 @@ def test_websocket_barge_in_interrupt_e_audio_pet(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
-            # 1. Barge-in (interrupt) cancela streaming lento sem travar
+            # 1. Barge-in (interrupt) cancels slow streaming without hanging
             ws.send_json({"type": "text", "text": "Modo lento por favor"})
             assert ws.receive_json() == {"type": "state", "state": "thinking"}
             assert ws.receive_json() == {"type": "emotion", "emotion": "happy"}
@@ -820,13 +825,13 @@ def test_websocket_barge_in_interrupt_e_audio_pet(tmp_path: Path) -> None:
             assert {"type": "interrupted"} in interrupted_events
             assert {"type": "state", "state": "idle"} in interrupted_events
 
-            # 2. Carinho (pet) aumenta afinidade
-            ws.send_json({"type": "pet", "kind": "pet", "intensity": 1.0})
+            # 2. Petting increases affinity
+            ws.send_json({"type": "touch", "kind": "pet", "intensity": 1.0})
             pet_ev = ws.receive_json()
-            assert pet_ev["type"] == "companion_updated"
+            assert pet_ev["type"] == "mood"
             assert pet_ev["affinity"] > 50.0
 
-            # 3. Atalho direto e ativar app via WS
+            # 3. Direct shortcut and activating an app over WS
             ws.send_json({"type": "run_shortcut", "id": "find_replace"})
             sc_ev = ws.receive_json()
             assert sc_ev["type"] == "action_executed"
@@ -839,7 +844,7 @@ def test_websocket_barge_in_interrupt_e_audio_pet(tmp_path: Path) -> None:
             assert app_ev["kind"] == "app"
             assert app_ev["ok"] is True
 
-            # 4. Áudio base64 -> transcript -> turno LLM
+            # 4. Base64 audio -> transcript -> LLM turn
             audio_b64 = base64.b64encode(b"FAKE_WEBM_AUDIO").decode("ascii")
             ws.send_json({"type": "audio", "data": audio_b64, "mime_type": "audio/webm"})
             audio_events = []
@@ -858,8 +863,8 @@ def test_websocket_barge_in_interrupt_e_audio_pet(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stt_tts_fallback_e_seguranca_subprocess() -> None:
-    """Valida LocalSTT com fallback seguro e ServerTTS usando exclusivamente lista argv."""
+async def test_stt_tts_fallback_and_subprocess_safety() -> None:
+    """Validate LocalSTT with a safe fallback and ServerTTS using exclusively an argv list."""
     stt_missing = LocalSTT()
     if not stt_missing.is_available():
         res = await stt_missing.transcribe_bytes(b"1234", mime_type="audio/webm", language="pt")

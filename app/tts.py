@@ -1,4 +1,4 @@
-"""Síntese de voz (TTS) offline no macOS via `/usr/bin/say` e `/usr/bin/afconvert`."""
+"""Offline text-to-speech (TTS) on macOS via `/usr/bin/say` e `/usr/bin/afconvert`."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _FORMAT_MIME_MAP: dict[str, str] = {
 
 
 class ServerTTS:
-    """Sintetizador de voz offline no servidor macOS para iPhone Safari e Android."""
+    """Offline speech synthesizer on the macOS server for iPhone Safari and Android."""
 
     def __init__(
         self,
@@ -40,13 +40,13 @@ class ServerTTS:
         self._runner = runner or subprocess.run
 
     def is_available(self) -> bool:
-        """Indica se o backend de síntese está disponível no ambiente."""
+        """Report whether the synthesis backend is available in this environment."""
         if self._synth_fn is not None:
             return True
         return Path(_SAY_BIN).exists() and Path(_AFCONVERT_BIN).exists()
 
     def list_voices(self) -> list[dict[str, str]]:
-        """Lista vozes disponíveis no macOS priorizando português (PT-BR / PT-PT)."""
+        """List the voices available on macOS, prioritizing Portuguese (PT-BR / PT-PT)."""
         if not Path(_SAY_BIN).exists() and self._runner is subprocess.run:
             return []
 
@@ -59,7 +59,7 @@ class ServerTTS:
                 timeout=10,
             )
         except Exception as exc:
-            logger.warning("Não foi possível listar vozes do sistema (%s).", type(exc).__name__)
+            logger.warning("Could not list system voices (%s).", type(exc).__name__)
             return []
 
         if proc.returncode != 0:
@@ -95,19 +95,19 @@ class ServerTTS:
         voice: str | None = None,
         output_format: str = "m4a",
     ) -> tuple[bytes, str]:
-        """Sintetiza texto em áudio `.m4a` (`audio/mp4`) ou `.wav` (`audio/wav`)."""
+        """Synthesize text into `.m4a` (`audio/mp4`) ou `.wav` (`audio/wav`)."""
         cleaned_text = " ".join((text or "").split())
         if not cleaned_text:
-            raise ValueError("Texto não pode ser vazio para síntese de voz.")
+            raise ValueError("Text cannot be empty for speech synthesis.")
 
         fmt = (output_format or "m4a").strip().lower()
         if fmt not in _FORMAT_MIME_MAP:
-            raise ValueError(f"Formato de áudio não suportado: {fmt}. Use 'm4a' ou 'wav'.")
+            raise ValueError(f"Unsupported audio format: {fmt}. Use 'm4a' or 'wav'.")
         mime_type = _FORMAT_MIME_MAP[fmt]
 
         chosen_voice = (voice if voice is not None else self.default_voice).strip()
         if chosen_voice and not _SAFE_VOICE_RE.match(chosen_voice):
-            raise ValueError("Nome de voz inválido.")
+            raise ValueError("Invalid voice name.")
 
         if self._synth_fn is not None:
             result = self._synth_fn(cleaned_text, chosen_voice or self.default_voice, fmt)
@@ -116,7 +116,7 @@ class ServerTTS:
             return bytes(result), mime_type
 
         if not (Path(_SAY_BIN).exists() and Path(_AFCONVERT_BIN).exists()) and self._runner is subprocess.run:
-            raise RuntimeError("TTS do servidor disponível apenas no macOS com /usr/bin/say e afconvert.")
+            raise RuntimeError("Server TTS is only available on macOS with /usr/bin/say and afconvert.")
 
         with tempfile.TemporaryDirectory(prefix="desk_tts_") as tmp_dir:
             tmp_root = Path(tmp_dir)
@@ -138,7 +138,7 @@ class ServerTTS:
                 timeout=30,
             )
             if say_proc.returncode != 0 and chosen_voice:
-                logger.warning("Voz '%s' indisponível no macOS; usando voz padrão do sistema.", chosen_voice)
+                logger.warning("Voice '%s' unavailable on macOS; using the system default voice.", chosen_voice)
                 say_proc = self._runner(
                     [_SAY_BIN, "-f", str(text_path), "-o", str(aiff_path)],
                     shell=False,
@@ -148,7 +148,7 @@ class ServerTTS:
                 )
 
             if say_proc.returncode != 0:
-                raise RuntimeError("Falha ao gerar áudio com /usr/bin/say.")
+                raise RuntimeError("Failed to generate audio with /usr/bin/say.")
 
             if fmt == "m4a":
                 convert_argv = [
@@ -181,7 +181,7 @@ class ServerTTS:
                 timeout=30,
             )
             if conv_proc.returncode != 0 or not out_path.exists():
-                raise RuntimeError("Falha ao converter áudio com /usr/bin/afconvert.")
+                raise RuntimeError("Failed to convert audio with /usr/bin/afconvert.")
 
             return out_path.read_bytes(), mime_type
 
@@ -191,17 +191,17 @@ class ServerTTS:
         voice: str | None = None,
         output_format: str = "m4a",
     ) -> tuple[bytes, str]:
-        """Versão assíncrona de `synthesize` executada em thread dedicada."""
+        """Async version of `synthesize`, run in a dedicated thread."""
         if self._synth_fn is not None and inspect.iscoroutinefunction(self._synth_fn):
             cleaned_text = " ".join((text or "").split())
             if not cleaned_text:
-                raise ValueError("Texto não pode ser vazio para síntese de voz.")
+                raise ValueError("Text cannot be empty for speech synthesis.")
             fmt = (output_format or "m4a").strip().lower()
             if fmt not in _FORMAT_MIME_MAP:
-                raise ValueError(f"Formato de áudio não suportado: {fmt}. Use 'm4a' ou 'wav'.")
+                raise ValueError(f"Unsupported audio format: {fmt}. Use 'm4a' or 'wav'.")
             chosen_voice = (voice if voice is not None else self.default_voice).strip()
             if chosen_voice and not _SAFE_VOICE_RE.match(chosen_voice):
-                raise ValueError("Nome de voz inválido.")
+                raise ValueError("Invalid voice name.")
             res = await self._synth_fn(cleaned_text, chosen_voice or self.default_voice, fmt)
             if isinstance(res, tuple) and len(res) == 2:
                 return bytes(res[0]), str(res[1])

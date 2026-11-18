@@ -1,0 +1,83 @@
+/* Everyday widgets: touch-sized controls, calm text states. */
+.pn-np-btn, .pn-pomo-btn, .pn-timer-preset, .pn-add-btn, .pn-check, .pn-check-row {
+  min-height: 44px;
+  min-width: 44px;
+  box-sizing: border-box;
+  font-size: 18px;
+  cursor: pointer;
+}
+.pn-input {
+  min-height: 44px;
+  box-sizing: border-box;
+  font-size: 18px;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pn-add {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  gap: 6px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+/* Override arrange-mode .pn-remove and global .pn-status positioning inside widget lists. */
+.pn-productivity .pn-remove,
+.pn-timer-row .pn-remove {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  width: auto;
+  height: auto;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa4b2;
+  font-size: 20px;
+  line-height: 1;
+}
+.pn-productivity .pn-status {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  padding: 4px 0;
+  text-align: left;
+  pointer-events: auto;
+}
+.pn-productivity .pn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pn-task, .pn-note, .pn-habit, .pn-timer-row {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-box-pack: justify;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  gap: 6px;
+}
+.pn-done { text-decoration: line-through; opacity: 0.6; }
+.pn-cal-next { font-weight: bold; }
+.pn-cal-time { margin-right: 8px; }
+.pn-clock-zones { width: 100%; margin-top: 6px; }
+.pn-clock-zone {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-pack: justify;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+.pn-clock-face { margin: 0 auto; }

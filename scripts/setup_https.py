@@ -1,4 +1,4 @@
-"""Gera certificados TLS locais em `certs/` para HTTPS na LAN (RG406H e iPhone)."""
+"""Generate local TLS certificates in `certs/` for HTTPS on the LAN (RG406H and iPhone)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _INET_RE = re.compile(r"\binet\s+(\d{1,3}(?:\.\d{1,3}){3})\b")
 
 
 def _is_usable_lan_ip(candidate: str) -> bool:
-    """Verifica se o IPv4 é utilizável na LAN (ignora loopback, link-local e 0.0.0.0)."""
+    """Check whether the IPv4 address is usable on the LAN (ignores loopback, link-local and 0.0.0.0)."""
     cleaned = (candidate or "").strip()
     if not cleaned:
         return False
@@ -41,7 +41,7 @@ def _is_usable_lan_ip(candidate: str) -> bool:
 
 
 def detect_lan_ip() -> str:
-    """Detecta o IP local da máquina na LAN sem enviar tráfego externo."""
+    """Detect the machine's local LAN IP without sending external traffic."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(("8.8.8.8", 80))
@@ -53,7 +53,7 @@ def detect_lan_ip() -> str:
     finally:
         sock.close()
 
-    # Fallback para ambientes sem rota externa (ex.: sandbox): lê `/sbin/ifconfig`.
+    # Fallback for environments with no external route (e.g. sandbox): read `/sbin/ifconfig`.
     if Path(_IFCONFIG_BIN).exists():
         try:
             proc = subprocess.run(
@@ -68,7 +68,7 @@ def detect_lan_ip() -> str:
                     ip for ip in _INET_RE.findall(proc.stdout) if _is_usable_lan_ip(ip)
                 ]
                 if candidates:
-                    # Prioriza faixas privadas comuns de LAN (192.168.x.x / 10.x.x.x / 172.16-31.x.x).
+                    # Prefer common private LAN ranges (192.168.x.x / 10.x.x.x / 172.16-31.x.x).
                     private_first = [
                         ip for ip in candidates if ipaddress.IPv4Address(ip).is_private
                     ]
@@ -87,7 +87,7 @@ def detect_lan_ip() -> str:
 
 
 def _find_openssl() -> str | None:
-    """Localiza binário OpenSSL confiável."""
+    """Locate a trusted OpenSSL binary."""
     for candidate in _OPENSSL_CANDIDATES:
         if Path(candidate).exists():
             return candidate
@@ -95,13 +95,13 @@ def _find_openssl() -> str | None:
 
 
 def generate_certs(lan_ip: str | None = None) -> tuple[Path, Path, str, str]:
-    """Gera `certs/cert.pem` e `certs/key.pem` via mkcert ou OpenSSL autoassinado."""
+    """Generate `certs/cert.pem` and `certs/key.pem` via mkcert or self-signed OpenSSL."""
     if lan_ip is not None:
         cleaned_ip = lan_ip.strip()
         try:
             ipaddress.ip_address(cleaned_ip)
         except ValueError as exc:
-            raise ValueError(f"IP inválido informado em --ip: '{lan_ip}'") from exc
+            raise ValueError(f"Invalid IP given in --ip: '{lan_ip}'") from exc
         resolved_ip = cleaned_ip
     else:
         resolved_ip = detect_lan_ip()
@@ -128,12 +128,12 @@ def generate_certs(lan_ip: str | None = None) -> tuple[Path, Path, str, str]:
             timeout=30,
         )
         if proc.returncode != 0:
-            raise RuntimeError(f"mkcert falhou: {proc.stderr.strip()}")
+            raise RuntimeError(f"mkcert failed: {proc.stderr.strip()}")
         return CERT_FILE, KEY_FILE, resolved_ip, "mkcert"
 
     openssl_bin = _find_openssl()
     if not openssl_bin:
-        raise RuntimeError("Nem mkcert nem openssl foram encontrados no sistema.")
+        raise RuntimeError("Neither mkcert nor openssl was found on the system.")
 
     san_entries = ["DNS:localhost", "IP:127.0.0.1"]
     if resolved_ip not in {"127.0.0.1", "localhost"}:
@@ -184,49 +184,49 @@ def generate_certs(lan_ip: str | None = None) -> tuple[Path, Path, str, str]:
             timeout=30,
         )
         if proc.returncode != 0:
-            raise RuntimeError(f"openssl falhou: {proc.stderr.strip()}")
+            raise RuntimeError(f"openssl failed: {proc.stderr.strip()}")
 
     return CERT_FILE, KEY_FILE, resolved_ip, "openssl"
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Ponto de entrada CLI para gerar certificados e exibir instruções de execução."""
+    """CLI entry point to generate certificates and print run instructions."""
     parser = argparse.ArgumentParser(
-        description="Gera certificados TLS locais em certs/ para acesso HTTPS na LAN."
+        description="Generate local TLS certificates in certs/ for HTTPS access on the LAN."
     )
     parser.add_argument(
         "--ip",
         dest="ip",
         default=None,
-        help="IP local da LAN para incluir no SAN do certificado (detectado automaticamente se omitido).",
+        help="Local LAN IP to include in the certificate SAN (auto-detected if omitted).",
     )
     args = parser.parse_args(argv)
 
     try:
         cert_path, key_path, lan_ip, method = generate_certs(lan_ip=args.ip)
     except Exception as exc:
-        print(f"Erro ao gerar certificados HTTPS: {exc}", file=sys.stderr)
+        print(f"Error generating HTTPS certificates: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Certificados gerados com sucesso ({method}):")
-    print(f"  Certificado: {cert_path}")
-    print(f"  Chave:       {key_path}")
-    print(f"  IP da LAN:   {lan_ip}")
+    print(f"Certificates generated successfully ({method}):")
+    print(f"  Certificate: {cert_path}")
+    print(f"  Key:         {key_path}")
+    print(f"  LAN IP:      {lan_ip}")
     print()
-    print("Subir servidor HTTP (local / túnel ADB USB):")
+    print("Start the HTTP server (local / USB ADB tunnel):")
     print("  .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000")
     print()
-    print("Subir servidor HTTPS (LAN Wi-Fi para microfone/sensores no RG406H e iPhone):")
+    print("Start the HTTPS server (Wi-Fi LAN for microphone/sensors on the RG406H and iPhone):")
     print(
         "  .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8443 "
         "--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem"
     )
     print()
-    print("Túnel USB ADB para Anbernic RG406H:")
+    print("USB ADB tunnel for the Anbernic RG406H:")
     print("  adb reverse tcp:8000 tcp:8000")
     print("  adb reverse tcp:8443 tcp:8443")
     print()
-    print("URLs de acesso:")
+    print("Access URLs:")
     print("  ADB / Localhost: http://localhost:8000")
     print(f"  LAN HTTPS:       https://{lan_ip}:8443")
     return 0
