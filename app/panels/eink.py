@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,7 +18,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 EINK_WIDGET_TYPES: frozenset[str] = frozenset(
-    {"clock", "today", "calendar", "weather", "notes", "tasks", "lupin_line"}
+    {"clock", "today", "calendar", "weather", "notes", "tasks", "checklist", "lupin_line"}
 )
 DEFAULT_REFRESH_MINUTES = 5
 
@@ -100,8 +101,21 @@ def _config_of(widget: dict) -> dict:
     return config if isinstance(config, dict) else {}
 
 
-def _int_option(config: dict, key: str, default: int, low: int, high: int) -> int:
-    value = config.get(key, default)
+def _int_option(
+    config: dict,
+    key: str,
+    default: int,
+    low: int,
+    high: int,
+    *,
+    fallback_key: str | None = None,
+) -> int:
+    if key in config:
+        value = config.get(key, default)
+    elif fallback_key is not None and fallback_key in config:
+        value = config.get(fallback_key, default)
+    else:
+        value = default
     if not _is_int(value):
         return default
     return max(low, min(high, value))
@@ -170,12 +184,12 @@ def _render_today(config: dict, data: EinkData) -> str:
 def _render_calendar(config: dict, data: EinkData) -> str:
     events = data.calendar
     parts = ['<div class="t">', "<h2>Calendar</h2>"]
-    if events is None:
+    if not isinstance(events, (list, tuple)):
         parts.append('<p class="row">Calendar unavailable</p>')
     elif not events:
         parts.append('<p class="row">No events today</p>')
     else:
-        limit = _int_option(config, "limit", 6, 1, 12)
+        limit = _int_option(config, "limit", 6, 1, 12, fallback_key="max")
         shown = 0
         for event in events:
             if shown >= limit:
@@ -191,6 +205,10 @@ def _render_calendar(config: dict, data: EinkData) -> str:
     return "".join(parts)
 
 
+def _is_finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 def _render_weather(config: dict, data: EinkData) -> str:
     weather = data.weather
     if not isinstance(weather, dict) or not weather.get("ok"):
@@ -198,14 +216,14 @@ def _render_weather(config: dict, data: EinkData) -> str:
     parts = ['<div class="t">', "<h2>Weather</h2>"]
     parts.append(f'<p class="row">{_esc(weather.get("city"))}</p>')
     temperature = weather.get("temperature_c")
-    if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
+    if _is_finite_number(temperature):
         parts.append(f'<div class="big">{int(round(temperature))}&deg;C</div>')
     else:
         parts.append('<div class="big">--</div>')
     if weather.get("condition"):
         parts.append(f'<p class="mid">{_esc(weather.get("condition"))}</p>')
     apparent = weather.get("apparent_c")
-    if isinstance(apparent, (int, float)) and not isinstance(apparent, bool):
+    if _is_finite_number(apparent):
         parts.append(f'<p class="row">feels like {int(round(apparent))}&deg;C</p>')
     parts.append("</div>")
     return "".join(parts)
@@ -256,6 +274,7 @@ _RENDERERS: dict[str, Callable[[dict, EinkData], str]] = {
     "weather": _render_weather,
     "notes": _render_notes,
     "tasks": _render_tasks,
+    "checklist": _render_tasks,
     "lupin_line": _render_lupin_line,
 }
 
@@ -283,9 +302,9 @@ def render_widget(widget: dict, data: EinkData) -> str | None:
 
 _STYLE = """
 html, body { background: #fff; color: #000; margin: 0; padding: 0; }
-body { font-family: Georgia, serif; font-size: 22px; padding: 8px; box-sizing: border-box; }
+body { font-family: Georgia, serif; font-size: 22px; padding: 8px; -webkit-box-sizing: border-box; box-sizing: border-box; }
 #grid { position: relative; width: 100%; }
-.w { position: absolute; border: 2px solid #000; overflow: hidden; box-sizing: border-box; padding: 8px; }
+.w { position: absolute; border: 2px solid #000; overflow: hidden; -webkit-box-sizing: border-box; box-sizing: border-box; padding: 8px; }
 h2 { font-size: 22px; font-weight: bold; margin: 0 0 6px 0; }
 p { margin: 0 0 4px 0; }
 .big { font-size: 64px; font-weight: bold; }
@@ -320,6 +339,11 @@ def _grid_size(layout: dict, orientation: str, widgets: list[dict]) -> tuple[int
     return (cols if valid_cols else derived_cols, rows if valid_rows else derived_rows)
 
 
+def _pages_of(layout: Any) -> list[dict]:
+    raw_pages = layout.get("pages") if isinstance(layout, dict) else None
+    return [page for page in raw_pages if isinstance(page, dict)] if isinstance(raw_pages, list) else []
+
+
 def render_page(
     layout: dict,
     *,
@@ -331,8 +355,7 @@ def render_page(
 ) -> str:
     """Return the full E-ink HTML document for one page of a Layout."""
     layout = layout if isinstance(layout, dict) else {}
-    raw_pages = layout.get("pages")
-    pages = [page for page in raw_pages if isinstance(page, dict)] if isinstance(raw_pages, list) else []
+    pages = _pages_of(layout)
 
     page_index = 0
     for index, page in enumerate(pages):
@@ -423,7 +446,7 @@ def _pick_orientation(requested: str | None, device: dict | None) -> str:
 
 def _next_page_id(layout: dict, page_id: str | None) -> str | None:
     """The page after ``page_id`` (wrapping), or None when the layout has a single page."""
-    ids = [p.get("id") for p in layout.get("pages", []) if isinstance(p, dict)]
+    ids = [p.get("id") for p in _pages_of(layout)]
     ids = [i for i in ids if isinstance(i, str)]
     if len(ids) < 2:
         return None
@@ -481,18 +504,21 @@ def register(app: Any) -> None:
                 data.today = _today_summary()
             except Exception:
                 logger.warning("E-ink: could not build Today.")
-            if data.today:
+            if isinstance(data.today, dict):
                 data.lupin_line = str(data.today.get("headline") or "")
         productivity = getattr(state, "productivity", None)
         store = getattr(productivity, "store", None)
         if store is not None:
-            try:
-                if "tasks" in types:
+            if types & {"tasks", "checklist"}:
+                try:
                     data.tasks = store.list_tasks()
-                if "notes" in types:
+                except Exception:
+                    logger.warning("E-ink: could not read tasks.")
+            if "notes" in types:
+                try:
                     data.notes = store.list_notes()
-            except Exception:
-                logger.warning("E-ink: could not read tasks or notes.")
+                except Exception:
+                    logger.warning("E-ink: could not read notes.")
         return data
 
     @app.get("/eink", response_class=HTMLResponse)
@@ -519,22 +545,26 @@ def register(app: Any) -> None:
             return HTMLResponse(_error_page("Panels are not available."), 503, headers)
         layout_id = layout or (device_record or {}).get("layout_id") or "default"
         document = layouts.get(layout_id)
-        if document is None:
+        if not isinstance(document, dict):
             return HTMLResponse(_error_page("Unknown layout."), 404, headers)
 
         resolved = _pick_orientation(orientation, device_record)
         minutes = clamp_refresh_minutes(refresh)
-        pages = [p for p in document.get("pages", []) if isinstance(p, dict)]
-        current = next((p for p in pages if p.get("id") == page), pages[0] if pages else {})
+        pages = _pages_of(document)
+        current = next((p for p in pages if page is not None and p.get("id") == page), pages[0] if pages else {})
         types = widget_types_on_page(current, resolved)
 
         now = datetime.now()
         data = await asyncio.to_thread(_gather, types, now)
 
         # The refresh moves on to the next page, so a multi-page Layout rotates by itself.
-        query = [f"layout={quote(layout_id, safe='')}", f"orientation={resolved}", f"refresh={minutes}"]
+        query = [f"refresh={minutes}"]
         if device:
             query.insert(0, f"device={quote(device, safe='')}")
+        if layout:
+            query.append(f"layout={quote(layout_id, safe='')}")
+        if orientation in ("portrait", "landscape"):
+            query.append(f"orientation={resolved}")
         next_page = _next_page_id(document, current.get("id"))
         if next_page:
             query.append(f"page={quote(next_page, safe='')}")
