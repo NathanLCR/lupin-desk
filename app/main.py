@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.device_routes import setup_devices
+from app.panels.routes import register as register_panels
 from app.productivity import register as register_productivity
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
 from app.cowork import CoworkStore, get_git_sync_status
@@ -51,6 +52,9 @@ from app.stt import LocalSTT
 from app.consent import DataConsent, build_personal_context
 from app.kokoro_tts import LupinTTS
 from app.local_mode import SlowModelNotice
+from app.mcp_client import McpServerStore
+from app.mcp_routes import register_mcp_routes
+from app.mcp_server import register_mcp_server
 from app.signals import ActiveBodySpeaker, SignalBus
 from app.today import FirstWakeTracker, TodayEngine, compose_first_wake_speech
 from app.tts import ServerTTS
@@ -989,6 +993,8 @@ def create_app(
 
     # Active Body (ADR 0001) and Device Roles (P01): see app/device_hub.py.
     hub = setup_devices(fastapi_app, resolved_settings.db_path, require_mac_client)
+    # Panels (P02): Layouts REST and the /panel page (app/panels/routes.py).
+    register_panels(fastapi_app, resolved_settings.db_path, require_mac_client)
     bodies = hub.entries
     current_active_body = hub.current_active_body
     announce_active_body = hub.announce_active_body
@@ -1003,6 +1009,14 @@ def create_app(
         consent=data_consent.get,
     )
     fastapi_app.state.signals = signals
+
+    # Issue 12: Lupin as an MCP server (loopback only) and external MCP servers as Actions.
+    register_mcp_server(fastapi_app, signals=signals, today=resolved_today)
+    external_tools = register_mcp_routes(
+        fastapi_app,
+        McpServerStore(resolved_settings.db_path.parent / "mcp_servers.json"),
+        require_mac_client,
+    )
 
     # Tasks, notes and habits (issue 05): store, REST, Panel actions, habit scheduler.
     register_productivity(fastapi_app, resolved_settings.db_path)
@@ -1135,6 +1149,48 @@ def create_app(
                         "title": "Today summary",
                         "ok": bool(today_res.get("ok")),
                         "result": today_res,
+                    }
+                )
+                return
+
+            if kind == "mcp":
+                parsed = external_tools.parse_target(target)
+                info = external_tools.describe(parsed[0], parsed[1]) if parsed else None
+                if parsed is None or info is None:
+                    await safe_send(
+                        {
+                            "type": "action_executed",
+                            "kind": "mcp",
+                            "target": target.split(" ", 1)[0][:80],
+                            "ok": False,
+                            "error": "Unknown external tool.",
+                        }
+                    )
+                    return
+                if info["needs_approval"]:
+                    approval_id = uuid.uuid4().hex[:10]
+                    pending_approvals[approval_id] = {"kind": "mcp", "call": parsed}
+                    await safe_send(
+                        {
+                            "type": "tool_approval_request",
+                            "approval_id": approval_id,
+                            "kind": "mcp",
+                            "risk": info["risk"],
+                            "target": f"{info['server']}.{info['tool']}",
+                            "title": info["title"],
+                            "message": info["message"],
+                        }
+                    )
+                    return
+                res = await external_tools.run(*parsed)
+                await safe_send(
+                    {
+                        "type": "action_executed",
+                        "kind": "mcp",
+                        "target": f"{info['server']}.{info['tool']}",
+                        "ok": bool(res.get("ok")),
+                        "result": res.get("text"),
+                        "error": res.get("error"),
                     }
                 )
                 return
@@ -1328,6 +1384,9 @@ def create_app(
                 )
                 cowork_context = await asyncio.to_thread(resolved_cowork.build_prompt_context)
                 skills_context = build_skills_prompt(enabled_skill_ids)
+                mcp_context = external_tools.prompt_context()
+                if mcp_context:
+                    skills_context = f"{skills_context}\n\n{mcp_context}".strip()
 
                 # Data Consent: calendar and e-mail are only read and sent with the switch on
                 # for the active provider. Ephemeral context: it goes neither to the history nor to the log.
@@ -1732,6 +1791,36 @@ def create_app(
                                 "title": app_name,
                                 "ok": bool(res.get("ok")),
                                 "result": res,
+                                "error": res.get("error"),
+                            }
+                        )
+                        continue
+
+                    if pending_kind == "mcp":
+                        server_id, tool_name, tool_args = pending["call"]
+                        target_name = f"{server_id}.{tool_name}"
+                        if not approved:
+                            await safe_send(
+                                {
+                                    "type": "action_executed",
+                                    "approval_id": approval_id,
+                                    "kind": "mcp",
+                                    "target": target_name,
+                                    "ok": False,
+                                    "cancelled": True,
+                                    "error": "Running the external tool was declined by the user.",
+                                }
+                            )
+                            continue
+                        res = await external_tools.run(server_id, tool_name, tool_args)
+                        await safe_send(
+                            {
+                                "type": "action_executed",
+                                "approval_id": approval_id,
+                                "kind": "mcp",
+                                "target": target_name,
+                                "ok": bool(res.get("ok")),
+                                "result": res.get("text"),
                                 "error": res.get("error"),
                             }
                         )
