@@ -312,6 +312,9 @@ def today_fallback_due_warning(due_count: int, today_iso: str) -> str:
 # Spoken fallback when the LLM is unreachable (shown/spoken in the chat error).
 FRIENDLY_LLM_ERROR = "Não consegui falar com o modelo agora. Verifique se a API local está rodando."
 
+# Spoken notice when a local model (Ollama) is slow to answer.
+LOCAL_MODEL_SLOW = "Esse modelo local está demorando um pouco. Já te respondo."
+
 
 # ---------------------------------------------------------------------------
 # Client-side phrases (served to the web Body through /api/lupin-language)

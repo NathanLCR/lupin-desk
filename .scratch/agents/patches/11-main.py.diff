@@ -1,0 +1,58 @@
+--- a/app/main.py
++++ b/app/main.py
+@@ -46,6 +46,8 @@
+ from app import speech
+ from app.stt import LocalSTT
+ from app.consent import DataConsent, build_personal_context
++from app.kokoro_tts import LupinTTS
++from app.local_mode import SlowModelNotice
+ from app.today import FirstWakeTracker, TodayEngine, compose_first_wake_speech
+ from app.tts import ServerTTS
+ 
+@@ -326,7 +328,10 @@
+         model_name=resolved_settings.stt_model,
+         language=resolved_settings.stt_language,
+     )
+-    resolved_tts = tts_engine or ServerTTS(default_voice=resolved_settings.tts_voice)
++    resolved_tts = tts_engine or LupinTTS(
++        ServerTTS(default_voice=resolved_settings.tts_voice),
++        enabled=resolved_settings.tts_kokoro,
++    )
+     resolved_cowork = cowork_store or CoworkStore(resolved_settings.cowork_workspace_path)
+     resolved_today = today_engine or TodayEngine(resolved_settings, resolved_cowork)
+     resolved_first_wake = first_wake or FirstWakeTracker(resolved_memory)
+@@ -565,6 +570,7 @@
+         return {
+             **data_consent.get(),
+             "receiver": data_consent.receiver_name(),
++            "local": data_consent.is_local(),
+             "can_edit": is_mac_client(host),
+         }
+ 
+@@ -1340,6 +1346,18 @@
+ 
+                 resolved_memory.add_message("user", user_text)
+ 
++                async def announce_slow_model() -> None:
++                    await safe_send({"type": "state", "state": "thinking"})
++                    await safe_send({"type": "notice", "kind": "slow_model", "text": speech.LOCAL_MODEL_SLOW})
++                    if audio_queue is not None:
++                        audio_queue.put_nowait(speech.LOCAL_MODEL_SLOW)
++
++                slow_notice = SlowModelNotice(
++                    resolved_settings.local_llm_slow_after_s if data_consent.is_local() else 0.0,
++                    announce_slow_model,
++                )
++                slow_notice.start()
++
+                 async for event in resolved_llm.stream_chat(
+                     user_text=user_text,
+                     history=history,
+@@ -1351,6 +1369,7 @@
+                     skills_context=skills_context,
+                     personal_context=personal_context,
+                 ):
++                    slow_notice.stop()
+                     event_type = event.get("type")
+                     if event_type == "emotion":
+                         emotion = str(event.get("emotion") or "neutral")
