@@ -14,8 +14,10 @@ step still runs. All policy is data at the top of this module, not scattered ifs
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import inspect
+import itertools
 import logging
 import re
 import time
@@ -74,6 +76,11 @@ KIND_EXPRESSIONS: dict[str, str] = {
 IMPORTANCE_EXPRESSIONS: dict[Importance, str] = {
     Importance.NORMAL: "curious",
 }
+
+# Upper bounds (seconds) so a slow hub send, listener or TTS never blocks the caller for long.
+PUBLISH_TIMEOUT_SECONDS = 5.0
+LISTENER_TIMEOUT_SECONDS = 5.0
+SPEAK_TIMEOUT_SECONDS = 20.0
 
 SIGNALS_TOPIC = "signals"
 SIGNAL_KIND_TOPIC_PREFIX = "signal:"
@@ -208,7 +215,9 @@ class SignalBus:
         delivered_total = 0
         for topic in _topics_for(signal.kind):
             try:
-                delivered_total += int(await self.hub.publish(topic, payload))
+                delivered_total += int(
+                    await asyncio.wait_for(self.hub.publish(topic, payload), PUBLISH_TIMEOUT_SECONDS)
+                )
             except Exception as exc:
                 logger.warning("Signal %s was not published (%s).", topic, type(exc).__name__)
         return delivered_total
@@ -216,7 +225,7 @@ class SignalBus:
     async def _notify_listeners(self, signal: Signal) -> None:
         for callback in list(self._listeners):
             try:
-                await _settle(callback(signal))
+                await asyncio.wait_for(_settle(callback(signal)), LISTENER_TIMEOUT_SECONDS)
             except Exception as exc:
                 logger.warning("A signal listener failed (%s).", type(exc).__name__)
 
@@ -240,12 +249,20 @@ class SignalBus:
             else:
                 if self.speak is None:
                     reason = "no_speaker"
-                elif await self._speak(text):
-                    spoke = True
-                    reason = "spoken"
-                    self._last_spoken[kind] = self._clock()
                 else:
-                    reason = "speak_failed"
+                    # Reserve the rate slot before awaiting, so a concurrent emit of the same
+                    # kind sees it; give it back if nothing was actually said.
+                    previous = self._last_spoken.get(kind)
+                    self._last_spoken[kind] = self._clock()
+                    outcome = await self._speak(text)
+                    if outcome == "spoken":
+                        spoke = True
+                    else:
+                        if previous is None:
+                            self._last_spoken.pop(kind, None)
+                        else:
+                            self._last_spoken[kind] = previous
+                    reason = outcome
 
         expression = KIND_EXPRESSIONS.get(kind) or IMPORTANCE_EXPRESSIONS.get(signal.importance)
         if expression is None and reason == "expression_only":
@@ -273,22 +290,23 @@ class SignalBus:
         limit = RATE_LIMIT_SECONDS.get(kind, DEFAULT_RATE_LIMIT_SECONDS)
         return self._clock() - last >= limit
 
-    async def _speak(self, text: str) -> bool:
+    async def _speak(self, text: str) -> str:
+        """Return "spoken", "no_active_body" (the callback returned False) or "speak_failed"."""
         if self.speak is None:
-            return False
+            return "no_speaker"
         try:
-            await _settle(self.speak(text))
-            return True
+            result = await asyncio.wait_for(_settle(self.speak(text)), SPEAK_TIMEOUT_SECONDS)
         except Exception as exc:
             logger.warning("Lupin could not speak a signal (%s).", type(exc).__name__)
-            return False
+            return "speak_failed"
+        return "no_active_body" if result is False else "spoken"
 
     async def _set_expression(self, name: str) -> bool:
         if self.set_expression is None:
             return False
         try:
-            await _settle(self.set_expression(name))
-            return True
+            result = await asyncio.wait_for(_settle(self.set_expression(name)), SPEAK_TIMEOUT_SECONDS)
+            return result is not False
         except Exception as exc:
             logger.warning("Lupin could not change expression (%s).", type(exc).__name__)
             return False
@@ -328,38 +346,46 @@ class ActiveBodySpeaker:
         self._tts = tts
         self._voice = voice
         self._chunk_bytes = chunk_bytes
+        self._audio_ids = itertools.count(1)
 
-    async def speak(self, text: str) -> None:
+    async def speak(self, text: str) -> bool:
+        """Say `text` on the Active Body; False when there is none (nothing was said)."""
         entry = self._get_active_body()
         if entry is None:
-            return
+            return False
         await entry["send"]({"type": "notice", "kind": "signal", "text": text})
         if not entry.get("wants_audio") or self._tts is None:
-            return
+            return True
         try:
             if not self._tts.is_available():
-                return
+                return True
             audio, _mime = await self._tts.synthesize_async(
                 text=text, voice=self._voice() if self._voice else None, output_format="m4a"
             )
         except Exception as exc:
             logger.warning("TTS failed for a signal (%s); audio skipped.", type(exc).__name__)
-            return
+            return True
+        # A string key that cannot collide with the integer sentence indexes of a chat turn.
+        sentence_key = f"signal:{next(self._audio_ids)}"
         total = max(1, -(-len(audio) // self._chunk_bytes))
         for seq in range(total):
             chunk = audio[seq * self._chunk_bytes : (seq + 1) * self._chunk_bytes]
             await entry["send"](
                 {
                     "type": "audio",
-                    "sentence": 0,
+                    "sentence": sentence_key,
+                    "signal": True,
                     "seq": seq,
                     "last": seq == total - 1,
                     "mime": "audio/mp4",
                     "data": base64.b64encode(chunk).decode("ascii"),
                 }
             )
+        return True
 
-    async def set_expression(self, name: str) -> None:
+    async def set_expression(self, name: str) -> bool:
         entry = self._get_active_body()
-        if entry is not None:
-            await entry["send"]({"type": "emotion", "emotion": name})
+        if entry is None:
+            return False
+        await entry["send"]({"type": "emotion", "emotion": name})
+        return True
