@@ -1,6 +1,6 @@
 # P06 - Signals
 
-Status: in-progress (approved; review follow-ups being fixed)
+Status: done (voice path untested live: nothing emits Signals until 05/12/P09)
 Blocked by: P01
 
 ## Scope
