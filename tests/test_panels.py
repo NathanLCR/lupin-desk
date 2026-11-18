@@ -231,7 +231,15 @@ def test_normalize_rejects_the_default_alias_and_bad_layout_ids() -> None:
 
 
 def test_templates_list_and_build_return_independent_copies() -> None:
-    assert list_templates() == [{"id": "starter", "name": "Starter"}]
+    assert [item["id"] for item in list_templates()] == [
+        "starter",
+        "home",
+        "system",
+        "ai-coding",
+        "music",
+        "planner",
+        "control-deck",
+    ]
 
     copied = build_from_template("starter")
     copied["pages"][0]["landscape"].clear()
@@ -431,7 +439,17 @@ def test_list_get_default_and_templates(tmp_path: Path) -> None:
     assert client.get("/api/layouts/default").json() == starter
     assert starter["grid"]["portrait"] == {"cols": 6, "rows": 12}
 
-    assert client.get("/api/layout-templates").json() == {"templates": [{"id": "starter", "name": "Starter"}]}
+    assert client.get("/api/layout-templates").json() == {
+        "templates": [
+            {"id": "starter", "name": "Starter"},
+            {"id": "home", "name": "Home"},
+            {"id": "system", "name": "System"},
+            {"id": "ai-coding", "name": "AI coding"},
+            {"id": "music", "name": "Music"},
+            {"id": "planner", "name": "Planner"},
+            {"id": "control-deck", "name": "Control Deck"},
+        ]
+    }
 
 
 def test_get_unknown_layout_is_404(tmp_path: Path) -> None:
@@ -549,7 +567,12 @@ def test_create_publishes_the_layout_topic_to_subscribed_devices(tmp_path: Path)
     created = client.post("/api/layouts", json={"name": "Announced"})
 
     assert created.status_code == 201
-    assert {"type": "topic", "topic": "layout", "data": {"layout_id": created.json()["id"]}} in messages
+    layout_id = created.json()["id"]
+    assert {"type": "topic", "topic": "layout", "data": {"layout_id": layout_id}} in messages
+
+    saved = client.put(f"/api/layouts/{layout_id}", json=_layout_with(landscape=[_widget("w1", w=6, h=4)]))
+    assert saved.status_code == 200
+    assert messages.count({"type": "topic", "topic": "layout", "data": {"layout_id": layout_id}}) == 2
 
 
 def test_a_failing_publish_does_not_fail_the_arrange(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -567,3 +590,44 @@ def test_a_failing_publish_does_not_fail_the_arrange(tmp_path: Path, caplog: pyt
 
     assert response.status_code == 200
     assert "socket gone" not in caplog.text
+
+
+def test_get_editor_is_mac_only_and_serves_html_on_mac(tmp_path: Path) -> None:
+    mac_client = TestClient(_app(tmp_path, require=_always_allow))
+    res = mac_client.get("/editor")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/html")
+    assert "EditorApp.mount" in res.text
+
+    other_client = TestClient(_app(tmp_path, require=_always_deny))
+    assert other_client.get("/editor").status_code == 403
+
+
+def test_create_app_wires_editor_and_credentials_routes_for_mac_only(tmp_path: Path) -> None:
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings(
+        llm_base_url="http://127.0.0.1:31415/v1",
+        llm_api_key="test-key",
+        llm_model="claude-haiku-4-5",
+        db_path=tmp_path / "memory.db",
+        cowork_workspace_path=tmp_path / "Cowork",
+        desk_dev_no_token=True,
+    )
+    app = create_app(settings=settings, local_ips=lambda: frozenset({"192.168.1.10"}))
+
+    async def lan_client(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        patched = dict(scope)
+        patched["client"] = ("192.168.1.50", 54321)
+        await app(patched, receive, send)
+
+    with TestClient(app) as mac:
+        assert mac.get("/editor").status_code == 200
+        creds = mac.get("/api/credentials")
+        assert creds.status_code == 200
+        assert "credentials" in creds.json()
+
+        lan = TestClient(lan_client)
+        assert lan.get("/editor").status_code == 403
+        assert lan.get("/api/credentials").status_code == 403

@@ -66,6 +66,14 @@ def register(
             raise HTTPException(status_code=404, detail="Panel page not found.")
         return FileResponse(index_path)
 
+    @fastapi_app.get("/editor")
+    def editor_page(request: Request) -> FileResponse:
+        require_mac_client(request)
+        index_path = BASE_DIR / "static" / "editor" / "index.html"
+        if not index_path.is_file():
+            raise HTTPException(status_code=404, detail="Editor page not found.")
+        return FileResponse(index_path)
+
     # Declared before the {layout_id} routes so the fixed path is never read as an id.
     @fastapi_app.get("/api/layout-templates")
     def list_layout_templates() -> dict[str, Any]:

@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from app.device_routes import setup_devices
 from app.panels.routes import register as register_panels
+from app.panels.credentials import register as register_credentials
 from app.panels.eink import register as register_eink
 from app.panels.everyday import register as register_everyday
 from app.productivity import register as register_productivity
@@ -1012,6 +1013,8 @@ def create_app(
     hub = setup_devices(fastapi_app, resolved_settings.db_path, require_mac_client)
     # Panels (P02): Layouts REST and the /panel page (app/panels/routes.py).
     register_panels(fastapi_app, resolved_settings.db_path, require_mac_client)
+    # Credentials (P03): Mac-only .env editor for widget data sources.
+    register_credentials(fastapi_app, require_mac_client)
     # E-ink Mode (P05): GET /eink for the Kindle (app/panels/eink.py).
     register_eink(fastapi_app)
     bodies = hub.entries

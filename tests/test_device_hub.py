@@ -331,3 +331,23 @@ def test_legacy_body_kind_is_stored_as_body_and_panel_once(tmp_path: Path) -> No
         assert sent[-1]["roles"] == ["panel"] and sent[-1]["active"] is False
 
     asyncio.run(go())
+
+
+def test_editor_preview_hello_is_ephemeral_and_never_steals_active_body(tmp_path: Path) -> None:
+    hub = _hub(tmp_path)
+    body_entry, body_msgs = _connect(hub, {"body": "web", "device_id": "dev-macweb01"})
+    assert body_msgs[0]["active"] is True
+
+    # Even if an editor client mistakenly sends the Mac's device_id, it must not touch DeviceStore or Active Body.
+    ed_entry, ed_msgs = _connect(hub, {"body": "editor", "device_id": "dev-macweb01", "name": "Layout editor"})
+    assert ed_msgs[0]["active"] is False
+    assert ed_msgs[0]["active_body"] == "web"
+    assert ed_entry["roles"] == []
+    assert ed_entry["device_id"] is None
+    assert hub.current_active_body() is body_entry
+    assert hub.store.get("dev-macweb01")["kind"] == "web"
+    assert len(body_msgs) == 1  # Mac window did not receive an active_body=False takeover
+
+    asyncio.run(hub.handle_message(ed_entry, {"type": "subscribe", "topics": ["timers"]}, ed_entry["send"]))
+    assert asyncio.run(hub.publish("timers", {"timers": []})) == 1
+    assert ed_msgs[-1] == {"type": "topic", "topic": "timers", "data": {"timers": []}}
