@@ -1,6 +1,6 @@
 # 05 - Tasks, notes and habits by voice
 
-Status: ready-for-agent
+Status: done (live voice check and 1-week use pending)
 
 ## Context
 
