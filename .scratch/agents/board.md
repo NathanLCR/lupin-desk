@@ -14,20 +14,15 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 
 | File or folder | Owner (agent / task) | Since |
 |---|---|---|
-| static/editor/ (new), app/panels/credentials.py (new), app/panels/templates.py, tests/test_panels.py (template asserts only), tests/test_panel_credentials.py, tests/test_panel_templates.py, tests/frontend/editor-*.test.cjs | lead-p03 / P03 | 2026-11-18 |
 
 ## In progress
 
 | Task | Issue | Track | Agent (model) | Started |
 |---|---|---|---|---|
-| Mac Layout editor | P03 | nested | lead-p03 (sonnet) | 2026-11-18 |
 
 ## Requests
 
-- 06 (lead-06): apply `.scratch/agents/patches/06-main.py.diff`, `06-app.js.diff`, `06-index.html.diff` (search route, files consent PUT/payload + toggle, register_search). Needed for the voice path and the Files consent switch.
-- P05: apply `.scratch/agents/patches/P05-main.py.diff` (register_eink(fastapi_app) after register_panels) so GET /eink is live. Kindle URL: `/eink?device=<id>` (optional layout, page, orientation, refresh minutes).
-- P07: patch pending `.scratch/agents/patches/P07-main.py.diff` (register_everyday + lifespan start/stop).
-- (all wave 1–3 patches applied: P01, P06, 05, P02, 12 and their fix-ups.)
+- (all wave 1–4 patches applied: P01, P06, 05, P02, 12, P05, 06, P07 and their fix-ups.)
 
 ## Decisions and notes
 
@@ -36,8 +31,8 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 - `listening` and `thinking` already exist as states in `static/lupin/expressions.json`; reuse them.
 - Wave 2 (after P01): P06 Signals. Wave 3 (after P01+P06): P02, Lupin 05, 12. Lupin 06 after 05.
 - Wave 4 (2026-11-18): P03 Mac Layout editor, P04 Android kiosk shell, P05 E-ink Mode, P07 Everyday widgets, Lupin 06 Smart search. Wave 5: P08, P09, P10, Lupin 04, Lupin 08.
-- Wave 4 split: P05 owns the server-side e-ink renders (Python, under app/panels/); P07 widgets do NOT write e-ink renders. Grid size is data in the Layout JSON (portrait 6x12 vs 12x6 is still an open user question): never hardcode it.
-- Open user questions: portrait grid 6x12 vs 12x6; should lupin_read_today (12) need Data Consent for Cowork tasks.
+- Wave 4 split: P05 owns the server-side e-ink renders (Python, under app/panels/); P07 widgets do NOT write e-ink renders. Grid size is data in the Layout JSON; portrait grid is confirmed 6×12.
+- 2026-11-18 (user decisions): portrait Panel grid is `6×12`; `lupin_read_today` Cowork tasks need no Data Consent; P04 Android shell keeps the manual `/panel` toggle in the server menu; `GET /api/panel/calendar` stays LAN-accessible (LLM still gated by Data Consent); P03 Mac Layout editor finished.
 
 - 05 store API (lead-05; P07 widgets build on this). Store: `app/productivity/store.py` `ProductivityStore(db_path, clock=datetime.now)`, same sqlite file as memory.db (tables `tasks`, `notes`, `habits`, `habit_checkins`). Records are plain dicts:
   - task `{id, title, done, created_at, done_at}`; note `{id, text, created_at}`; habit `{id, name, days (weekday ints 0=Mon..6=Sun, [] = every day), time ("HH:MM" or null), created_at, streak, done_today}`.

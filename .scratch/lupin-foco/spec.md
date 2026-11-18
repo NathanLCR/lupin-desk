@@ -19,7 +19,7 @@ Direction (ADR 0001): Lupin is the product. Mac control, Cowork, Shortcuts and a
 | 03 | Morning: First Wake | done, in daily use |
 | 04 | Presence | ready-for-agent |
 | 05 | Tasks, notes and habits by voice | done (live voice check and 1-week use pending) |
-| 06 | Smart search | ready-for-agent |
+| 06 | Smart search | done (live voice check and 1-week use pending) |
 | 07 | Dictation | done (real-app paste and daily use pending) |
 | 08 | Image editor | ready-for-agent |
 | 09 | Dock redesign | done (RG406H test pending) |

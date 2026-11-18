@@ -1,6 +1,6 @@
 # P04 - Android kiosk shell for old devices
 
-Status: ready-for-agent
+Status: done (device test pending)
 Blocked by: P01
 
 ## Scope

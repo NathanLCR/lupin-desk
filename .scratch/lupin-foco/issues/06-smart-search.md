@@ -1,6 +1,6 @@
 # 06 - Smart search
 
-Status: ready-for-agent
+Status: done (live voice check and 1-week use pending)
 
 ## Context
 
