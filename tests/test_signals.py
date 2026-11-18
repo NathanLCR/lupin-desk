@@ -365,3 +365,95 @@ def test_mac_controller_pomodoro_active_follows_start_and_stop() -> None:
     assert mac.pomodoro_active() is True
     mac.execute_mac_command("pomodoro_stop")
     assert mac.pomodoro_active() is False
+
+
+def test_concurrent_emits_of_one_kind_speak_once() -> None:
+    spoken: list[str] = []
+
+    async def slow_speak(text: str) -> None:
+        await asyncio.sleep(0.01)
+        spoken.append(text)
+
+    bus = SignalBus(None, speak=slow_speak, clock=Clock())
+
+    async def both():
+        return await asyncio.gather(bus.emit(_build_failed()), bus.emit(_build_failed()))
+
+    results = asyncio.run(both())
+    assert len(spoken) == 1
+    assert sorted(r.reason for r in results) == ["rate_limited", "spoken"]
+
+
+def test_failed_speak_gives_the_rate_slot_back() -> None:
+    calls = {"n": 0}
+
+    async def flaky(text: str) -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("tts down")
+
+    bus = SignalBus(None, speak=flaky, clock=Clock())
+    first = asyncio.run(bus.emit(_build_failed()))
+    second = asyncio.run(bus.emit(_build_failed()))
+    assert (first.reason, first.spoke) == ("speak_failed", False)
+    assert (second.reason, second.spoke) == ("spoken", True)
+
+
+def test_no_active_body_is_not_spoken_and_does_not_burn_the_limit() -> None:
+    from app.signals import ActiveBodySpeaker
+
+    entry: dict | None = None
+    sent: list[dict] = []
+
+    async def send(payload: dict) -> None:
+        sent.append(payload)
+
+    speaker = ActiveBodySpeaker(lambda: entry)
+    bus = SignalBus(None, speak=speaker.speak, set_expression=speaker.set_expression, clock=Clock())
+    first = asyncio.run(bus.emit(_build_failed()))
+    assert (first.reason, first.spoke, first.expression) == ("no_active_body", False, None)
+    entry = {"send": send, "wants_audio": False, "body": "mac"}
+    second = asyncio.run(bus.emit(_build_failed()))
+    assert second.spoke is True
+
+
+def test_slow_speak_and_slow_listener_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.signals as signals_module
+
+    monkeypatch.setattr(signals_module, "SPEAK_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(signals_module, "LISTENER_TIMEOUT_SECONDS", 0.05)
+
+    async def hang(*_a: Any) -> None:
+        await asyncio.sleep(5)
+
+    bus = SignalBus(None, speak=hang, clock=Clock())
+    bus.add_listener(hang)
+    result = asyncio.run(asyncio.wait_for(bus.emit(_build_failed()), 2))
+    assert (result.spoke, result.reason) == (False, "speak_failed")
+    # The slot was given back, so a working speaker could still say it.
+    assert "build_failed" not in bus._last_spoken
+
+
+def test_signal_audio_uses_keys_that_cannot_collide_with_chat_sentences() -> None:
+    from app.signals import ActiveBodySpeaker
+
+    sent: list[dict] = []
+
+    async def send(payload: dict) -> None:
+        sent.append(payload)
+
+    class FakeTTS:
+        def is_available(self) -> bool:
+            return True
+
+        async def synthesize_async(self, text: str, voice: str | None, output_format: str):
+            return b"xy", "audio/mp4"
+
+    entry = {"send": send, "wants_audio": True, "body": "mac"}
+    speaker = ActiveBodySpeaker(lambda: entry, FakeTTS())
+    asyncio.run(speaker.speak("a"))
+    asyncio.run(speaker.speak("b"))
+    keys = [m["sentence"] for m in sent if m["type"] == "audio"]
+    assert len(set(keys)) == 2
+    assert all(isinstance(k, str) and k.startswith("signal:") for k in keys)
+    assert all(m.get("signal") is True for m in sent if m["type"] == "audio")
