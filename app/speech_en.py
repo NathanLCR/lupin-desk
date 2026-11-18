@@ -310,6 +310,13 @@ FRIENDLY_LLM_ERROR = "I couldn't reach the model right now. Check that the local
 LOCAL_MODEL_SLOW = "This local model is taking a while. I'll answer in a moment."
 
 
+# Dictation feedback (issue 07): shown in the caption after the text was pasted, or why not.
+DICTATION_INSERTED = "Inserted."
+DICTATION_EMPTY = "I heard nothing to type."
+DICTATION_PASTE_FAILED = "I couldn't paste. Is a text field focused?"
+DICTATION_NEEDS_ACCESSIBILITY = "I need the Accessibility permission to type for you."
+
+
 # ---------------------------------------------------------------------------
 # Client-side phrases (served to the web Body through /api/lupin-language)
 # ---------------------------------------------------------------------------
