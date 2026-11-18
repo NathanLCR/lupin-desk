@@ -1155,7 +1155,7 @@ def create_app(
 
             if kind == "mcp":
                 parsed = external_tools.parse_target(target)
-                info = external_tools.describe(parsed[0], parsed[1]) if parsed else None
+                info = external_tools.describe(*parsed) if parsed else None
                 if parsed is None or info is None:
                     await safe_send(
                         {
