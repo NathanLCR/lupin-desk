@@ -209,7 +209,8 @@
     };
 
     handle.destroy = function () {
-      if (handle.failed || handle.destroyed) return;
+      // A tile that failed after mount still owns a live instance (timers): tear it down.
+      if (handle.destroyed) return;
       handle.destroyed = true;
       if (!instance || typeof instance.destroy !== 'function') return;
       try {
