@@ -1,0 +1,105 @@
+diff --git a/app/main.py b/app/main.py
+index b888071..67a2ba3 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
+ from fastapi.staticfiles import StaticFiles
+ from pydantic import BaseModel, Field
+ 
++from app.device_routes import setup_devices
+ from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
+ from app.cowork import CoworkStore, get_git_sync_status
+ from app.llm import LLMClient, LLMError
+@@ -170,8 +171,6 @@ class AppActivateRequest(BaseModel):
+ # Brain<->Body protocol (docs/brain-body-protocol.md).
+ PROTOCOL_VERSION = 1
+ _AUDIO_CHUNK_BYTES = 24 * 1024
+-# Priority for choosing the Active Body; types missing from the table count as 1.
+-_BODY_RANK = {"esp32": 3, "rg406h-web": 2}
+ 
+ 
+ class LupinLanguageRequest(BaseModel):
+@@ -980,31 +979,11 @@ def create_app(
+     # Bidirectional WebSocket (LLM streaming, barge-in, actions, voice and pet)
+     # ------------------------------------------------------------------
+ 
+-    # Active Body (ADR 0001): Lupin lives in one Body at a time. ESP32 beats the RG406H,
+-    # which beats the others (Mac browser, iPhone); within the same type, the latest hello wins.
+-    bodies: list[dict[str, Any]] = []
+-    body_seq = [0]
+-    fastapi_app.state.bodies = bodies
+-
+-    def current_active_body() -> dict[str, Any] | None:
+-        if not bodies:
+-            return None
+-        return max(bodies, key=lambda b: (_BODY_RANK.get(b["body"], 1), b["seq"]))
+-
+-    async def announce_active_body(previous: dict[str, Any] | None, skip: dict[str, Any] | None) -> None:
+-        """Notify the Bodies (except `skip`) when the Active Body changes."""
+-        active = current_active_body()
+-        if active is previous or active is None:
+-            return
+-        for entry in list(bodies):
+-            if entry is skip:
+-                continue
+-            try:
+-                await entry["send"](
+-                    {"type": "active_body", "active_body": active["body"], "active": entry is active}
+-                )
+-            except Exception:
+-                logger.info("Body %s did not receive the Active Body notice.", entry["body"])
++    # Active Body (ADR 0001) and Device Roles (P01): see app/device_hub.py.
++    hub = setup_devices(fastapi_app, resolved_settings.db_path, require_mac_client)
++    bodies = hub.entries
++    current_active_body = hub.current_active_body
++    announce_active_body = hub.announce_active_body
+ 
+     @fastapi_app.websocket("/ws")
+     async def websocket_chat(websocket: WebSocket) -> None:
+@@ -1524,30 +1503,10 @@ def create_app(
+                 msg_type = data.get("type")
+ 
+                 if msg_type == "hello":
+-                    audio_formats = data.get("audio")
+-                    body_info["body"] = str(data.get("body") or "unknown")
+-                    body_info["wants_audio"] = isinstance(audio_formats, list) and len(audio_formats) > 0
+-                    previous = current_active_body()
+-                    if body_info["entry"] is not None:
+-                        bodies.remove(body_info["entry"])
+-                    body_seq[0] += 1
+-                    body_info["entry"] = {
+-                        "body": body_info["body"],
+-                        "seq": body_seq[0],
+-                        "send": safe_send,
+-                        "wants_audio": body_info["wants_audio"],
+-                    }
+-                    bodies.append(body_info["entry"])
+-                    active = current_active_body()
+-                    await safe_send(
+-                        {
+-                            "type": "welcome",
+-                            "protocol": PROTOCOL_VERSION,
+-                            "active_body": active["body"] if active else body_info["body"],
+-                            "active": active is body_info["entry"],
+-                        }
+-                    )
+-                    await announce_active_body(previous, skip=body_info["entry"])
++                    await hub.hello(body_info, data, safe_send)
++                    continue
++
++                if await hub.handle_message(body_info["entry"], data, safe_send):
+                     continue
+ 
+                 if msg_type == "typing":
+@@ -1780,10 +1739,7 @@ def create_app(
+         except WebSocketDisconnect:
+             logger.info("WebSocket client disconnected.")
+         finally:
+-            if body_info["entry"] is not None and body_info["entry"] in bodies:
+-                previous = current_active_body()
+-                bodies.remove(body_info["entry"])
+-                await announce_active_body(previous, skip=None)
++            await hub.disconnect(body_info["entry"])
+             if active_turn_task is not None and not active_turn_task.done():
+                 active_turn_task.cancel()
+                 try:
