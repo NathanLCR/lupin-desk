@@ -65,3 +65,7 @@ One row per finished task. Fill it from the agent's task-notification usage bloc
 | eink.py render module | P05 | nested | haiku | 96,396 | 5 | 1m10s | pass | 0 | 7 widget renderers + render_page |
 | test_panels_eink.py | P05 | nested | haiku | 81,791 | 8 | 1m15s | pass, +17 tests | 0 | |
 | lead P05 | P05 | nested | sonnet | ? | ? | ? | py 665 pass; +4 wiring tests | 0 | route written by lead |
+| 06 files search | 06 | nested | haiku | 90,437 | 10 | 1m02s | pass, +19 tests | 0 | mdfind argv, roots whitelist |
+| 06 sources+consent | 06 | nested | haiku | 93,553 | 8 | 0m46s | pass, +23 tests | 0 | FilesConsent third consent |
+| 06 orchestrator module | 06 | nested | haiku | 95,225 | 11 | 0m57s | pass, +15 tests | 0 | SmartSearch, docs |
+| 06 lead | 06 | nested | sonnet | ? | ? | ? | py 738/1 other-agent fail; fe 423/1 known | 0 | patches 06-* pending |
