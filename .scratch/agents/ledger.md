@@ -57,3 +57,6 @@ One row per finished task. Fill it from the agent's task-notification usage bloc
 | MCP routes + Settings UI + tests | 12 | nested | haiku | 131,408 | 17 | 3m02s | pass, +27 py +12 fe | 0 | app/mcp_routes.py, static/mcp_settings.js |
 | lead 12 (own context) | 12 | nested | sonnet | 164,457 | 33 | 20m46s | +5 integration tests (pass with patches) | 0 | wrote patches, docs/mcp.md, integration test |
 | reviewer 05 | 05 | nested | sonnet | 113,039 | 10 | 1m42s | APPROVE, 0 blocking | 0 | 5 nits |
+| reviewer P02 | P02 | nested | sonnet | 105,585 | 12 | 1m26s | CHANGES REQUESTED, 1 blocking (timer leak on failed tile) | 0 | 4 nits; orientation question to user |
+| reviewer 12 | 12 | nested | sonnet | 118,610 | 18 | 1m45s | CHANGES REQUESTED, 2 blocking (DNS-rebinding RCE on /api/mcp, corrupt json breaks chat) | 0 | 5 nits; consent question to user |
+| P02 fix-up 1 | P02 | nested | sonnet | 156,795 | 6 | 1m03s | fe 268/269 known; py 571 pass | 1 | lead fixed registry destroy of failed tiles directly |

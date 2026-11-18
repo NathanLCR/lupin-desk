@@ -1,6 +1,6 @@
 # P02 - Panel web runtime, Layouts and widget framework
 
-Status: ready-for-agent
+Status: done (device tests and portrait grid decision pending)
 Blocked by: P01
 
 ## Scope
