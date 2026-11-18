@@ -50,6 +50,7 @@ from app.stt import LocalSTT
 from app.consent import DataConsent, build_personal_context
 from app.kokoro_tts import LupinTTS
 from app.local_mode import SlowModelNotice
+from app.signals import ActiveBodySpeaker, SignalBus
 from app.today import FirstWakeTracker, TodayEngine, compose_first_wake_speech
 from app.tts import ServerTTS
 
@@ -985,6 +986,17 @@ def create_app(
     bodies = hub.entries
     current_active_body = hub.current_active_body
     announce_active_body = hub.announce_active_body
+
+    # Signals (P06): sources call `app.state.signals.emit(Signal(...))`.
+    signal_speaker = ActiveBodySpeaker(current_active_body, resolved_tts, current_tts_voice)
+    signals = SignalBus(
+        hub,
+        speak=signal_speaker.speak,
+        set_expression=signal_speaker.set_expression,
+        focus_active=getattr(resolved_mac, "pomodoro_active", None),
+        consent=data_consent.get,
+    )
+    fastapi_app.state.signals = signals
 
     @fastapi_app.websocket("/ws")
     async def websocket_chat(websocket: WebSocket) -> None:
