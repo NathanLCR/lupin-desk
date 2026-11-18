@@ -32,7 +32,7 @@ _DEFAULT_WEATHER_CITY = "São Paulo"
 _DEFAULT_MAX_SHORT_TERM_MESSAGES = 10
 _DEFAULT_MAX_USER_FACTS = 25
 _DEFAULT_DB_PATH = BASE_DIR / "data" / "memory.db"
-_DEFAULT_COWORK_WORKSPACE_PATH = Path("/Users/nathanlucio/Desktop/Cowork")
+_DEFAULT_COWORK_WORKSPACE_PATH = Path.home() / "Cowork"
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"freellmapi-[A-Za-z0-9_-]+"), "[REDACTED]"),
@@ -238,8 +238,14 @@ class SecretRedactingFilter(logging.Filter):
             rendered = record.getMessage()
         except Exception:
             rendered = str(record.msg)
-        record.msg = self.redact(rendered)
-        record.args = None
+        if record.name == "uvicorn.access" and isinstance(record.args, tuple):
+            # AccessFormatter reads record.args as a 5-tuple; redact each string in place.
+            record.args = tuple(
+                self.redact(arg) if isinstance(arg, str) else arg for arg in record.args
+            )
+        else:
+            record.msg = self.redact(rendered)
+            record.args = None
 
         if record.exc_info and not record.exc_text:
             record.exc_text = self._formatter.formatException(record.exc_info)

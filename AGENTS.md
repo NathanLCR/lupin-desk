@@ -2,7 +2,7 @@
 
 This file is for every coding agent that works on this project (Claude, Gemini, Codex…). Read it before doing anything.
 
-You are working inside `/Users/nathanlucio/Desktop/desk-assistant`.
+You are working inside the repository root (the directory that holds this file).
 
 ## Read first
 
@@ -12,7 +12,7 @@ You are working inside `/Users/nathanlucio/Desktop/desk-assistant`.
 4. `.scratch/lupin-foco/spec.md` and `.scratch/panels/spec.md`: the issue lists and the execution rules.
 5. `.scratch/agents/board.md`: who is working on which files right now. Read it before a task and update it after.
 
-The older swarm-era design in `docs/superpowers/` was superseded by ADR 0001. Don't follow it.
+The older swarm-era design that lived in `docs/superpowers/` was superseded by ADR 0001 and removed from the tree (it is still in git history). Do not follow it.
 
 ## Project rules
 

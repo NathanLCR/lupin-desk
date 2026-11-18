@@ -13,3 +13,13 @@ android/build/
 electron/node_modules/
 electron/dist/
 build/
+custom/
+.claude/worktrees/
+*.db
+*.db-shm
+*.db-wal
+
+# Internal scratch notes kept out of the public repo (still on disk)
+.scratch/research/
+.scratch/reviews/
+.scratch/agents/antigravity-handoff.md

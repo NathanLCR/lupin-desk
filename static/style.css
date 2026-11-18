@@ -116,6 +116,8 @@ textarea {
 #face-container {
   width: 100%;
   height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -410,7 +412,8 @@ body.settings-open .pet-ambient {
 /* Audio unlock banner */
 .audio-unlock-banner {
   position: fixed;
-  top: calc(56px + var(--safe-top));
+  /* Sits above the bottom toolbar so it never covers Lupin's ears. */
+  bottom: calc(76px + var(--safe-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 26;

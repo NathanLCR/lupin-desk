@@ -177,7 +177,7 @@ test('mini-pet applies the combined mute and keeps accessible state', () => {
   assert.equal(harness.app.state.ttsEnabled, false);
   assert.equal(harness.app.state.petSoundsEnabled, false);
   assert.equal(button.textContent, 'Unmute');
-  assert.equal(button.title, 'Unmute');
+  assert.equal(button.title, "Unmute the pet's voice and sounds");
   assert.equal(button.getAttribute('aria-pressed'), 'true');
   assert.equal(harness.elements.get('btn-pet-sounds').getAttribute('aria-pressed'), 'false');
   assert.equal(harness.elements.get('btn-tts').getAttribute('aria-pressed'), 'false');
@@ -186,7 +186,7 @@ test('mini-pet applies the combined mute and keeps accessible state', () => {
   assert.equal(harness.app.state.ttsEnabled, true);
   assert.equal(harness.app.state.petSoundsEnabled, true);
   assert.equal(button.textContent, 'Mute');
-  assert.equal(button.title, 'Mute');
+  assert.equal(button.title, "Mute the pet's voice and sounds");
   assert.equal(button.getAttribute('aria-pressed'), 'false');
 
   harness.storage.set(pref.ttsEnabled, 'false');
