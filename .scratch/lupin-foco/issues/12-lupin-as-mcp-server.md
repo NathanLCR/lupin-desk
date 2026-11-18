@@ -1,6 +1,6 @@
 # 12 - Lupin as an MCP server
 
-Status: ready-for-agent
+Status: done (real Claude Code registration and an external server pending)
 
 ## Context
 
