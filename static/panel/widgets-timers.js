@@ -207,6 +207,7 @@
     var receivedAt = 0;       // local ms when that list arrived
     var rows = [];            // countdown element for each rendered timer, same order
     var destroyed = false;
+    var hasData = false;
     var tickTimer = null;
 
     var wrap = kit.el(doc, 'div', 'pn-timers');
@@ -266,6 +267,7 @@
 
     function applyList(data) {
       if (destroyed) return;
+      hasData = true;
       var list = data && typeof data === 'object' ? data.timers : null;
       timers = list && typeof list === 'object' && typeof list.length === 'number' ? list : [];
       receivedAt = nowFn();
@@ -275,7 +277,7 @@
     function refresh() {
       if (destroyed) return;
       kit.getJson(TIMERS_URL, function (error, data) {
-        if (error) return;
+        if (error || hasData) return;
         applyList(data);
       });
     }

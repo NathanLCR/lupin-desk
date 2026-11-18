@@ -190,6 +190,7 @@
 
     var live = true;
     var hasData = false;
+    var topicSeq = 0;
 
     function paint(items) {
       emptyNode(list);
@@ -216,7 +217,15 @@
     return {
       onTopic: function (topic, data) {
         if (!live || topic !== spec.topic) return;
+        topicSeq += 1;
+        var seq = topicSeq;
         apply(data);
+        if (spec.refreshOnTopic) {
+          PanelKit.getJson(spec.url, function (error, fresh) {
+            if (!live || error || seq !== topicSeq) return;
+            apply(fresh);
+          });
+        }
       },
       destroy: function () {
         live = false;
@@ -230,6 +239,7 @@
 
   var CHECKLIST = {
     url: '/api/tasks?include_done=true',
+    refreshOnTopic: true,
     key: 'tasks',
     topic: 'tasks',
     className: 'pn-checklist',

@@ -756,6 +756,9 @@ test('arrow, page and volume keys change the page and clamp at the ends', () => 
   press({ key: 'ArrowLeft' });
   assert.equal(pager.index(), 0);
 
+  assert.equal(press({ key: 'ArrowRight', target: { tagName: 'INPUT' } }), false);
+  assert.equal(pager.index(), 0);
+
   assert.equal(press({ key: 'a' }), false);
 });
 

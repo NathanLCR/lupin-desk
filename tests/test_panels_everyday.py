@@ -487,3 +487,43 @@ def test_start_and_stop_run_the_loop() -> None:
         assert len(env["signals"].emitted) == 1
 
     asyncio.run(scenario())
+
+
+def test_create_app_wires_everyday_calendar_reader_for_lan_and_handles_missing_reader(tmp_path: Path) -> None:
+    from app.config import Settings
+    from app.main import create_app
+
+    settings = Settings(
+        llm_base_url="http://127.0.0.1:31415/v1",
+        llm_api_key="test-key",
+        llm_model="claude-haiku-4-5",
+        db_path=tmp_path / "memory.db",
+        cowork_workspace_path=tmp_path / "Cowork",
+        desk_dev_no_token=True,
+    )
+    events = [{"start": "11:00", "title": "Sync"}]
+    app = create_app(
+        settings=settings,
+        calendar_reader=lambda: events,
+        local_ips=lambda: frozenset({"192.168.1.10"}),
+    )
+
+    async def lan_client(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        patched = dict(scope)
+        patched["client"] = ("192.168.1.50", 54321)
+        await app(patched, receive, send)
+
+    with TestClient(app) as client:
+        assert client.get("/api/panel/timers").json() == {"timers": []}
+        assert client.get("/api/panel/calendar").json() == {
+            "ok": True,
+            "events": [{"start": "11:00", "title": "Sync", "all_day": False}],
+        }
+        # Allowed on trusted LAN Panels per ADR 0002 & product decision.
+        lan = TestClient(lan_client)
+        assert lan.get("/api/panel/calendar").status_code == 200
+
+    # When mac lacks read_today_calendar and no calendar_reader is given, read_calendar returns None safely.
+    bare = FastAPI()
+    service = everyday.register(bare, object())
+    assert asyncio.run(service.read_calendar()) is None
