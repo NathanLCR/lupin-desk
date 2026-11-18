@@ -51,8 +51,9 @@ One row per finished task. Fill it from the agent's task-notification usage bloc
 | widgets, pet, index.html, css | P02 | nested | haiku | 123,408 | 11 | 2m15s | pass, +18 node | 0 | |
 | runtime.js | P02 | nested | haiku | 186,970 | 7 | 6m15s | pass, +24 node | 0 | stubs only; lead added real-module integration test |
 | arrange-ui.js | P02 | nested | haiku | 153,718 | 9 | 4m14s | pass, +24 node | 0 | |
-| lead P02 | P02 | nested | sonnet | ? | ? | ? | py 565 pass +1 skip; fe 268/269 (known minipet) | 0 | lead |
+| lead P02 | P02 | nested | sonnet | 151,077 | 32 | 13m47s | py 565 pass +1 skip; fe 268/269 (known minipet) | 0 | lead |
 | MCP server (Expose) + tests | 12 | nested | haiku | 125,736 | 15 | 2m46s | pass, +44 tests | 0 | app/agent_requests.py, app/mcp_server.py |
 | MCP client + store + tests | 12 | nested | haiku | 136,510 | 8 | 4m24s | pass, +54 tests | 0 | app/mcp_client.py, fake stdio server fixture |
 | MCP routes + Settings UI + tests | 12 | nested | haiku | 131,408 | 17 | 3m02s | pass, +27 py +12 fe | 0 | app/mcp_routes.py, static/mcp_settings.js |
-| lead 12 (own context) | 12 | nested | sonnet | ? | ? | ? | +5 integration tests (pass with patches) | 0 | wrote patches, docs/mcp.md, integration test |
+| lead 12 (own context) | 12 | nested | sonnet | 164,457 | 33 | 20m46s | +5 integration tests (pass with patches) | 0 | wrote patches, docs/mcp.md, integration test |
+| reviewer 05 | 05 | nested | sonnet | 113,039 | 10 | 1m42s | APPROVE, 0 blocking | 0 | 5 nits |
