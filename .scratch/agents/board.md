@@ -22,23 +22,7 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 
 ## Requests
 
-- P01 (lead-p01): apply in order `.scratch/agents/patches/P01-config.py.diff`, `P01-main.py.diff`, `P01-test_security_and_approvals.py.diff`, `P01-app.js.diff`, `P01-index.html.diff` (git apply). tests/test_panel_protocol.py fails until main/config patches are applied.
-
-- (resolved) 07 gesture: user chose "Dictation toggle arms a face tap" (the baseline's design). The nested 07 build was reverted in 18ee755; the baseline gets merged.
-- (resolved) P01 default roles: user chose "Bodies keep Body" (legacy Body kinds stored as Body+Panel on first sight; new devices Panel).
-- (resolved) P06 focus: user confirmed nothing but claude_code_needs_user changes Lupin during a Pomodoro, face included.
-- (resolved) 11 consent reset: user chose to keep it.
-
-- (dropped, nested 07 reverted) lead-07: apply `.scratch/agents/patches/07-main.py.diff`, `07-app.js.diff`, `07-index.html.diff` (dictation WS wiring, Dictate button). Open question: the Body gesture. I added a dedicated Dictate button; tapping the face in dock mode still opens pet mode.
-
-- P06 (lead-p06): apply `.scratch/agents/patches/P06-main.py.diff` (git apply): creates `app.state.signals` (SignalBus wired to hub, Active Body speech, Pomodoro focus, Data Consent). Applies cleanly on 3ce5bdc.
-
-- P06 fix-up (lead-p06): apply `.scratch/agents/patches/P06-app.js.diff` and `P06-index.html.diff` (notice kind `signal` handling via new static/signals.js).
-- 05 (lead-05): apply `.scratch/agents/patches/05-main.py.diff` (git apply): registers productivity (store, REST, Panel actions, habit scheduler start/stop in lifespan) and routes `task|note|habit` voice actions. tests/test_productivity_ws.py fails until applied.
-
-- P02 (lead-p02): apply `.scratch/agents/patches/P02-main.py.diff` (git apply; 2 lines: import + register_panels after setup_devices). tests/test_panels_wiring.py skips until applied.
-
-- 12 (lead-12): apply `.scratch/agents/patches/12-main.py.diff`, `12-llm.py.diff` (needs lead-05's `task|note|habit` regex already in place), `12-app.js.diff`, `12-index.html.diff` (git apply). tests/test_mcp_integration.py fails until main/llm patches are applied. Proposed GLOSSARY entry already exists (Agent Request).
+- (all wave 1–3 patches applied: P01, P06, 05, P02, 12 and their fix-ups.)
 
 ## Decisions and notes
 
@@ -46,6 +30,9 @@ Every agent (orchestrator, leads, coders, teammates) **reads this file before st
 - 2026-11-18 (orchestrator): for this push `static/app.js` and `static/index.html` are orchestrator-owned too. New frontend code goes in new `static/<feature>.js` files; request hookups via `.scratch/agents/patches/`.
 - `listening` and `thinking` already exist as states in `static/lupin/expressions.json`; reuse them.
 - Wave 2 (after P01): P06 Signals. Wave 3 (after P01+P06): P02, Lupin 05, 12. Lupin 06 after 05.
+- Wave 4 (2026-11-18): P03 Mac Layout editor, P04 Android kiosk shell, P05 E-ink Mode, P07 Everyday widgets, Lupin 06 Smart search. Wave 5: P08, P09, P10, Lupin 04, Lupin 08.
+- Wave 4 split: P05 owns the server-side e-ink renders (Python, under app/panels/); P07 widgets do NOT write e-ink renders. Grid size is data in the Layout JSON (portrait 6x12 vs 12x6 is still an open user question): never hardcode it.
+- Open user questions: portrait grid 6x12 vs 12x6; should lupin_read_today (12) need Data Consent for Cowork tasks.
 
 - 05 store API (lead-05; P07 widgets build on this). Store: `app/productivity/store.py` `ProductivityStore(db_path, clock=datetime.now)`, same sqlite file as memory.db (tables `tasks`, `notes`, `habits`, `habit_checkins`). Records are plain dicts:
   - task `{id, title, done, created_at, done_at}`; note `{id, text, created_at}`; habit `{id, name, days (weekday ints 0=Mon..6=Sun, [] = every day), time ("HH:MM" or null), created_at, streak, done_today}`.
