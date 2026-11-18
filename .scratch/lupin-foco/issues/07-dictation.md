@@ -1,6 +1,6 @@
 # 07 - Dictation
 
-Status: ready-for-agent
+Status: done (baseline build merged; real-app paste and 1-week use pending)
 
 ## Context
 
