@@ -129,3 +129,17 @@ def test_ws_dictation_pastes_and_skips_llm(tmp_path: Path) -> None:
         assert result["type"] == "dictation_result" and result["ok"] is True
         assert not any(m.get("type") in ("delta", "sentence", "transcript") for m in seen)
     assert "copy:Olá, mundo" in runner.events
+
+
+def test_paste_text_restores_clipboard_when_keystroke_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _Runner()
+    mac = MacController(runner=runner)
+    mac.PASTE_SETTLE_SECONDS = 0
+
+    def boom(_spec: str) -> dict:
+        raise RuntimeError("keystroke exploded")
+
+    monkeypatch.setattr(mac, "execute_keystroke", boom)
+    with pytest.raises(RuntimeError):
+        mac.paste_text("hi")
+    assert runner.clipboard == "old clip"

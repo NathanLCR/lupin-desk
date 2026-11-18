@@ -505,13 +505,16 @@ class MacController:
             if copied.returncode != 0:
                 return {"ok": False, "error": "Could not write to the clipboard."}
 
-            pasted = self.execute_keystroke("cmd+v")
-            time.sleep(self.PASTE_SETTLE_SECONDS)  # let the app read the clipboard first
             restored = True
-            if previous_text is not None:
-                restored = (
-                    self._run_cmd([_PBCOPY_BIN], timeout=3.0, input=previous_text).returncode == 0
-                )
+            try:
+                pasted = self.execute_keystroke("cmd+v")
+                time.sleep(self.PASTE_SETTLE_SECONDS)  # let the app read the clipboard first
+            finally:
+                if previous_text is not None:
+                    restored = (
+                        self._run_cmd([_PBCOPY_BIN], timeout=3.0, input=previous_text).returncode
+                        == 0
+                    )
 
         if not pasted.get("ok"):
             return {
