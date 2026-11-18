@@ -1620,12 +1620,12 @@
   }
 
   function sendHello() {
-    return sendWs({
+    return sendWs(Object.assign({
       type: 'hello',
       body: detectBodyKind(),
       protocol: 1,
       audio: state.ttsMode === 'server' ? ['m4a'] : [],
-    });
+    }, window.DeskDevice ? window.DeskDevice.helloFields() : {}));
   }
 
   function connectWebSocket() {

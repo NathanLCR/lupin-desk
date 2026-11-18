@@ -73,6 +73,9 @@ class Settings:
     desk_access_token: str = ""
     # Development only: turns off the access token for LAN clients.
     desk_dev_no_token: bool = False
+    # LAN trust (ADR 0002): Panels connect without a token. Set DESK_REQUIRE_TOKEN=1 to
+    # require DESK_ACCESS_TOKEN (or an ephemeral one) from non-loopback clients again.
+    require_access_token: bool = False
 
 
 def _parse_int(raw: str | None, default: int) -> int:
@@ -194,12 +197,13 @@ def load_settings(env_path: Path | None = None) -> Settings:
         cowork_workspace_path=cowork_workspace_path,
         desk_access_token=desk_access_token,
         desk_dev_no_token=desk_dev_no_token,
+        require_access_token=_parse_bool(os.getenv("DESK_REQUIRE_TOKEN")),
     )
 
 
 def resolve_runtime_access_token(settings: Settings) -> tuple[str, bool]:
     """Return `(token, auto_generated)` used to authenticate non-loopback clients."""
-    if settings.desk_dev_no_token:
+    if settings.desk_dev_no_token or not settings.require_access_token:
         return "", False
     configured = (settings.desk_access_token or "").strip()
     if configured:
