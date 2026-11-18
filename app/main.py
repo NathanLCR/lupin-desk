@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from app.device_routes import setup_devices
 from app.panels.routes import register as register_panels
+from app.panels.eink import register as register_eink
 from app.productivity import register as register_productivity
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
 from app.cowork import CoworkStore, get_git_sync_status
@@ -995,6 +996,8 @@ def create_app(
     hub = setup_devices(fastapi_app, resolved_settings.db_path, require_mac_client)
     # Panels (P02): Layouts REST and the /panel page (app/panels/routes.py).
     register_panels(fastapi_app, resolved_settings.db_path, require_mac_client)
+    # E-ink Mode (P05): GET /eink for the Kindle (app/panels/eink.py).
+    register_eink(fastapi_app)
     bodies = hub.entries
     current_active_body = hub.current_active_body
     announce_active_body = hub.announce_active_body
