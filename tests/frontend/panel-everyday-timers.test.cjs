@@ -339,6 +339,22 @@ test('destroy clears every interval and timeout of both widgets', () => {
   });
 });
 
+test('a stale initial GET /api/panel/timers response does not overwrite an earlier topic update', () => {
+  withEnv((env) => {
+    const m = mount(env, 'timers');
+    m.instance.onTopic('timers', {
+      timers: [{ id: 'fresh', label: 'Tea', seconds: 180, remaining: 180 }],
+    });
+    assert.deepEqual(byClass(m.el, 'pn-timer-label').map((n) => n.textContent), ['Tea']);
+
+    env.net.respondTo(TIMERS_URL, {
+      timers: [{ id: 'stale', label: 'Old', seconds: 60, remaining: 60 }],
+    });
+    assert.deepEqual(byClass(m.el, 'pn-timer-label').map((n) => n.textContent), ['Tea']);
+    m.instance.destroy();
+  });
+});
+
 test('registerAll adds pomodoro and timers to a fresh registry, and is safe to run twice', () => {
   const registry = PanelRegistry.create();
   W.registerAll(registry);

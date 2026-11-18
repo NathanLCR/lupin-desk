@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from app.device_routes import setup_devices
 from app.panels.routes import register as register_panels
 from app.panels.eink import register as register_eink
+from app.panels.everyday import register as register_everyday
 from app.productivity import register as register_productivity
 from app.search import register as register_search
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
@@ -370,9 +371,14 @@ def create_app(
         productivity = getattr(_app.state, "productivity", None)
         if productivity is not None:
             productivity.start()
+        everyday = getattr(_app.state, "everyday", None)
+        if everyday is not None:
+            everyday.start()
         try:
             yield
         finally:
+            if everyday is not None:
+                await everyday.stop()
             if productivity is not None:
                 await productivity.stop()
             if own_shortcuts:
@@ -1033,6 +1039,9 @@ def create_app(
 
     # Tasks, notes and habits (issue 05): store, REST, Panel actions, habit scheduler.
     register_productivity(fastapi_app, resolved_settings.db_path)
+
+    # Everyday Panel widgets (P07): media, timers, Pomodoro end, calendar and reminders.
+    register_everyday(fastapi_app, resolved_mac, calendar_reader=resolved_calendar_reader)
 
     # Smart search (issue 06): tasks, notes, memory, Cowork and Mac files, read-only.
     register_search(

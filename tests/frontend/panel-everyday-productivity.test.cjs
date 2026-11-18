@@ -364,3 +364,37 @@ test('a widget mounted through the registry follows its topic', () => {
   handle.onTopic('notes', { notes: [{ id: 11, text: 'Hello', created_at: '2026-02-01T00:00:00Z' }] });
   assert.deepEqual(texts(host, 'pn-note-text'), ['Hello']);
 });
+
+test('checklist onTopic refreshes with include_done=true so done tasks remain visible', () => {
+  const sent = [];
+  const stub = makeXhrStub({
+    [TASKS_URL]: {
+      tasks: [
+        { id: 1, title: 'Open task', done: false },
+        { id: 2, title: 'Done task', done: true },
+      ],
+    },
+  });
+  const previous = global.XMLHttpRequest;
+  global.XMLHttpRequest = stub.Xhr;
+  const doc = makeDocument();
+  const host = doc.createElement('div');
+  doc.body.appendChild(host);
+  const def = PanelWidgets.DEFS.filter((d) => d.id === 'checklist')[0];
+  try {
+    const instance = def.render(host, {
+      config: {},
+      size: { width: 0, height: 0 },
+      sendAction: (actionId, args) => sent.push([actionId, args]),
+      now: () => 0,
+      el: host,
+    });
+    assert.equal(stub.calls.length, 1);
+    instance.onTopic('tasks', { tasks: [{ id: 1, title: 'Open task', done: false }] });
+    assert.equal(stub.calls.length, 2);
+    assert.deepEqual(texts(host, 'pn-task-title'), ['Open task', 'Done task']);
+    instance.destroy();
+  } finally {
+    global.XMLHttpRequest = previous;
+  }
+});

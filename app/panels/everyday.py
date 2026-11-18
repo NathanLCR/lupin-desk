@@ -207,7 +207,11 @@ class Everyday:
         """Read today's events (read-only). None when the calendar cannot be read."""
         reader = self._calendar_reader
         if reader is None:
-            reader = self._mac.read_today_calendar
+            reader = getattr(self._mac, "read_today_calendar", None)
+        if reader is None:
+            return None
+        if inspect.iscoroutinefunction(reader):
+            return await reader()
         result = await asyncio.to_thread(reader)
         if inspect.isawaitable(result):
             result = await result
@@ -217,7 +221,11 @@ class Everyday:
 
     async def tick(self) -> None:
         """Run one pass: due timers, Pomodoro end, meetings soon. Never raises."""
-        now = self._clock()
+        try:
+            now = self._clock()
+        except Exception as exc:
+            logger.warning("Everyday clock failed (%s).", type(exc).__name__)
+            return
         try:
             await self._check_timers(now)
         except Exception as exc:
@@ -376,7 +384,11 @@ def register(
         return {
             "ok": True,
             "events": [
-                {"start": event["start"], "title": event["title"], "all_day": event["all_day"]}
+                {
+                    "start": str(event.get("start") or ""),
+                    "title": str(event.get("title") or ""),
+                    "all_day": bool(event.get("all_day", False)),
+                }
                 for event in events
             ],
         }

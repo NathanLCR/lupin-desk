@@ -541,7 +541,14 @@
     return 0;
   }
 
+  function isEditableTarget(target) {
+    if (!target || !target.tagName) return false;
+    var tag = String(target.tagName).toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!target.isContentEditable;
+  }
+
   function onKeyDown(app, e) {
+    if (isEditableTarget(e && e.target)) return;
     var direction = keyDirection(e);
     if (!direction) return;
     if (e.preventDefault) e.preventDefault();
