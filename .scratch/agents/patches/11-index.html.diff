@@ -1,0 +1,10 @@
+--- a/static/index.html
++++ b/static/index.html
+@@ -674,6 +674,7 @@
+   <script src="/static/gamepad.js"></script>
+   <script src="/static/diagnostics.js"></script>
+   <script src="/static/skills.js"></script>
++  <script src="/static/local_mode.js"></script>
+   <script src="/static/app.js"></script>
+   <script src="/static/cowork.js"></script>
+ </body>

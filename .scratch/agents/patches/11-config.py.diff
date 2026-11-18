@@ -1,0 +1,41 @@
+--- a/app/config.py
++++ b/app/config.py
+@@ -25,6 +25,7 @@
+ _DEFAULT_STT_LANGUAGE = "pt"
+ _DEFAULT_TTS_VOICE = "Luciana"
+ _DEFAULT_TTS_VOICE_EN = "Samantha"
++_DEFAULT_LOCAL_LLM_SLOW_AFTER_S = 6.0
+ _DEFAULT_WEATHER_LATITUDE = -23.5505
+ _DEFAULT_WEATHER_LONGITUDE = -46.6333
+ _DEFAULT_WEATHER_CITY = "São Paulo"
+@@ -61,6 +62,10 @@
+     stt_language: str = _DEFAULT_STT_LANGUAGE
+     tts_voice: str = _DEFAULT_TTS_VOICE
+     tts_voice_en: str = _DEFAULT_TTS_VOICE_EN
++    # Lupin's voice is Kokoro; `say` is the fallback. TTS_KOKORO=0 forces `say`.
++    tts_kokoro: bool = True
++    # Seconds without a first token from a local model before Lupin says it is slow (0 = never).
++    local_llm_slow_after_s: float = _DEFAULT_LOCAL_LLM_SLOW_AFTER_S
+     weather_latitude: float = _DEFAULT_WEATHER_LATITUDE
+     weather_longitude: float = _DEFAULT_WEATHER_LONGITUDE
+     weather_city: str = _DEFAULT_WEATHER_CITY
+@@ -139,6 +144,10 @@
+     stt_language = os.getenv("STT_LANGUAGE", _DEFAULT_STT_LANGUAGE).strip() or _DEFAULT_STT_LANGUAGE
+     tts_voice = os.getenv("TTS_VOICE", _DEFAULT_TTS_VOICE).strip() or _DEFAULT_TTS_VOICE
+     tts_voice_en = os.getenv("TTS_VOICE_EN", _DEFAULT_TTS_VOICE_EN).strip() or _DEFAULT_TTS_VOICE_EN
++    tts_kokoro = os.getenv("TTS_KOKORO", "1").strip().lower() not in {"0", "false", "no", "off"}
++    local_llm_slow_after_s = max(
++        0.0, _parse_float(os.getenv("LOCAL_LLM_SLOW_AFTER_S"), _DEFAULT_LOCAL_LLM_SLOW_AFTER_S)
++    )
+     weather_latitude = _parse_float(os.getenv("WEATHER_LATITUDE"), _DEFAULT_WEATHER_LATITUDE)
+     weather_longitude = _parse_float(os.getenv("WEATHER_LONGITUDE"), _DEFAULT_WEATHER_LONGITUDE)
+     weather_city = os.getenv("WEATHER_CITY", _DEFAULT_WEATHER_CITY).strip() or _DEFAULT_WEATHER_CITY
+@@ -177,6 +186,8 @@
+         stt_language=stt_language,
+         tts_voice=tts_voice,
+         tts_voice_en=tts_voice_en,
++        tts_kokoro=tts_kokoro,
++        local_llm_slow_after_s=local_llm_slow_after_s,
+         weather_latitude=weather_latitude,
+         weather_longitude=weather_longitude,
+         weather_city=weather_city,

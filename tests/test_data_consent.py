@@ -176,26 +176,26 @@ def test_switching_provider_or_base_url_turns_both_off(tmp_path: Path) -> None:
         assert mac.get("/api/data-consent").json()["calendar"] is False
         # Turn it on again, switch only the provider (Ollama): turns off.
         mac.put("/api/data-consent", json={"calendar": True, "email": True})
-        mac.put("/api/llm/provider", json={"provider_id": "ollama", "model": "llama3.2"})
+        mac.put("/api/llm/provider", json={"provider_id": "ollama", "base_url": "http://192.168.1.20:11434/v1", "model": "llama3.2"})
         data = mac.get("/api/data-consent").json()
         assert data["calendar"] is False and data["email"] is False
         assert data["receiver"].startswith("Ollama")
         # Changing only the base_url of the same provider also turns it off.
         mac.put("/api/data-consent", json={"calendar": True})
-        mac.put("/api/llm/provider", json={"provider_id": "ollama", "base_url": "http://127.0.0.1:9999/v1", "model": "llama3.2"})
+        mac.put("/api/llm/provider", json={"provider_id": "ollama", "base_url": "http://192.168.1.20:9999/v1", "model": "llama3.2"})
         assert mac.get("/api/data-consent").json()["calendar"] is False
 
 
 def test_signature_in_the_class(tmp_path: Path) -> None:
     mem = MemoryStore(db_path=tmp_path / "m.db")
     try:
-        sig = [("ollama", "http://127.0.0.1:11434/v1")]
+        sig = [("ollama", "http://192.168.1.20:11434/v1")]
         consent = DataConsent(mem, lambda: sig[0])
         consent.update(calendar=True, email=True)
         assert consent.get() == {"calendar": True, "email": True}
-        sig[0] = ("ollama", "http://127.0.0.1:11435/v1")
+        sig[0] = ("ollama", "http://192.168.1.20:11435/v1")
         assert consent.get() == {"calendar": False, "email": False}
-        sig[0] = ("ollama", "http://127.0.0.1:11434/v1")
+        sig[0] = ("ollama", "http://192.168.1.20:11434/v1")
         assert consent.get() == {"calendar": False, "email": False}, "going back does not re-enable"
     finally:
         mem.close()
@@ -214,10 +214,10 @@ def test_personal_context_and_prompt() -> None:
 def test_old_stored_format_with_agenda_key_is_still_read(tmp_path: Path) -> None:
     mem = MemoryStore(db_path=tmp_path / "m.db")
     try:
-        sig = ("ollama", "http://127.0.0.1:11434/v1")
+        sig = ("ollama", "http://192.168.1.20:11434/v1")
         mem.set_meta(
             "data_consent",
-            json.dumps({"agenda": True, "email": False, "provider_id": sig[0], "host": "127.0.0.1:11434"}),
+            json.dumps({"agenda": True, "email": False, "provider_id": sig[0], "host": "192.168.1.20:11434"}),
         )
         consent = DataConsent(mem, lambda: sig)
         assert consent.get() == {"calendar": True, "email": False}

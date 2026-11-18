@@ -21,6 +21,11 @@ dev = [
 stt = [
     "mlx-whisper==0.4.3",
 ]
+# Lupin's voice (Kokoro, local TTS). Also needs `brew install espeak-ng` for Portuguese; the first use downloads the model.
+tts = [
+    "kokoro>=0.9.4",
+    "numpy",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,8 +1,12 @@
 """Data Consent (issue 03): what the LLM provider may see of the calendar and e-mail.
 
 Consent only holds for the provider and host that were active when it was given.
-Switching provider or base_url turns both switches off on its own (no exception,
-not even for Ollama). Without consent, no calendar or e-mail data enters the LLM call.
+Switching provider or base_url turns both switches off on its own. Without consent,
+no calendar or e-mail data enters the LLM call.
+
+The one exception: Ollama on a loopback host (127.0.0.1, localhost, ::1). It runs on
+the Mac, so the data never leaves it, and no consent is asked. The exception does not
+extend to any other provider (custom, local proxy, OpenAI, ...) or to Ollama on another host.
 """
 
 from __future__ import annotations
@@ -19,8 +23,22 @@ from app.providers import get_preset
 _META_KEY = "data_consent"
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 def _host_of(base_url: str) -> str:
     return urlparse((base_url or "").strip()).netloc.lower()
+
+
+def is_local_provider(provider_id: str, base_url: str) -> bool:
+    """True only for Ollama served from a loopback host: the data never leaves the Mac."""
+    if (provider_id or "").strip().lower() != "ollama":
+        return False
+    try:
+        hostname = (urlparse((base_url or "").strip()).hostname or "").lower()
+    except ValueError:
+        return False
+    return hostname in _LOOPBACK_HOSTS
 
 
 class DataConsent:
@@ -38,8 +56,29 @@ class DataConsent:
         payload = {"calendar": calendar, "email": email, **self._current()}
         self._memory.set_meta(_META_KEY, json.dumps(payload, ensure_ascii=False))
 
+    @staticmethod
+    def _read_signature(raw: str) -> dict[str, Any] | None:
+        try:
+            data = json.loads(raw)
+        except (ValueError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        return {"provider_id": data.get("provider_id"), "host": data.get("host")}
+
+    def is_local(self) -> bool:
+        """True when the active provider is local Ollama (no consent needed)."""
+        provider_id, base_url = self._signature()
+        return is_local_provider(provider_id, base_url)
+
     def get(self) -> dict[str, bool]:
         """Read the consents; if the provider or host changed, reset and rewrite them as off."""
+        if self.is_local():
+            # Drop any cloud consent on record, so it can't come back when a cloud provider returns.
+            stored = self._memory.get_meta(_META_KEY)
+            if stored and (self._read_signature(stored) != self._current()):
+                self._write(False, False)
+            return {"calendar": True, "email": True}
         raw = self._memory.get_meta(_META_KEY)
         if not raw:
             return {"calendar": False, "email": False}
@@ -66,6 +105,8 @@ class DataConsent:
 
     def update(self, calendar: bool | None = None, email: bool | None = None) -> dict[str, bool]:
         """Change one or both switches for the provider that is active right now."""
+        if self.is_local():
+            return {"calendar": True, "email": True}
         current = self.get()
         new_calendar = current["calendar"] if calendar is None else bool(calendar)
         new_email = current["email"] if email is None else bool(email)
