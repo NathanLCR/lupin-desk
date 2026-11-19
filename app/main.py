@@ -26,6 +26,7 @@ from app.panels.routes import register as register_panels
 from app.panels.credentials import register as register_credentials
 from app.panels.eink import register as register_eink
 from app.panels.everyday import register as register_everyday
+from app.ai_coding import register as register_ai_coding
 from app.monitoring import register as register_monitoring
 from app.images import register as register_images
 from app.presence import register as register_presence
@@ -384,9 +385,14 @@ def create_app(
         monitoring = getattr(_app.state, "monitoring", None)
         if monitoring is not None:
             monitoring.start()
+        ai_coding = getattr(_app.state, "ai_coding", None)
+        if ai_coding is not None:
+            ai_coding.start()
         try:
             yield
         finally:
+            if ai_coding is not None:
+                await ai_coding.stop()
             if monitoring is not None:
                 await monitoring.stop()
             if everyday is not None:
@@ -1070,6 +1076,9 @@ def create_app(
 
     # Mac monitoring widgets (P08): CPU, RAM, disks, network, top processes on the `monitor` topic.
     register_monitoring(fastapi_app)
+
+    # AI coding widgets (P09): sessions, quotas, GitHub, permission prompts and the Claude Code hooks.
+    register_ai_coding(fastapi_app, port=resolved_settings.port)
 
     # Image editor (Lupin 08): uploads from Panels, local edits with sips and macOS Vision.
     register_images(fastapi_app)

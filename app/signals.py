@@ -105,6 +105,11 @@ class Signal:
     data: dict[str, Any] = field(default_factory=dict)
     # "calendar" | "email" | "files" when `data` carries such contents.
     data_class: str | None = None
+    # Hold option: keep this Signal's Expression on until `SignalBus.release` is called for it
+    # (resolved, denied or timed out). While any hold is active no other Signal changes the
+    # Expression, and a hold ignores the speaking rate limit. `id` names a hold for release.
+    hold_expression: bool = False
+    id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -169,6 +174,7 @@ class SignalBus:
         set_expression: Callable[[str], Any] | None = None,
         focus_active: Callable[[], bool] | None = None,
         consent: Callable[[], dict[str, bool]] | None = None,
+        clear_expression: Callable[[], Any] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.hub = hub
@@ -179,6 +185,8 @@ class SignalBus:
         self._clock = clock
         self._listeners: list[Callable[[Signal], Any]] = []
         self._last_spoken: dict[str, float] = {}
+        self.clear_expression = clear_expression
+        self._held: set[tuple[str | None, str]] = set()
 
     def add_listener(self, callback: Callable[[Signal], Any]) -> Callable[[], None]:
         """Subscribe to every emitted signal; return a function that removes the subscription."""
@@ -196,6 +204,22 @@ class SignalBus:
         published = await self._publish(signal)
         await self._notify_listeners(signal)
         return await self._react(signal, published)
+
+    async def release(self, *, id: str | None = None, kind: str | None = None) -> int:
+        """Release held Expressions by id and/or kind; return how many were released.
+
+        When the last hold goes, Lupin goes back to neutral (`clear_expression`, else
+        `set_expression("neutral")`). Releasing something that is not held does nothing.
+        """
+        if id is None and kind is None:
+            raise ValueError("release needs an id or a kind.")
+        gone = {h for h in self._held if (id is None or h[0] == id) and (kind is None or h[1] == kind)}
+        if not gone:
+            return 0
+        self._held -= gone
+        if not self._held:
+            await self._clear_expression()
+        return len(gone)
 
     def llm_view(self, signal: Signal) -> dict[str, Any]:
         """What an LLM may see of a signal. Sensitive contents need their consent; never raises."""
@@ -272,7 +296,11 @@ class SignalBus:
             reason = "silent"
 
         expression_set: str | None = None
-        if (spoke or (not in_focus and reason != "rate_limited")) and expression is not None:
+        holding = signal.hold_expression and expression is not None
+        free = not self._held and (spoke or (not in_focus and reason != "rate_limited"))
+        if holding:
+            self._held.add((signal.id, kind))
+        if (holding or free) and expression is not None:
             if await self._set_expression(expression):
                 expression_set = expression
         return EmitResult(published, spoke, expression_set, reason)
@@ -313,6 +341,15 @@ class SignalBus:
         except Exception as exc:
             logger.warning("Lupin could not change expression (%s).", type(exc).__name__)
             return False
+
+    async def _clear_expression(self) -> None:
+        try:
+            if self.clear_expression is not None:
+                await asyncio.wait_for(_settle(self.clear_expression()), SPEAK_TIMEOUT_SECONDS)
+            else:
+                await self._set_expression("neutral")
+        except Exception as exc:
+            logger.warning("Lupin could not clear a held expression (%s).", type(exc).__name__)
 
     def _consent_allows(self, data_class: str) -> bool:
         # "files" has no consent switch, so it is never allowed to reach an LLM.
