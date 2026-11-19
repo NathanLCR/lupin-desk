@@ -12,6 +12,7 @@ import inspect
 import logging
 import re
 from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,11 @@ logger = logging.getLogger(__name__)
 ACTION_ID_RE = re.compile(r"^[a-z][a-z0-9_.:-]{0,63}$")
 
 _MAX_REPLY_ID_LEN = 64
+
+# The device-hub entry (connection) that sent the action being run, or None when the action did
+# not come from a connection. Set by DeviceHub around ``run``; handlers that must know which
+# device is asking (for example a permission answer) read it. Never a client-supplied value.
+CURRENT_CALLER: ContextVar[dict[str, Any] | None] = ContextVar("action_caller", default=None)
 
 
 def _reply_id(action_id: object) -> str | None:

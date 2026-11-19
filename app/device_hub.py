@@ -13,7 +13,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.actions import ActionRegistry
+from app.actions import CURRENT_CALLER, ActionRegistry
 from app.devices import DEVICE_ID_RE, DeviceStore
 
 logger = logging.getLogger(__name__)
@@ -263,7 +263,11 @@ class DeviceHub:
             return False
 
         if msg_type == "action":
-            reply = await self.actions.run(data.get("id"), data.get("args"))
+            token = CURRENT_CALLER.set(entry)
+            try:
+                reply = await self.actions.run(data.get("id"), data.get("args"))
+            finally:
+                CURRENT_CALLER.reset(token)
             await send(reply)
             return True
 
