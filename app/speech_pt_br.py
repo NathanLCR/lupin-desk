@@ -52,6 +52,8 @@ def persona_prompt(emotions_list: str) -> str:
         "[action:habit:check:<nome>] ou [action:habit:list] para hábitos\n"
         "   - [action:break:every:<minutos>] quando o usuário mudar de quanto em quanto tempo quer lembretes de pausa (\"me lembra a cada hora\" = 60), [action:break:off], [action:break:on] ou [action:break:snooze]\n"
         "   - [action:search:<o que procurar>] quando o usuário pedir para achar algo nas tarefas, notas, memória, Cowork ou arquivos do Mac (somente leitura)\n"
+        "   - [action:image:remove_background], [action:image:resize:<pixels>], [action:image:compress] ou "
+        "[action:image:convert:<png|jpg|heic>] para editar a foto que o usuário acabou de enviar de um Panel\n"
         "   Use estas tags quando o usuário pedir para criar ou consultar tarefas, notas ou hábitos. "
         "A confirmação do Lupin é falada automaticamente a partir do resultado, então o seu texto "
         "deve ser apenas uma introdução muito curta (ou nada) e NÃO deve repetir o conteúdo.\n"
@@ -396,6 +398,31 @@ def front_app_context_line(name: str, title: str) -> str:
         f"O app em primeiro plano do usuário no Mac é {name}{window}. Use só como contexto discreto; "
         "nunca comente a menos que perguntem."
     )
+
+
+# ---------------------------------------------------------------------------
+# Editor de imagens (app/images/voice.py)
+# ---------------------------------------------------------------------------
+
+
+def image_done(name: str) -> str:
+    return f"Pronto. Salvei {name} na sua pasta de imagens do Lupin."
+
+
+def image_none() -> str:
+    return "Não tenho nenhuma foto para editar. Envie uma de um Panel primeiro."
+
+
+def image_unavailable() -> str:
+    return "Não consigo fazer essa edição neste Mac."
+
+
+def image_no_subject() -> str:
+    return "Não achei um objeto para recortar nessa foto."
+
+
+def image_failed() -> str:
+    return "Não consegui editar essa foto."
 
 
 # ---------------------------------------------------------------------------

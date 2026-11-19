@@ -46,6 +46,8 @@ def persona_prompt(emotions_list: str) -> str:
         "[action:habit:check:<name>] or [action:habit:list] for habits\n"
         "   - [action:break:every:<minutes>] when the user changes how often to remind them to take a break (\"remind me every hour\" = 60), [action:break:off], [action:break:on] or [action:break:snooze]\n"
         "   - [action:search:<what to look for>] when the user asks to find something in their tasks, notes, memory, Cowork or Mac files (read-only)\n"
+        "   - [action:image:remove_background], [action:image:resize:<pixels>], [action:image:compress] or "
+        "[action:image:convert:<png|jpg|heic>] to edit the photo the user just uploaded from a Panel\n"
         "   Use these when the user asks to create or query tasks, notes or habits. Lupin's "
         "confirmation is spoken automatically from the result, so your own text must be only a "
         "very short lead-in (or nothing) and must NOT repeat the content.\n"
@@ -390,6 +392,31 @@ def front_app_context_line(name: str, title: str) -> str:
         f"The user's front app on the Mac is {name}{window}. Use it only as quiet context; "
         "never comment on it unless asked."
     )
+
+
+# ---------------------------------------------------------------------------
+# Image editor (app/images/voice.py)
+# ---------------------------------------------------------------------------
+
+
+def image_done(name: str) -> str:
+    return f"Done. I saved {name} in your Lupin pictures folder."
+
+
+def image_none() -> str:
+    return "I don't have a photo to edit. Upload one from a Panel first."
+
+
+def image_unavailable() -> str:
+    return "I can't do that edit on this Mac."
+
+
+def image_no_subject() -> str:
+    return "I couldn't find a subject to cut out of that photo."
+
+
+def image_failed() -> str:
+    return "I couldn't edit that photo."
 
 
 # ---------------------------------------------------------------------------

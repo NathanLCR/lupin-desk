@@ -27,6 +27,7 @@ from app.panels.credentials import register as register_credentials
 from app.panels.eink import register as register_eink
 from app.panels.everyday import register as register_everyday
 from app.monitoring import register as register_monitoring
+from app.images import register as register_images
 from app.presence import register as register_presence
 from app.productivity import register as register_productivity
 from app.search import register as register_search
@@ -1070,6 +1071,9 @@ def create_app(
     # Mac monitoring widgets (P08): CPU, RAM, disks, network, top processes on the `monitor` topic.
     register_monitoring(fastapi_app)
 
+    # Image editor (Lupin 08): uploads from Panels, local edits with sips and macOS Vision.
+    register_images(fastapi_app)
+
     # Everyday Panel widgets (P07): media, timers, Pomodoro end, calendar and reminders.
     register_everyday(fastapi_app, resolved_mac, calendar_reader=resolved_calendar_reader)
 
@@ -1521,11 +1525,13 @@ def create_app(
                     elif event_type == "action":
                         kind = str(event.get("kind") or "")
                         target = str(event.get("target") or "")
-                        if kind in ("task", "note", "habit", "search", "break") and target:
+                        if kind in ("task", "note", "habit", "search", "break", "image") and target:
                             if kind == "search":
                                 voice_result = await fastapi_app.state.smart_search.handle_voice(kind, target)
                             elif kind == "break":
                                 voice_result = await fastapi_app.state.presence.handle_voice(kind, target)
+                            elif kind == "image":
+                                voice_result = await fastapi_app.state.images.handle_voice(kind, target)
                             else:
                                 voice_result = await fastapi_app.state.productivity.handle_voice(kind, target)
                             await safe_send(
