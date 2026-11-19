@@ -58,3 +58,9 @@ Several features may now be built at the same time, split by files so that no tw
 - "Future agents must not add Bodies or Modes without revisiting this ADR." Device Roles and Layouts are now the way to add surfaces. New *kinds* of device still need an ADR.
 
 Everything else in ADR 0001 stands: the Brain/Body split, the Body draws Lupin itself, one Active Body, tap-to-talk on the Mac's microphone, and offline operation not being a requirement (issue 11 makes it possible, not required).
+
+## Addendum (2026-11-18): Allow only from the device showing the prompt
+
+Grilling P09 narrowed the LAN-trust risk for Claude Code permission prompts without adding pairing. The Brain accepts Allow or Deny only from a device that is showing that prompt right now, using a one-time ID per prompt. An unknown, used or expired ID, or an answer from a device that isn't showing the prompt, is rejected. A prompt waits 2 minutes, then Claude Code shows its own prompt. Everything else in *Security: the LAN is trusted* stands: anyone on the Wi-Fi can still see Panels and send other Actions.
+
+The idea comes from the trust rules of Meta's Muse Gadgets video port (`.scratch/research/muse-gadgets.md`): an unauthenticated endpoint takes input only while the user is looking at it.

@@ -109,7 +109,7 @@ The daily summary of the user's day, built from Cowork, the calendar and the inb
 _Avoid_: briefing, digest
 
 **Data Consent**:
-The user's permission, given on the Mac, for one named LLM provider to see their calendar, their email or the contents of their files (one permission for each). It lapses by itself when the provider changes. Without it, calendar, email and file contents never leave the Mac. A local provider (Ollama) runs on the Mac and needs none.
+The user's permission, given on the Mac, for one named LLM provider to see their calendar, their email, the contents of their files or the Mac's front app (its name and window title), one permission for each. It lapses by itself when the provider changes. Without it, calendar, email, file contents and the front app never leave the Mac. A local provider (Ollama) runs on the Mac and needs none.
 _Avoid_: privacy setting, sharing
 
 **First Wake**:
