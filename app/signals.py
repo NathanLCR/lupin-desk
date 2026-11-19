@@ -47,7 +47,7 @@ SENSITIVE_DATA_CLASSES = frozenset({"calendar", "email", "files"})
 
 # Only these kinds may make Lupin speak unprompted, whatever their importance says.
 SPEAKING_KINDS = frozenset(
-    {"claude_code_needs_user", "build_failed", "timer_done", "habit_due", "meeting_soon"}
+    {"claude_code_needs_user", "build_failed", "timer_done", "habit_due", "meeting_soon", "break_reminder"}
 )
 
 # During focus (Pomodoro) only these kinds speak.
@@ -61,6 +61,7 @@ RATE_LIMIT_SECONDS: dict[str, float] = {
     "timer_done": 30.0,
     "habit_due": 600.0,
     "meeting_soon": 300.0,
+    "break_reminder": 1200.0,
 }
 
 # Expression Lupin shows for a kind. Every name must be a known expression.
@@ -70,6 +71,7 @@ KIND_EXPRESSIONS: dict[str, str] = {
     "timer_done": "happy",
     "habit_due": "curious",
     "meeting_soon": "surprised",
+    "break_reminder": "curious",
     "mac_heavy_load": "dizzy",
 }
 

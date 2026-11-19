@@ -27,6 +27,7 @@ from app.panels.credentials import register as register_credentials
 from app.panels.eink import register as register_eink
 from app.panels.everyday import register as register_everyday
 from app.monitoring import register as register_monitoring
+from app.presence import register as register_presence
 from app.productivity import register as register_productivity
 from app.search import register as register_search
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
@@ -373,6 +374,9 @@ def create_app(
         productivity = getattr(_app.state, "productivity", None)
         if productivity is not None:
             productivity.start()
+        presence = getattr(_app.state, "presence", None)
+        if presence is not None:
+            presence.start()
         everyday = getattr(_app.state, "everyday", None)
         if everyday is not None:
             everyday.start()
@@ -386,6 +390,8 @@ def create_app(
                 await monitoring.stop()
             if everyday is not None:
                 await everyday.stop()
+            if presence is not None:
+                await presence.stop()
             if productivity is not None:
                 await productivity.stop()
             if own_shortcuts:
@@ -1049,6 +1055,18 @@ def create_app(
     # Tasks, notes and habits (issue 05): store, REST, Panel actions, habit scheduler.
     register_productivity(fastapi_app, resolved_settings.db_path)
 
+    # Presence (Lupin 04): break reminders, time of day, Now Playing tone, front app consent.
+    register_presence(
+        fastapi_app,
+        resolved_memory,
+        resolved_mac,
+        lambda: (
+            str(active_provider_state.get("provider_id") or "custom"),
+            resolved_settings.llm_base_url,
+        ),
+        require_mac_client,
+    )
+
     # Mac monitoring widgets (P08): CPU, RAM, disks, network, top processes on the `monitor` topic.
     register_monitoring(fastapi_app)
 
@@ -1450,6 +1468,13 @@ def create_app(
                     except Exception as exc:
                         logger.warning("Conversation without e-mail (%s).", type(exc).__name__)
                 personal_context = build_personal_context(consent, turn_calendar, turn_inbox)
+                presence = getattr(fastapi_app.state, "presence", None)
+                if presence is not None:
+                    # Time of day drives Energy; music tone; front app only with its Data Consent.
+                    companion_context = presence.companion_line()
+                    presence_context = await presence.turn_context()
+                    if presence_context:
+                        personal_context = f"{personal_context}\n\n{presence_context}".strip()
 
                 resolved_memory.add_message("user", user_text)
 
@@ -1496,9 +1521,11 @@ def create_app(
                     elif event_type == "action":
                         kind = str(event.get("kind") or "")
                         target = str(event.get("target") or "")
-                        if kind in ("task", "note", "habit", "search") and target:
+                        if kind in ("task", "note", "habit", "search", "break") and target:
                             if kind == "search":
                                 voice_result = await fastapi_app.state.smart_search.handle_voice(kind, target)
+                            elif kind == "break":
+                                voice_result = await fastapi_app.state.presence.handle_voice(kind, target)
                             else:
                                 voice_result = await fastapi_app.state.productivity.handle_voice(kind, target)
                             await safe_send(
@@ -1733,12 +1760,15 @@ def create_app(
                         companion = resolved_memory.record_pet(intensity=intensity)
                     else:
                         companion = resolved_memory.record_interaction(sentiment_delta=-0.02)
+                    presence = getattr(fastapi_app.state, "presence", None)
+                    touch_emotion = presence.on_touch(kind) if presence is not None else None
                     await safe_send(
                         {
                             "type": "mood",
                             "kind": kind,
                             "companion": companion,
                             **companion,
+                            **({"emotion": touch_emotion} if touch_emotion else {}),
                         }
                     )
                     if active_turn_task is None or active_turn_task.done():

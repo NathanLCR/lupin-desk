@@ -44,6 +44,7 @@ def persona_prompt(emotions_list: str) -> str:
         "   - [action:note:add:<text>] or [action:note:list] for notes\n"
         "   - [action:habit:add:<name>@HH:MM] (the @HH:MM time is optional), "
         "[action:habit:check:<name>] or [action:habit:list] for habits\n"
+        "   - [action:break:every:<minutes>] when the user changes how often to remind them to take a break (\"remind me every hour\" = 60), [action:break:off], [action:break:on] or [action:break:snooze]\n"
         "   - [action:search:<what to look for>] when the user asks to find something in their tasks, notes, memory, Cowork or Mac files (read-only)\n"
         "   Use these when the user asks to create or query tasks, notes or habits. Lupin's "
         "confirmation is spoken automatically from the result, so your own text must be only a "
@@ -346,7 +347,49 @@ SIGNAL_LINES: dict[str, str] = {
     "timer_done": "Your timer is done.",
     "habit_due": "A habit is due.",
     "meeting_soon": "Your meeting starts soon.",
+    "break_reminder": "Time for a short break.",
 }
+
+
+# Presence (Lupin 04)
+def break_reminder(minutes: int) -> str:
+    return f"You've been at it for about {minutes} minutes. How about a short break?"
+
+
+def break_snoozed() -> str:
+    return "Okay, I'll leave you alone for ten minutes."
+
+
+def break_interval_set(minutes: int) -> str:
+    return f"Okay, I'll remind you about breaks every {minutes} minutes."
+
+
+def break_interval_invalid() -> str:
+    return "Sorry, I didn't get that. Tell me how many minutes."
+
+
+def break_reminders_on() -> str:
+    return "Okay, break reminders are back on."
+
+
+def break_reminders_off() -> str:
+    return "Okay, no more break reminders."
+
+
+def presence_music_line(tone: str) -> str:
+    word = "calm" if tone == "calm" else "lively"
+    return (
+        f"Music is playing in the background and it feels {word}: let your tone follow it a little. "
+        "Never mention the music unless asked."
+    )
+
+
+def front_app_context_line(name: str, title: str) -> str:
+    window = f' (window: "{title}")' if title else ""
+    return (
+        f"The user's front app on the Mac is {name}{window}. Use it only as quiet context; "
+        "never comment on it unless asked."
+    )
 
 
 # ---------------------------------------------------------------------------

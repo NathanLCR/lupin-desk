@@ -50,6 +50,7 @@ def persona_prompt(emotions_list: str) -> str:
         "   - [action:note:add:<texto>] ou [action:note:list] para notas\n"
         "   - [action:habit:add:<nome>@HH:MM] (o horário @HH:MM é opcional), "
         "[action:habit:check:<nome>] ou [action:habit:list] para hábitos\n"
+        "   - [action:break:every:<minutos>] quando o usuário mudar de quanto em quanto tempo quer lembretes de pausa (\"me lembra a cada hora\" = 60), [action:break:off], [action:break:on] ou [action:break:snooze]\n"
         "   - [action:search:<o que procurar>] quando o usuário pedir para achar algo nas tarefas, notas, memória, Cowork ou arquivos do Mac (somente leitura)\n"
         "   Use estas tags quando o usuário pedir para criar ou consultar tarefas, notas ou hábitos. "
         "A confirmação do Lupin é falada automaticamente a partir do resultado, então o seu texto "
@@ -352,7 +353,49 @@ SIGNAL_LINES: dict[str, str] = {
     "timer_done": "Seu timer acabou.",
     "habit_due": "Um hábito está na hora.",
     "meeting_soon": "Sua reunião começa em breve.",
+    "break_reminder": "Hora de uma pausa rápida.",
 }
+
+
+# Presence (Lupin 04)
+def break_reminder(minutes: int) -> str:
+    return f"Você está nessa há uns {minutes} minutos. Que tal uma pausa rápida?"
+
+
+def break_snoozed() -> str:
+    return "Beleza, te deixo em paz por dez minutos."
+
+
+def break_interval_set(minutes: int) -> str:
+    return f"Certo, vou te lembrar de pausar a cada {minutes} minutos."
+
+
+def break_interval_invalid() -> str:
+    return "Desculpa, não entendi. Me diz quantos minutos."
+
+
+def break_reminders_on() -> str:
+    return "Certo, os lembretes de pausa voltaram."
+
+
+def break_reminders_off() -> str:
+    return "Certo, sem mais lembretes de pausa."
+
+
+def presence_music_line(tone: str) -> str:
+    word = "calma" if tone == "calm" else "animada"
+    return (
+        f"Está tocando uma música {word} ao fundo: deixe seu tom acompanhar um pouco. "
+        "Nunca comente a música a menos que perguntem."
+    )
+
+
+def front_app_context_line(name: str, title: str) -> str:
+    window = f' (janela: "{title}")' if title else ""
+    return (
+        f"O app em primeiro plano do usuário no Mac é {name}{window}. Use só como contexto discreto; "
+        "nunca comente a menos que perguntem."
+    )
 
 
 # ---------------------------------------------------------------------------
