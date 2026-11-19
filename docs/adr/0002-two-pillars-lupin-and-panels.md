@@ -63,4 +63,6 @@ Everything else in ADR 0001 stands: the Brain/Body split, the Body draws Lupin i
 
 Grilling P09 narrowed the LAN-trust risk for Claude Code permission prompts without adding pairing. The Brain accepts Allow or Deny only from a device that is showing that prompt right now, using a one-time ID per prompt. An unknown, used or expired ID, or an answer from a device that isn't showing the prompt, is rejected. A prompt waits 2 minutes, then Claude Code shows its own prompt. Everything else in *Security: the LAN is trusted* stands: anyone on the Wi-Fi can still see Panels and send other Actions.
 
+As built, "showing" means a registered Panel-role device that acknowledged the prompt while its page is visible. The acknowledgement is the device's own claim, so it stops blind and replayed answers, not a client that registers as a new Panel on purpose: that client can still see and answer prompts. This is the residual risk of trusting the LAN, and closing it needs pairing or user-approved devices.
+
 The idea comes from the trust rules of Meta's Muse Gadgets video port (`.scratch/research/muse-gadgets.md`): an unauthenticated endpoint takes input only while the user is looking at it.
