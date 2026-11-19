@@ -29,6 +29,7 @@ from app.panels.everyday import register as register_everyday
 from app.ai_coding import register as register_ai_coding
 from app.monitoring import register as register_monitoring
 from app.images import register as register_images
+from app.control import register as register_control
 from app.presence import register as register_presence
 from app.productivity import register as register_productivity
 from app.search import register as register_search
@@ -389,9 +390,14 @@ def create_app(
         ai_coding = getattr(_app.state, "ai_coding", None)
         if ai_coding is not None:
             ai_coding.start()
+        control = getattr(_app.state, "control", None)
+        if control is not None:
+            control.start()
         try:
             yield
         finally:
+            if control is not None:
+                await control.stop()
             if ai_coding is not None:
                 await ai_coding.stop()
             if monitoring is not None:
@@ -1079,6 +1085,9 @@ def create_app(
         ),
         require_mac_client,
     )
+
+    # Control Deck and Automation (P10): volume, mic, media, macros, webhooks, rules.
+    register_control(fastapi_app, resolved_settings.db_path, require_mac_client, mac=resolved_mac)
 
     # Mac monitoring widgets (P08): CPU, RAM, disks, network, top processes on the `monitor` topic.
     register_monitoring(fastapi_app)

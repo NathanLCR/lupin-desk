@@ -40,6 +40,7 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"AIza[A-Za-z0-9_-]+"), "[REDACTED]"),
     (re.compile(r"gsk_[A-Za-z0-9_-]+"), "[REDACTED]"),
     (re.compile(r"(Bearer\s+)[A-Za-z0-9._-]+", re.IGNORECASE), r"\1[REDACTED]"),
+    (re.compile(r"(/hooks/)[A-Za-z0-9_-]+"), r"\1[REDACTED]"),  # Control Deck webhook secret paths
 )
 
 
