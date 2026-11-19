@@ -253,7 +253,7 @@ def test_edit_crop_runs_sips_saves_result_and_deletes_original(tmp_path: Path) -
     assert hub.published[-1][1]["result"]["id"] == result["id"]
     assert hub.published[-1][1]["pending"] is None
     download = client.get(f"/api/images/results/{result['id']}")
-    assert download.status_code == 200 and download.content == b"result"
+    assert download.status_code == 200 and download.content == b"clean"
     assert "attachment" in download.headers["content-disposition"]
 
 
@@ -727,10 +727,10 @@ def test_real_result_has_no_gps_but_keeps_other_metadata(tmp_path: Path) -> None
         assert b"hello-meta" in data  # other metadata is kept
 
 
-def test_gps_strip_runs_for_jpg_and_heic_results_only(tmp_path: Path) -> None:
+def test_gps_strip_runs_for_every_saved_format(tmp_path: Path) -> None:
     app, _, fake, _ = build(tmp_path)
     client = TestClient(app)
-    for fmt, expect in (("heic", 1), ("png", 0)):
+    for fmt, expect in (("heic", 1), ("png", 1)):
         before = len([c for c in fake.calls if len(c) > 1 and c[1] == "stripgps"])
         info = upload(client, make_png()).json()
         client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "convert", "format": fmt}]})
@@ -752,3 +752,27 @@ def test_gps_strip_failure_fails_closed(tmp_path: Path) -> None:
     response = client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "compress", "quality": 50}]})
     assert response.status_code == 422
     assert not (tmp_path / "pics").exists() or list((tmp_path / "pics").iterdir()) == []
+
+
+@pytest.mark.skipif(not HAS_SIPS, reason="needs macOS sips and swiftc")
+def test_real_png_from_geotagged_jpeg_has_no_gps(tmp_path: Path) -> None:
+    app = FastAPI()
+    tools = ImageTools(tmp_path / "cache")
+    register(app, store_dir=tmp_path / "store", pictures_dir=tmp_path / "pics", tools=tools)
+    client = TestClient(app)
+    png = tmp_path / "a.png"
+    png.write_bytes(make_png(200, 100))
+    jpg = tmp_path / "a.jpg"
+    subprocess.run(["/usr/bin/sips", "-s", "format", "jpeg", str(png), "--out", str(jpg)], check=True, capture_output=True)
+    tagged = jpeg_with_gps(jpg.read_bytes())
+    # Without the strip step sips carries the GPS block into the PNG (eXIf chunk).
+    raw = tmp_path / "raw.png"
+    tagged_file = tmp_path / "t.jpg"
+    tagged_file.write_bytes(tagged)
+    subprocess.run(["/usr/bin/sips", "-s", "format", "png", str(tagged_file), "--out", str(raw)], check=True, capture_output=True)
+    assert b"\x88\x25" in raw.read_bytes()
+    info = upload(client, tagged).json()
+    name = client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "convert", "format": "png"}]}).json()["name"]
+    data = (tmp_path / "pics" / name).read_bytes()
+    assert name.endswith(".png") and data.startswith(b"\x89PNG")
+    assert b"\x88\x25" not in data

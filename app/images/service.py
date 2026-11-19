@@ -320,7 +320,7 @@ class ImageService:
                 temps.append(out)
                 self._apply(kind, op, current, out, out_fmt)
                 current, current_fmt = out, out_fmt
-            if current_fmt in ("jpg", "heic"):  # PNG has no GPS block; strip it everywhere else
+            if current_fmt in OUTPUT_FORMATS:  # every saved format can carry GPS (PNG via eXIf/XMP)
                 clean = self._dir / f"{image_id}.clean.{OUTPUT_FORMATS[current_fmt][1]}"
                 temps.append(clean)
                 self._tools.strip_gps(current, clean)
