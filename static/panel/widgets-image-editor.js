@@ -19,7 +19,7 @@
 
   var MESSAGES = {
     not_image: 'That file is not an image.',
-    too_large: 'That image is bigger than 25 MB.',
+    too_large: 'That image is too large (25 MB or 50 megapixels at most).',
     unavailable: 'This edit is not available on the Mac.',
     no_subject: 'No subject found to cut out.',
     edit_failed: 'The edit failed. Try again.',

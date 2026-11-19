@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_PENDING = 20
+MAX_PIXELS = 50_000_000
+MAX_CONCURRENT_INGESTS = 2
 MAX_RESULTS = 50
 MAX_OPS = 5
 MAX_SIDE = 16384
@@ -145,6 +147,7 @@ class ImageService:
         self._pending: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._results: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._lock = asyncio.Lock()
+        self._ingests = asyncio.Semaphore(MAX_CONCURRENT_INGESTS)
         self._dir.mkdir(parents=True, exist_ok=True)
         with contextlib.suppress(OSError):
             self._dir.chmod(0o700)
@@ -182,7 +185,13 @@ class ImageService:
 
     async def ingest(self, chunks: AsyncIterable[bytes]) -> dict[str, Any]:
         """Store an uploaded body as a new pending image. Refuses non-images and oversize."""
+        async with self._ingests:
+            return await self._ingest(chunks)
+
+    async def _ingest(self, chunks: AsyncIterable[bytes]) -> dict[str, Any]:
         self._purge()
+        while len(self._pending) >= MAX_PENDING:  # make room before writing anything
+            self._forget(next(iter(self._pending)))
         image_id = secrets.token_hex(16)
         part = self._dir / f"{image_id}.part"
         head = b""
@@ -205,14 +214,32 @@ class ImageService:
             with contextlib.suppress(OSError):
                 part.unlink()
             raise
-        while len(self._pending) >= MAX_PENDING:
-            self._forget(next(iter(self._pending)))
-        info = {"id": image_id, "format": fmt, "size": size, "path": final}
-        dims = await asyncio.to_thread(self._tools.dimensions, final)
-        if dims:
-            info["width"], info["height"] = dims
+        try:
+            final, dims = await asyncio.to_thread(self._prepare, image_id, final)
+        except BaseException:
+            for path in (final, self._dir / f"{image_id}.upright"):
+                with contextlib.suppress(OSError):
+                    path.unlink()
+            raise
+        info = {"id": image_id, "format": fmt, "size": final.stat().st_size, "path": final}
+        info["width"], info["height"] = dims
         self._pending[image_id] = info
         return self.describe(info)
+
+    def _prepare(self, image_id: str, path: Path) -> tuple[Path, tuple[int, int]]:
+        """Check the pixel size, then bake any EXIF rotation into the stored file."""
+        dims = self._tools.dimensions(path)
+        if dims is None:
+            raise ImageError("not_image", 415)
+        if dims[0] * dims[1] > MAX_PIXELS:
+            raise ImageError("too_large", 413)
+        upright = self._dir / f"{image_id}.upright"
+        if self._tools.normalize_orientation(path, upright):
+            with contextlib.suppress(OSError):
+                path.unlink()
+            upright.rename(path)
+            dims = self._tools.dimensions(path) or dims
+        return path, dims
 
     @staticmethod
     def describe(entry: dict[str, Any]) -> dict[str, Any]:
@@ -311,12 +338,15 @@ class ImageService:
             if dims is None:
                 raise ToolError("edit_failed")
             width, height = dims
+            if width * height > MAX_PIXELS:
+                raise ToolError("too_large")
             left = min(int(op["x"] * width), width - 1)
             top = min(int(op["y"] * height), height - 1)
             crop_w = max(1, min(int(round(op["w"] * width)), width - left))
             crop_h = max(1, min(int(round(op["h"] * height)), height - top))
             tools.crop(src, dst, left, top, crop_w, crop_h)
         elif kind == "resize":
+            self._check_resize_target(src, op["width"], op["height"])
             tools.resize(src, dst, op["width"], op["height"])
         elif kind == "compress":
             tools.convert(src, dst, "jpg", op["quality"])
@@ -326,6 +356,20 @@ class ImageService:
             tools.remove_background(src, dst)
         else:
             raise ToolError("edit_failed")
+
+    def _check_resize_target(self, src: Path, width: int | None, height: int | None) -> None:
+        """Refuse a resize whose output would exceed the pixel limit."""
+        dims = self._tools.dimensions(src)
+        if dims is None:
+            raise ToolError("edit_failed")
+        if width and height:
+            out_w, out_h = width, height
+        elif width:
+            out_w, out_h = width, dims[1] * width / dims[0]
+        else:
+            out_w, out_h = dims[0] * height / dims[1], height
+        if out_w * out_h > MAX_PIXELS:
+            raise ToolError("too_large")
 
     # ---------------------------------------------------------------- results
 

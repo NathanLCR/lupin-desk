@@ -2,15 +2,19 @@
 
 Every command is a fixed argv list (`/usr/bin/sips`, the Swift compiler, the compiled Vision
 helper) run with `subprocess.run` and never a shell. Paths always come from the Brain's own image
-store, never from a client. Background removal uses a small Swift helper (`vision_cutout.swift`,
+store, never from a client. Background removal uses a small Swift helper (`image_helper.swift`,
 macOS Vision `VNGenerateForegroundInstanceMaskRequest`) that is compiled once into a cache folder.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import re
+import secrets
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -19,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 SIPS = "/usr/bin/sips"
 SWIFTC = "/usr/bin/swiftc"
-HELPER_SOURCE = Path(__file__).with_name("vision_cutout.swift")
+HELPER_SOURCE = Path(__file__).with_name("image_helper.swift")
 SIPS_TIMEOUT_SECONDS = 60
 COMPILE_TIMEOUT_SECONDS = 240
 CUTOUT_TIMEOUT_SECONDS = 120
@@ -61,6 +65,7 @@ class ImageTools:
         self._swiftc = swiftc
         self._helper_source = helper_source
         self._helper_failed = False
+        self._compile_lock = threading.Lock()
 
     def _run(self, argv: list[str], timeout: int) -> Any:
         try:
@@ -118,7 +123,7 @@ class ImageTools:
 
     def remove_background(self, src: Path, dst: Path) -> None:
         helper = self._ensure_helper()
-        result = self._run([str(helper), str(src), str(dst)], CUTOUT_TIMEOUT_SECONDS)
+        result = self._run([str(helper), "cutout", str(src), str(dst)], CUTOUT_TIMEOUT_SECONDS)
         if result.returncode == 4:
             raise ToolError("no_subject")
         if result.returncode == 5:
@@ -126,23 +131,57 @@ class ImageTools:
         if result.returncode != 0 or not dst.is_file():
             raise ToolError("edit_failed")
 
+    def normalize_orientation(self, src: Path, dst: Path) -> bool:
+        """Bake an EXIF orientation into the pixels (so preview, crop and Vision agree).
+
+        Returns True when `dst` was written, False when the image was already upright or the
+        helper is unavailable (the original is then used as is).
+        """
+        try:
+            helper = self._ensure_helper()
+            result = self._run([str(helper), "orient", str(src), str(dst)], CUTOUT_TIMEOUT_SECONDS)
+        except ToolError:
+            return False
+        return result.returncode == 0 and dst.is_file()
+
     def _ensure_helper(self) -> Path:
-        """Compile the Vision helper once into the cache folder; unavailable when that fails."""
-        helper = self._cache_dir / "vision_cutout"
+        """Compile the helper once into the cache folder; unavailable when that fails."""
+        helper = self._cache_dir / "image_helper"
         if helper.is_file():
             return helper
         if self._helper_failed or not self._helper_source.is_file():
             raise ToolError("unavailable")
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-        result = self._run(
-            [self._swiftc, "-O", str(self._helper_source), "-o", str(helper)],
-            COMPILE_TIMEOUT_SECONDS,
-        )
-        if result.returncode != 0 or not helper.is_file():
-            self._helper_failed = True
-            logger.warning("Vision helper could not be compiled; background removal unavailable.")
-            raise ToolError("unavailable")
+        with self._compile_lock:
+            if helper.is_file():
+                return helper
+            self._cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with contextlib.suppress(OSError):
+                self._cache_dir.chmod(0o700)
+            partial = self._cache_dir / f"image_helper.{secrets.token_hex(4)}.tmp"
+            try:
+                result = self._run(
+                    [self._swiftc, "-O", str(self._helper_source), "-o", str(partial)],
+                    COMPILE_TIMEOUT_SECONDS,
+                )
+                if result.returncode != 0 or not partial.is_file():
+                    self._helper_failed = True
+                    logger.warning("Image helper could not be compiled; Vision features unavailable.")
+                    raise ToolError("unavailable")
+                os.replace(partial, helper)
+            except ToolError:
+                raise
+            finally:
+                with contextlib.suppress(OSError):
+                    partial.unlink()
         return helper
+
+    def warm_up(self) -> None:
+        """Compile the helper in the background so the first upload does not wait for it."""
+        threading.Thread(target=self._warm, daemon=True).start()
+
+    def _warm(self) -> None:
+        with contextlib.suppress(ToolError):
+            self._ensure_helper()
 
 
 def _text(value: Any) -> str:

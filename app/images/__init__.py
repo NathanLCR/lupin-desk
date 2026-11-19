@@ -42,6 +42,8 @@ def register(
     Every directory is injectable; tests pass `tmp_path`. The device hub is looked up per call.
     """
     resolved_tools = tools or ImageTools(cache_dir or DEFAULT_CACHE_DIR)
+    if tools is None and cache_dir is None:
+        resolved_tools.warm_up()  # production default: compile the helper off the request path
     service = ImageService(
         resolved_tools, store_dir=store_dir, pictures_dir=pictures_dir, clock=clock
     )

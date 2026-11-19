@@ -81,8 +81,10 @@ class FakeRun:
         if self.returncode == 0:
             if "--out" in argv:
                 Path(argv[argv.index("--out") + 1]).write_bytes(b"result")
-            elif argv[0].endswith("vision_cutout"):
-                Path(argv[2]).write_bytes(b"cutout")
+            elif argv[0].endswith("image_helper"):
+                if argv[1] == "orient":
+                    return SimpleNamespace(returncode=10, stdout=b"", stderr=b"")
+                Path(argv[3]).write_bytes(b"cutout")
             elif argv[0].endswith("swiftc"):
                 Path(argv[argv.index("-o") + 1]).write_bytes(b"bin")
         return SimpleNamespace(returncode=self.returncode, stdout=b"", stderr=b"")
@@ -277,12 +279,15 @@ def test_all_subprocesses_are_argv_lists_never_shell(tmp_path: Path) -> None:
     client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "resize", "width": 10, "height": 10}]})
     assert fake.calls and all(isinstance(c, list) and all(isinstance(a, str) for a in c) for c in fake.calls)
     assert all(not k.get("shell") for k in fake.kwargs)
-    assert all(c[0] == "/usr/bin/sips" for c in fake.calls)
+    assert all(
+        c[0] in ("/usr/bin/sips", "/usr/bin/swiftc") or c[0].endswith("/image_helper") for c in fake.calls
+    )
     store = str(tmp_path / "store")
     for call in fake.calls:
         for arg in call[1:]:
-            if arg.startswith("/"):
-                assert arg.startswith(store)
+            if arg.startswith("/") and not arg.startswith("/usr/bin/") and not arg.endswith("image_helper.swift"):
+                assert arg.startswith((store, str(tmp_path / "cache")))
+                assert not arg.startswith("/usr/bin")
 
 
 def test_edit_failure_keeps_original_and_reports(tmp_path: Path) -> None:
@@ -336,8 +341,8 @@ def test_remove_background_compiles_helper_once_and_outputs_png(tmp_path: Path) 
         assert result["format"] == "png"
     compiles = [c for c in fake.calls if c[0].endswith("swiftc")]
     assert len(compiles) == 1 and compiles[0][:2] == ["/usr/bin/swiftc", "-O"]
-    runs = [c for c in fake.calls if c[0].endswith("vision_cutout")]
-    assert len(runs) == 2 and len(runs[0]) == 3
+    runs = [c for c in fake.calls if c[0].endswith("image_helper") and c[1] == "cutout"]
+    assert len(runs) == 2 and len(runs[0]) == 4 and runs[0][1] == "cutout"
 
 
 def test_remove_background_unavailable_when_compile_fails(tmp_path: Path) -> None:
@@ -369,7 +374,7 @@ def test_remove_background_missing_swiftc_is_unavailable(tmp_path: Path) -> None
 def test_remove_background_no_subject_exit_code(tmp_path: Path) -> None:
     class NoSubject(FakeRun):
         def __call__(self, argv: list[str], **kwargs: Any) -> Any:
-            if argv[0].endswith("vision_cutout"):
+            if argv[0].endswith("image_helper"):
                 return SimpleNamespace(returncode=4, stdout=b"", stderr=b"")
             return super().__call__(argv, **kwargs)
 
@@ -483,3 +488,155 @@ def test_real_vision_helper_runs_or_reports_cleanly(tmp_path: Path) -> None:
     assert response.status_code in (200, 422, 501)
     if response.status_code != 200:
         assert response.json()["detail"] in ("no_subject", "unavailable")
+
+
+# ------------------------------------------------------------------ review fix-ups
+
+
+def test_llm_parses_image_action_tag() -> None:
+    from app.llm import _ACTION_TAG_RE, TagStreamParser
+
+    match = _ACTION_TAG_RE.match("[action:image:resize:800]")
+    assert match is not None and match.group(1) == "image" and match.group(2) == "resize:800"
+    parser = TagStreamParser()
+    events = parser.feed("[emotion:happy] On it. [action:image:resize:800]")
+    events += list(parser.finish()[0])
+    assert {"type": "action", "kind": "image", "target": "resize:800"} in events
+
+
+def jpeg_with_orientation(jpeg: bytes, orientation: int) -> bytes:
+    """Insert an EXIF APP1 with the orientation tag right after the JFIF segment."""
+    assert jpeg[2:4] == b"\xff\xe0"
+    cut = 4 + struct.unpack(">H", jpeg[4:6])[0]
+    tiff = (
+        b"MM\x00\x2a" + struct.pack(">I", 8) + struct.pack(">H", 1)
+        + struct.pack(">HHI", 0x0112, 3, 1) + struct.pack(">HH", orientation, 0) + struct.pack(">I", 0)
+    )
+    body = b"Exif\x00\x00" + tiff
+    return jpeg[:cut] + b"\xff\xe1" + struct.pack(">H", len(body) + 2) + body + jpeg[cut:]
+
+
+@pytest.mark.skipif(not HAS_SIPS, reason="needs macOS sips and swiftc")
+def test_real_exif_rotation_is_baked_in_on_upload(tmp_path: Path) -> None:
+    app = FastAPI()
+    tools = ImageTools(tmp_path / "cache")
+    register(app, store_dir=tmp_path / "store", pictures_dir=tmp_path / "pics", tools=tools)
+    client = TestClient(app)
+    src = tmp_path / "wide.png"
+    src.write_bytes(make_png(200, 100))
+    jpg = tmp_path / "wide.jpg"
+    subprocess.run(["/usr/bin/sips", "-s", "format", "jpeg", str(src), "--out", str(jpg)], check=True, capture_output=True)
+    rotated = jpeg_with_orientation(jpg.read_bytes(), 6)  # camera held upright: shown 100x200
+    info = upload(client, rotated).json()
+    assert (info["width"], info["height"]) == (100, 200)
+    # an upright file is left alone
+    plain = upload(client, jpg.read_bytes()).json()
+    assert (plain["width"], plain["height"]) == (200, 100)
+    # crop now follows the upright pixels: top half of a 100x200 image is 100x100
+    result = client.post(
+        f"/api/images/{info['id']}/edit", json={"ops": [{"op": "crop", "x": 0, "y": 0, "w": 1, "h": 0.5}]}
+    ).json()
+    assert tools.dimensions(tmp_path / "pics" / result["name"]) == (100, 100)
+
+
+def test_orientation_helper_called_on_upload_and_original_replaced(tmp_path: Path) -> None:
+    class Rotates(FakeRun):
+        def __call__(self, argv: list[str], **kwargs: Any) -> Any:
+            if argv[0].endswith("image_helper") and argv[1] == "orient":
+                self.calls.append(list(argv))
+                Path(argv[3]).write_bytes(b"upright")
+                return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+            return super().__call__(argv, **kwargs)
+
+    app, images, fake, _ = build(tmp_path, Rotates())
+    info = upload(TestClient(app), make_png()).json()
+    assert any(c[1] == "orient" for c in fake.calls)
+    path = images.service.pending_path(info["id"])[0]
+    assert path.read_bytes() == b"upright"
+    assert sorted(p.name for p in (tmp_path / "store").iterdir()) == [path.name]
+
+
+def test_pixel_limit_on_upload_and_resize(tmp_path: Path) -> None:
+    app, _, _, _ = build(tmp_path, FakeRun(dims=(10000, 6000)))  # 60 MP
+    assert upload(TestClient(app), make_png()).status_code == 413
+    assert list((tmp_path / "store").iterdir()) == []
+
+    app, _, _, _ = build(tmp_path / "b", FakeRun(dims=(4000, 3000)))
+    client = TestClient(app)
+    info = upload(client, make_png()).json()
+    big = client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "resize", "width": 9000, "height": 9000}]})
+    assert big.status_code == 422 and big.json()["detail"] == "too_large"
+    one_side = client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "resize", "width": 12000}]})
+    assert one_side.json()["detail"] == "too_large"  # 12000 x 9000 = 108 MP
+    ok = client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "resize", "width": 2000}]})
+    assert ok.status_code == 200
+
+
+def test_unreadable_dimensions_are_refused(tmp_path: Path) -> None:
+    class NoDims(FakeRun):
+        def __call__(self, argv: list[str], **kwargs: Any) -> Any:
+            if "-g" in argv:
+                return SimpleNamespace(returncode=1, stdout=b"", stderr=b"")
+            return super().__call__(argv, **kwargs)
+
+    app, _, _, _ = build(tmp_path, NoDims())
+    assert upload(TestClient(app), make_png()).status_code == 415
+    assert list((tmp_path / "store").iterdir()) == []
+
+
+def test_pending_eviction_happens_before_writing(tmp_path: Path) -> None:
+    from app.images import service as service_module
+
+    app, images, _, _ = build(tmp_path)
+    client = TestClient(app)
+    ids = [upload(client, make_png()).json()["id"] for _ in range(service_module.MAX_PENDING)]
+    seen: list[int] = []
+    original = ImageService._forget
+
+    def spy(self: ImageService, image_id: str) -> None:
+        seen.append(len(list((tmp_path / "store").iterdir())))
+        original(self, image_id)
+
+    ImageService._forget = spy  # type: ignore[method-assign]
+    try:
+        newest = upload(client, make_png()).json()["id"]
+    finally:
+        ImageService._forget = original  # type: ignore[method-assign]
+    assert seen and all(count <= service_module.MAX_PENDING for count in seen)
+    assert images.service.pending_path(ids[0]) is None
+    assert images.service.pending_path(newest) is not None
+    assert len(list((tmp_path / "store").iterdir())) == service_module.MAX_PENDING
+
+
+def test_ingests_are_limited_to_two_at_a_time(tmp_path: Path) -> None:
+    app, images, _, _ = build(tmp_path)
+    service: ImageService = images.service
+    active = 0
+    peak = 0
+
+    async def chunks() -> Any:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.02)
+        yield make_png()
+        active -= 1
+
+    async def go() -> None:
+        await asyncio.gather(*(service.ingest(chunks()) for _ in range(6)))
+
+    asyncio.run(go())
+    assert peak == 2
+
+
+def test_helper_compiled_atomically_with_private_cache_dir(tmp_path: Path) -> None:
+    import stat
+
+    app, _, fake, _ = build(tmp_path)
+    upload(TestClient(app), make_png())
+    compile_call = next(c for c in fake.calls if c[0].endswith("swiftc"))
+    out = compile_call[compile_call.index("-o") + 1]
+    assert out.endswith(".tmp") and not out.endswith("image_helper")
+    cache = tmp_path / "cache"
+    assert stat.S_IMODE(cache.stat().st_mode) == 0o700
+    assert sorted(p.name for p in cache.iterdir()) == ["image_helper"]  # no leftover .tmp
