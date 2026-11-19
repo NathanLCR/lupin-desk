@@ -1,6 +1,7 @@
 // Local image helper for the Lupin image editor (macOS Vision and ImageIO).
 //   image_helper cutout <input image> <output png>   remove the background
 //   image_helper orient <input image> <output image> bake the EXIF orientation into the pixels
+//   image_helper stripgps <input image> <output image> copy the image without GPS/location metadata
 // Exit codes: 0 ok, 2 bad usage, 3 cannot read image, 4 no foreground found (cutout),
 // 5 Vision/ImageIO failed or unavailable, 10 nothing to do (orient: already upright).
 import Foundation
@@ -51,6 +52,18 @@ case "orient":
     let type = (CGImageSourceGetType(source) as String?) ?? UTType.jpeg.identifier
     let lossy = type == UTType.jpeg.identifier || type == "public.heic"
     guard writeImage(image, type: type, quality: lossy ? 0.95 : nil) else { exit(5) }
+case "stripgps":
+    // Copies the image without re-encoding the pixels; every other metadata block is kept.
+    guard let source = CGImageSourceCreateWithURL(inURL as CFURL, nil),
+          let type = CGImageSourceGetType(source),
+          let dest = CGImageDestinationCreateWithURL(outURL as CFURL, type, 1, nil)
+    else { exit(3) }
+    let options: [CFString: Any] = [
+        kCGImageMetadataShouldExcludeGPS: true,
+        kCGImagePropertyGPSDictionary: kCFNull as Any,
+    ]
+    CGImageDestinationAddImageFromSource(dest, source, 0, options as CFDictionary)
+    guard CGImageDestinationFinalize(dest) else { exit(5) }
 default:
     exit(2)
 }

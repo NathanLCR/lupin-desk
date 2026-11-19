@@ -245,6 +245,9 @@ class ImageService:
     def describe(entry: dict[str, Any]) -> dict[str, Any]:
         return {key: entry[key] for key in ("id", "format", "size", "width", "height") if key in entry}
 
+    def warm_up(self) -> None:
+        self._tools.warm_up()
+
     def last_pending(self) -> dict[str, Any] | None:
         if not self._pending:
             return None
@@ -317,6 +320,11 @@ class ImageService:
                 temps.append(out)
                 self._apply(kind, op, current, out, out_fmt)
                 current, current_fmt = out, out_fmt
+            if current_fmt in ("jpg", "heic"):  # PNG has no GPS block; strip it everywhere else
+                clean = self._dir / f"{image_id}.clean.{OUTPUT_FORMATS[current_fmt][1]}"
+                temps.append(clean)
+                self._tools.strip_gps(current, clean)
+                current = clean
             self._pictures.mkdir(parents=True, exist_ok=True)
             stamp = self._clock().strftime("%Y%m%d-%H%M%S")
             ext = OUTPUT_FORMATS.get(current_fmt, (None, current_fmt))[1]

@@ -47,6 +47,7 @@ def setup_routes(app: FastAPI, service: ImageService, publish: Publish) -> None:
 
     @app.get("/api/images/last")
     def last_image() -> dict[str, Any]:
+        service.warm_up()  # a Panel opened the editor: compile the helper off the upload path
         return {"pending": service.last_pending()}
 
     @app.get("/api/images/{image_id}/preview")

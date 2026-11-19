@@ -84,6 +84,9 @@ class FakeRun:
             elif argv[0].endswith("image_helper"):
                 if argv[1] == "orient":
                     return SimpleNamespace(returncode=10, stdout=b"", stderr=b"")
+                if argv[1] == "stripgps":
+                    Path(argv[3]).write_bytes(b"clean")
+                    return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
                 Path(argv[3]).write_bytes(b"cutout")
             elif argv[0].endswith("swiftc"):
                 Path(argv[argv.index("-o") + 1]).write_bytes(b"bin")
@@ -640,3 +643,112 @@ def test_helper_compiled_atomically_with_private_cache_dir(tmp_path: Path) -> No
     cache = tmp_path / "cache"
     assert stat.S_IMODE(cache.stat().st_mode) == 0o700
     assert sorted(p.name for p in cache.iterdir()) == ["image_helper"]  # no leftover .tmp
+
+
+def test_create_app_never_starts_a_compile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    from app.config import Settings
+    from app.main import create_app
+
+    calls: list[Any] = []
+    monkeypatch.setattr(subprocess, "run", lambda argv, *a, **k: calls.append(argv) or SimpleNamespace(returncode=1, stdout=b"", stderr=b""))
+    before = threading.active_count()
+    settings = Settings(db_path=tmp_path / "x.db") if "db_path" in Settings.__dataclass_fields__ else None
+    if settings is None:
+        pytest.skip("Settings shape differs")
+    create_app(settings=settings)
+    assert not [c for c in calls if isinstance(c, list) and c and "swiftc" in str(c[0])]
+    assert threading.active_count() <= before + 2  # no compile thread
+
+
+def test_warm_up_runs_once_on_first_panel_look_and_warns_once(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    import time
+
+    app, images, fake, _ = build(tmp_path)
+    client = TestClient(app)
+    assert not [c for c in fake.calls if c[0].endswith("swiftc")]
+    client.get("/api/images/last")
+    client.get("/api/images/last")
+    for _ in range(50):
+        if [c for c in fake.calls if c[0].endswith("swiftc")]:
+            break
+        time.sleep(0.05)
+    assert len([c for c in fake.calls if c[0].endswith("swiftc")]) == 1
+
+    class Broken(FakeRun):
+        def __call__(self, argv: list[str], **kwargs: Any) -> Any:
+            if argv[0].endswith("swiftc"):
+                return SimpleNamespace(returncode=1, stdout=b"", stderr=b"")
+            return super().__call__(argv, **kwargs)
+
+    app2, _, _, _ = build(tmp_path / "b", Broken())
+    with caplog.at_level("WARNING", logger="app.images.tools"):
+        upload(TestClient(app2), make_png())
+        upload(TestClient(app2), make_png())
+    warnings = [r for r in caplog.records if "EXIF rotation" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def jpeg_with_gps(jpeg: bytes) -> bytes:
+    """JPEG with EXIF: an ImageDescription ("hello-meta") and a GPS IFD (latitude 12345/6789/11111)."""
+    cut = 4 + struct.unpack(">H", jpeg[4:6])[0]
+    ifd0 = struct.pack(">H", 2)
+    ifd0 += struct.pack(">HHI", 0x010E, 2, 11) + struct.pack(">I", 38)
+    ifd0 += struct.pack(">HHI", 0x8825, 4, 1) + struct.pack(">I", 50) + struct.pack(">I", 0)
+    gps = struct.pack(">H", 2)
+    gps += struct.pack(">HHI", 1, 2, 2) + b"N\x00\x00\x00"
+    gps += struct.pack(">HHI", 2, 5, 3) + struct.pack(">I", 80) + struct.pack(">I", 0)
+    tiff = b"MM\x00\x2a" + struct.pack(">I", 8) + ifd0 + b"hello-meta\x00" + b"\x00" + gps
+    tiff += struct.pack(">II", 12345, 1) + struct.pack(">II", 6789, 1) + struct.pack(">II", 11111, 1)
+    body = b"Exif\x00\x00" + tiff
+    return jpeg[:cut] + b"\xff\xe1" + struct.pack(">H", len(body) + 2) + body + jpeg[cut:]
+
+
+@pytest.mark.skipif(not HAS_SIPS, reason="needs macOS sips and swiftc")
+def test_real_result_has_no_gps_but_keeps_other_metadata(tmp_path: Path) -> None:
+    app = FastAPI()
+    tools = ImageTools(tmp_path / "cache")
+    register(app, store_dir=tmp_path / "store", pictures_dir=tmp_path / "pics", tools=tools)
+    client = TestClient(app)
+    png = tmp_path / "a.png"
+    png.write_bytes(make_png(200, 100))
+    jpg = tmp_path / "a.jpg"
+    subprocess.run(["/usr/bin/sips", "-s", "format", "jpeg", str(png), "--out", str(jpg)], check=True, capture_output=True)
+    tagged = jpeg_with_gps(jpg.read_bytes())
+    gps_pointer = b"\x88\x25"  # EXIF tag 0x8825 (GPSInfo); sips keeps it through resize/compress
+    assert gps_pointer in tagged
+    info = upload(client, tagged).json()
+    for op in ({"op": "resize", "width": 100}, {"op": "compress", "quality": 80}):
+        info = upload(client, tagged).json() if op["op"] == "compress" else info
+        name = client.post(f"/api/images/{info['id']}/edit", json={"ops": [op]}).json()["name"]
+        data = (tmp_path / "pics" / name).read_bytes()
+        assert gps_pointer not in data
+        assert b"hello-meta" in data  # other metadata is kept
+
+
+def test_gps_strip_runs_for_jpg_and_heic_results_only(tmp_path: Path) -> None:
+    app, _, fake, _ = build(tmp_path)
+    client = TestClient(app)
+    for fmt, expect in (("heic", 1), ("png", 0)):
+        before = len([c for c in fake.calls if len(c) > 1 and c[1] == "stripgps"])
+        info = upload(client, make_png()).json()
+        client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "convert", "format": fmt}]})
+        after = len([c for c in fake.calls if len(c) > 1 and c[1] == "stripgps"])
+        assert after - before == expect
+
+
+def test_gps_strip_failure_fails_closed(tmp_path: Path) -> None:
+    class StripFails(FakeRun):
+        def __call__(self, argv: list[str], **kwargs: Any) -> Any:
+            if argv[0].endswith("image_helper") and argv[1] == "stripgps":
+                self.calls.append(list(argv))
+                return SimpleNamespace(returncode=5, stdout=b"", stderr=b"")
+            return super().__call__(argv, **kwargs)
+
+    app, _, _, _ = build(tmp_path, StripFails())
+    client = TestClient(app)
+    info = upload(client, make_png()).json()
+    response = client.post(f"/api/images/{info['id']}/edit", json={"ops": [{"op": "compress", "quality": 50}]})
+    assert response.status_code == 422
+    assert not (tmp_path / "pics").exists() or list((tmp_path / "pics").iterdir()) == []

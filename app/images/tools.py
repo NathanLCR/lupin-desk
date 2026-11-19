@@ -65,6 +65,8 @@ class ImageTools:
         self._swiftc = swiftc
         self._helper_source = helper_source
         self._helper_failed = False
+        self._warmed = False
+        self._orient_warned = False
         self._compile_lock = threading.Lock()
 
     def _run(self, argv: list[str], timeout: int) -> Any:
@@ -140,9 +142,22 @@ class ImageTools:
         try:
             helper = self._ensure_helper()
             result = self._run([str(helper), "orient", str(src), str(dst)], CUTOUT_TIMEOUT_SECONDS)
-        except ToolError:
+        except ToolError as exc:
+            if exc.code == "unavailable" and not self._orient_warned:
+                self._orient_warned = True
+                logger.warning("Image helper unavailable; EXIF rotation was not normalised.")
             return False
         return result.returncode == 0 and dst.is_file()
+
+    def strip_gps(self, src: Path, dst: Path) -> None:
+        """Copy an image without its GPS/location metadata, keeping the other metadata.
+
+        Raises ToolError so a JPEG or HEIC with unknown contents is never saved with a location.
+        """
+        helper = self._ensure_helper()
+        result = self._run([str(helper), "stripgps", str(src), str(dst)], CUTOUT_TIMEOUT_SECONDS)
+        if result.returncode != 0 or not dst.is_file():
+            raise ToolError("edit_failed")
 
     def _ensure_helper(self) -> Path:
         """Compile the helper once into the cache folder; unavailable when that fails."""
@@ -176,7 +191,14 @@ class ImageTools:
         return helper
 
     def warm_up(self) -> None:
-        """Compile the helper in the background so the first upload does not wait for it."""
+        """Compile the helper in the background so the first upload does not wait for it.
+
+        Runs at most once. Never called from register(): a Panel's first look at the editor
+        (GET /api/images/last) starts it.
+        """
+        if self._warmed:
+            return
+        self._warmed = True
         threading.Thread(target=self._warm, daemon=True).start()
 
     def _warm(self) -> None:
