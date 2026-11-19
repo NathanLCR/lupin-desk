@@ -215,3 +215,82 @@ async def test_start_and_stop_run_the_loop_cleanly() -> None:
     count = len(hub.published)
     await asyncio.sleep(0.05)
     assert len(hub.published) == count
+
+
+async def test_first_reading_after_subscribe_is_primed_and_skipped_by_the_detector() -> None:
+    app, hub, bus = make_app()
+    ps, clock = FakePsutil(), Clock()
+    ps.cpu = 97.0
+    primed: list[int] = []
+    sampler = make_sampler(ps, clock)
+    original = sampler.prime
+    sampler.prime = lambda: (primed.append(1), original())[1]  # type: ignore[method-assign]
+    monitoring = Monitoring(app, sampler, clock=clock)
+    hub.entries.append({"topics": ["monitor"]})
+    await monitoring.tick()
+    assert primed == [1]
+    assert monitoring.detector._recent == []  # the first reading never reached the detector
+    clock.now = 1.0
+    await monitoring.tick()
+    assert primed == [1]
+    assert monitoring.detector._recent == [97.0]
+
+
+async def test_heavy_load_goes_through_the_real_signal_bus_as_dizzy_without_speech() -> None:
+    from app.signals import SignalBus
+
+    app, _hub, _bus = make_app()
+    spoken: list[str] = []
+    expressions: list[str] = []
+
+    async def speak(text: str) -> None:
+        spoken.append(text)
+
+    async def set_expression(name: str) -> bool:
+        expressions.append(name)
+        return True
+
+    app.state.signals = SignalBus(app.state.device_hub, speak=speak, set_expression=set_expression)
+    monitoring = Monitoring(app, make_sampler(FakePsutil(), Clock()))
+    await monitoring._emit_heavy_load(93.0)
+    assert expressions == ["dizzy"]
+    assert spoken == []
+
+
+def test_real_app_publishes_monitor_topic_and_shuts_down_cleanly(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.llm import LLMClient
+    from app.main import create_app
+    from app.memory import MemoryStore
+
+    settings = Settings(
+        llm_base_url="http://127.0.0.1:31415/v1",
+        llm_api_key="test-key",
+        llm_model="m",
+        host="127.0.0.1",
+        port=8000,
+        max_short_term_messages=10,
+        max_user_facts=25,
+        db_path=tmp_path / "m.db",
+    )
+    app = create_app(
+        settings=settings, memory_store=MemoryStore(db_path=settings.db_path), llm_client=LLMClient(settings)
+    )
+    monitoring = app.state.monitoring
+    monitoring._sampler = make_sampler(FakePsutil(), Clock())
+    monitoring._interval = 0.05
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "hello", "body": "panel", "protocol": 1})
+            ws.send_json({"type": "subscribe", "topics": ["monitor"]})
+            message = None
+            for _ in range(20):
+                event = ws.receive_json()
+                if event.get("type") == "topic" and event.get("topic") == "monitor":
+                    message = event
+                    break
+            assert message is not None
+            assert message["data"]["cpu"]["percent"] == 12.0
+    assert monitoring._task is None

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -76,8 +77,6 @@ class Monitoring:
         interval: float = DEFAULT_INTERVAL_SECONDS,
         clock: Callable[[], float] | None = None,
     ) -> None:
-        import time
-
         self._app = fastapi_app
         self._sampler = sampler
         self._interval = interval
@@ -85,6 +84,7 @@ class Monitoring:
         self.detector = HeavyLoadDetector()
         self._task: asyncio.Task[None] | None = None
         self._active = False
+        self._skip_detector = False
 
     def subscribed(self) -> bool:
         hub = getattr(self._app.state, "device_hub", None)
@@ -103,10 +103,17 @@ class Monitoring:
             return None
         if self._sampler is None:
             self._sampler = Sampler()
+        if not self._active:
+            # First tick after a (re)subscribe: start the CPU counters and keep this reading
+            # (taken over a very short window) out of the heavy-load detector.
+            await asyncio.to_thread(self._sampler.prime)
+            self._skip_detector = True
         self._active = True
         snapshot = await asyncio.to_thread(self._sampler.sample)
         await self._app.state.device_hub.publish(MONITOR_TOPIC, snapshot)
-        if self.detector.feed(self._clock(), snapshot["cpu"]["percent"]):
+        if self._skip_detector:
+            self._skip_detector = False
+        elif self.detector.feed(self._clock(), snapshot["cpu"]["percent"]):
             await self._emit_heavy_load(snapshot["cpu"]["percent"])
         return snapshot
 

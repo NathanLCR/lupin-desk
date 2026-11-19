@@ -67,6 +67,15 @@ class Sampler:
         self._disks_at = None
         self._ping_at = None
 
+    def prime(self) -> None:
+        """Start psutil's CPU counters (system and per process), whose first reading is a stale 0.0."""
+        try:
+            self._ps.cpu_percent(None)
+            for proc in self._ps.process_iter(["cpu_percent"]):
+                pass
+        except Exception as exc:
+            logger.warning("CPU priming failed (%s).", type(exc).__name__)
+
     def sample(self) -> dict[str, Any]:
         ps = self._ps
         now = self._clock()
