@@ -45,11 +45,6 @@ def effective_energy(stored: float, hour: int) -> float:
     return round(max(0.0, min(100.0, (1 - TIME_WEIGHT) * stored + TIME_WEIGHT * target)), 2)
 
 
-def idle_expression(hour: int) -> str | None:
-    """Expression for the quiet hours; None otherwise (the Body keeps its own idle behaviour)."""
-    return "sleepy" if 0 <= hour <= 5 else None
-
-
 def music_tone(now_playing: dict[str, Any] | None) -> str | None:
     """"calm", "lively" or None, from the genre and tempo of what is playing right now."""
     if not now_playing or not now_playing.get("playing"):

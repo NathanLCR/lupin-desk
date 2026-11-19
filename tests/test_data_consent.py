@@ -81,7 +81,7 @@ def _conversation(client: Any, text: str = "o que tenho hoje?") -> None:
 
 def test_default_off_and_named_receiver(tmp_path: Path) -> None:
     app = _app(tmp_path, [])
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         data = mac.get("/api/data-consent").json()
     assert data["calendar"] is False and data["email"] is False
     assert data["receiver"] == "Proxy Local (127.0.0.1:31415)"
@@ -91,7 +91,7 @@ def test_default_off_and_named_receiver(tmp_path: Path) -> None:
 
 def test_without_consent_no_calendar_or_email_reaches_the_llm(tmp_path: Path) -> None:
     calls: list[dict[str, Any]] = []
-    with TestClient(_app(tmp_path, calls)) as client:
+    with TestClient(_app(tmp_path, calls), base_url="http://localhost") as client:
         _conversation(client)
     assert len(calls) == 1
     for secret in SECRETS:
@@ -103,7 +103,7 @@ def test_without_consent_no_calendar_or_email_reaches_the_llm(tmp_path: Path) ->
 def test_with_consent_calendar_and_email_reach_the_llm(tmp_path: Path) -> None:
     calls: list[dict[str, Any]] = []
     app = _app(tmp_path, calls)
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         assert mac.put("/api/data-consent", json={"calendar": True, "email": True}).status_code == 200
         _conversation(mac)
     ctx = calls[0]["personal_context"]
@@ -114,7 +114,7 @@ def test_with_consent_calendar_and_email_reach_the_llm(tmp_path: Path) -> None:
 def test_calendar_only_consent_does_not_leak_email(tmp_path: Path) -> None:
     calls: list[dict[str, Any]] = []
     app = _app(tmp_path, calls)
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         mac.put("/api/data-consent", json={"calendar": True})
         _conversation(mac)
     ctx = calls[0]["personal_context"]
@@ -125,7 +125,7 @@ def test_calendar_only_consent_does_not_leak_email(tmp_path: Path) -> None:
 def test_failed_read_with_consent_warns_without_data(tmp_path: Path) -> None:
     calls: list[dict[str, Any]] = []
     app = _app(tmp_path, calls, calendar=None, inbox=None)
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         mac.put("/api/data-consent", json={"calendar": True, "email": True})
         _conversation(mac)
     ctx = calls[0]["personal_context"]
@@ -135,7 +135,7 @@ def test_failed_read_with_consent_warns_without_data(tmp_path: Path) -> None:
 def test_calendar_and_email_do_not_go_into_the_saved_history(tmp_path: Path) -> None:
     calls: list[dict[str, Any]] = []
     app = _app(tmp_path, calls)
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         mac.put("/api/data-consent", json={"calendar": True, "email": True})
         with mac.websocket_connect("/ws") as ws:
             ws.send_json({"type": "hello", "body": "rg406h-web", "protocol": 1})
@@ -149,7 +149,7 @@ def test_calendar_and_email_do_not_go_into_the_saved_history(tmp_path: Path) -> 
 
 def test_changing_from_outside_the_mac_gives_403_and_reading_still_works(tmp_path: Path) -> None:
     app = _app(tmp_path, [])
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         mac.put("/api/data-consent", json={"calendar": True})
         other = TestClient(_as_client(app, OTHER_IP))
         assert other.put("/api/data-consent", json={"calendar": False}).status_code == 403
@@ -162,7 +162,7 @@ def test_changing_from_outside_the_mac_gives_403_and_reading_still_works(tmp_pat
 def test_switching_provider_or_base_url_turns_both_off(tmp_path: Path) -> None:
     app = _app(tmp_path, [])
     body = {"provider_id": "local_proxy", "base_url": "http://127.0.0.1:31415/v1", "model": "m"}
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         mac.put("/api/data-consent", json={"calendar": True, "email": True})
         # Same provider and host: stays on.
         mac.put("/api/llm/provider", json=body)

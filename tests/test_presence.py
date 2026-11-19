@@ -22,7 +22,7 @@ from app.mac_control import (
 from app.memory import MemoryStore
 from app.presence import Presence, register
 from app.presence.breaks import BreakTracker
-from app.presence.tone import effective_energy, idle_expression, music_tone, time_of_day_energy
+from app.presence.tone import effective_energy, music_tone, time_of_day_energy
 
 CLOUD = ("custom", "https://proxy.example.com/v1")
 OTHER = ("openai", "https://api.openai.com/v1")
@@ -156,7 +156,6 @@ def test_interval_clamped() -> None:
 def test_time_of_day_energy_and_expression() -> None:
     assert time_of_day_energy(3) < time_of_day_energy(10)
     assert effective_energy(85, 3) < effective_energy(85, 10)
-    assert idle_expression(3) == "sleepy" and idle_expression(10) is None
 
 
 def test_music_tone_only_when_playing() -> None:
@@ -372,7 +371,7 @@ def test_routes_are_mac_only_for_changes(tmp_path: Path) -> None:
             raise HTTPException(403, detail)
 
     register(app, mem, _Mac(), _Sig(CLOUD), require)
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     assert c.get("/api/presence").json()["break_minutes"] == 50
     r = c.put("/api/presence", json={"break_minutes": 60, "front_app": True})
     assert r.json()["break_minutes"] == 60 and r.json()["front_app"] is True
@@ -385,3 +384,45 @@ def test_routes_are_mac_only_for_changes(tmp_path: Path) -> None:
 def test_llm_parses_break_action_tag() -> None:
     from app.llm import _ACTION_TAG_RE
     assert _ACTION_TAG_RE.match("[action:break:every:60]")
+
+
+def test_missing_nowplaying_cli_is_never_spawned(tmp_path: Path) -> None:
+    class NoCli(_Mac):
+        def now_playing_available(self):
+            return False
+
+        def now_playing(self):
+            raise AssertionError("must not be called")
+
+    p, _, _ = _presence(tmp_path, mac=NoCli())
+    assert asyncio.run(p.turn_context()) == ""
+
+
+def test_focus_or_rate_limited_emit_counts_as_reminded(tmp_path: Path) -> None:
+    for reason in ("focus", "rate_limited"):
+        bus = _Bus(spoke=False, reason=reason)
+        p, clock, _ = _presence(tmp_path, bus=bus)
+
+        async def go():
+            clock.t = 0.0
+            await p.tick()
+            clock.t = 3000.0
+            await p.tick()
+            clock.t = 3030.0
+            await p.tick()
+
+        asyncio.run(go())
+        assert len(bus.signals) == 1, reason
+
+
+def test_put_presence_rejects_rebinding_and_non_json(tmp_path: Path) -> None:
+    mem = MemoryStore(db_path=tmp_path / "m.db")
+    app = FastAPI()
+    register(app, mem, _Mac(), _Sig(CLOUD), lambda request, detail: None)
+    c = TestClient(app, base_url="http://localhost")
+    ok = {"Origin": "http://localhost"}
+    assert c.put("/api/presence", json={"front_app": True}, headers=ok).status_code == 200
+    evil = c.put("/api/presence", json={"front_app": True}, headers={"Host": "evil.example.com"})
+    assert evil.status_code == 403
+    assert c.put("/api/presence", json={"front_app": True}, headers={"Origin": "http://evil.example.com"}).status_code == 403
+    assert c.put("/api/presence", content="{}", headers={"Content-Type": "text/plain"}).status_code == 415

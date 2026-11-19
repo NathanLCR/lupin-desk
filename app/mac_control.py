@@ -464,6 +464,10 @@ class MacController:
             return None
         return parse_front_app_output(proc.stdout)
 
+    def now_playing_available(self) -> bool:
+        """True when nowplaying-cli is installed (checked once per call, no process spawned)."""
+        return Path(_NOWPLAYING_BIN).exists()
+
     def now_playing(self) -> dict[str, Any] | None:
         """What is playing right now ({"title","artist","genre","playing","bpm"}) via nowplaying-cli."""
         proc = self._run_cmd(list(_NOWPLAYING_ARGV), timeout=3.0)

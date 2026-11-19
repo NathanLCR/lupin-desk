@@ -21,11 +21,12 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from app import speech
 from app.consent import FrontAppConsent, build_front_app_context
+from app.mcp_server import _security_error
 from app.memory import _derive_mood_label
 from app.presence.breaks import (
     DEFAULT_INTERVAL_MINUTES,
@@ -34,7 +35,7 @@ from app.presence.breaks import (
     BreakTracker,
     clamp_interval,
 )
-from app.presence.tone import effective_energy, idle_expression, music_tone
+from app.presence.tone import effective_energy, music_tone
 from app.signals import Importance, Signal
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,9 @@ class Presence:
         )
         if result.reason in _UNSPOKEN:
             return False  # nobody heard it: try again on the next sample
+        # Any other outcome counts as reminded, on purpose: "focus" (muted by a Pomodoro that
+        # started meanwhile) and "rate_limited" must not be retried every 30 seconds, and the
+        # work clock restarts so the next reminder is a full interval away.
         self.tracker.mark_reminded(now)
         return bool(result.spoke)
 
@@ -223,9 +227,6 @@ class Presence:
 
     # -- tone, Energy and the per-turn context -----------------------------
 
-    def idle_expression(self) -> str | None:
-        return idle_expression(self._now().hour)
-
     def companion_line(self) -> str:
         """The companion prompt line with Energy driven by the time of day."""
         state = self._memory.get_companion_state()
@@ -236,6 +237,9 @@ class Presence:
     async def now_playing_tone(self) -> str | None:
         cached = self._playing
         now = self._clock()
+        available = getattr(self._mac, "now_playing_available", lambda: True)()
+        if not available:
+            return None  # nowplaying-cli is not installed: never spawn it
         if cached is None or now - cached[0] > NOW_PLAYING_TTL_SECONDS:
             try:
                 playing = await asyncio.to_thread(self._mac.now_playing)
@@ -304,9 +308,20 @@ def register(
     async def get_presence() -> dict[str, Any]:
         return presence.settings()
 
-    @fastapi_app.put("/api/presence")
+    detail = "Presence settings can only be changed on the Mac."
+
+    def _write_guard(request: Request) -> None:
+        # Runs before the body is validated. Besides the peer address, DNS rebinding needs a
+        # loopback Host and Origin, and a JSON content type (same pattern as app/mcp_routes.py).
+        require_mac_client(request, detail)
+        if _security_error(request) is not None:
+            raise HTTPException(status_code=403, detail=detail)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            raise HTTPException(status_code=415, detail="Send application/json.")
+
+    @fastapi_app.put("/api/presence", dependencies=[Depends(_write_guard)])
     async def put_presence(request: Request, body: PresenceSettingsRequest) -> dict[str, Any]:
-        require_mac_client(request, "Presence settings can only be changed on the Mac.")
         if body.break_minutes is not None and body.break_minutes <= 0:
             raise HTTPException(status_code=422, detail="break_minutes must be positive.")
         return presence.update_settings(body.break_enabled, body.break_minutes, body.front_app)
