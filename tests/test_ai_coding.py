@@ -263,6 +263,43 @@ def test_remove_after_the_user_edited_only_removes_our_entries(tmp_path):
     assert after["hooks"] == {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}
 
 
+def test_reinstall_after_the_user_edited_refuses_and_remove_then_install_works(tmp_path):
+    installer, settings = make_installer(tmp_path)
+    installer.install()
+    data = json.loads(settings.read_text())
+    data["theme"] = "dark"
+    edited = json.dumps(data)
+    settings.write_text(edited, encoding="utf-8")
+    with pytest.raises(HooksError):
+        installer.install()
+    assert settings.read_text() == edited  # nothing was changed
+    installer.remove()
+    assert json.loads(settings.read_text())["theme"] == "dark"
+    installer.install()
+    installer.remove()
+    assert json.loads(settings.read_text())["theme"] == "dark"  # never restores stale bytes
+
+
+def test_backup_state_file_is_private(tmp_path):
+    import stat
+
+    installer, _ = make_installer(tmp_path)
+    installer.install()
+    assert stat.S_IMODE((tmp_path / "state.json").stat().st_mode) == 0o600
+
+
+def test_command_parts_are_shell_quoted(tmp_path):
+    import shlex
+
+    installer, settings = make_installer(tmp_path)
+    installer.install()
+    command = json.loads(settings.read_text())["hooks"]["PermissionRequest"][0]["hooks"][0]["command"]
+    assert shlex.split(command.removesuffix(" || true"))[0] == "curl"
+    hostile = HooksInstaller(settings, tmp_path / "s2.json", 8123)._command("/x; rm -rf ~", 5)
+    parts = shlex.split(hostile.removesuffix(" || true"))
+    assert parts[-1].endswith("/x; rm -rf ~")  # one argv word, not a second command
+
+
 def test_invalid_settings_are_never_touched(tmp_path):
     installer, settings = make_installer(tmp_path, original="{not json")
     with pytest.raises(HooksError):
@@ -294,13 +331,27 @@ class FakeBus:
         return 1
 
 
-def make_entry(topics=(PROMPTS_TOPIC,)):
+_device_counter = [0]
+
+
+def make_entry(topics=(PROMPTS_TOPIC,), body="panel", roles=("panel",), device_id="auto"):
     sent: list[dict] = []
 
     async def send(message):
         sent.append(message)
 
-    return {"send": send, "topics": set(topics), "body": "panel", "sent": sent}
+    if device_id == "auto":
+        _device_counter[0] += 1
+        device_id = f"dev-{_device_counter[0]}"
+    return {"send": send, "topics": set(topics), "body": body, "roles": list(roles),
+            "device_id": device_id, "sent": sent}
+
+
+def ack_all(broker, *entries):
+    """What a rendered, visible prompt widget does: tell the server it shows each pending prompt."""
+    for entry in entries:
+        for prompt in broker.pending():
+            broker.acknowledge(entry, prompt.id, True)
 
 
 def make_broker(entries, bus=None, timeout=5.0, wall=lambda: 1000.0):
@@ -323,6 +374,7 @@ def test_allow_from_the_showing_panel_resolves_the_hook():
         broker, bus = make_broker([panel])
         task = await start_request(broker)
         prompt = broker.pending()[0]
+        ack_all(broker, panel)
         shown = panel["sent"][-1]["data"]["prompts"][0]
         assert shown["tool"] == "Bash" and shown["args"] == "rm -rf build" and shown["project"] == "desk"
         assert broker.answer(panel, prompt.id, "allow") is True
@@ -341,6 +393,7 @@ def test_deny_returns_a_deny_decision():
         panel = make_entry()
         broker, _ = make_broker([panel])
         task = await start_request(broker)
+        ack_all(broker, panel)
         assert broker.answer(panel, broker.pending()[0].id, "deny")
         assert (await task)["hookSpecificOutput"]["decision"]["behavior"] == "deny"
 
@@ -358,6 +411,7 @@ def test_answer_from_a_device_not_showing_the_prompt_is_rejected():
         unsubscribed = make_entry(topics=())
         broker._get_hub().entries.append(unsubscribed)
         gone = make_entry()  # was shown, then disconnected
+        ack_all(broker, panel, unsubscribed, gone)  # stranger never acks
         assert broker.answer(stranger, prompt.id, "allow") is False
         assert broker.answer(unsubscribed, prompt.id, "allow") is False
         assert broker.answer(gone, prompt.id, "allow") is False
@@ -371,12 +425,73 @@ def test_answer_from_a_device_not_showing_the_prompt_is_rejected():
     asyncio.run(run())
 
 
+def test_prompts_only_go_to_registered_panels():
+    async def run():
+        panel = make_entry()
+        editor = make_entry(body="editor", roles=[], device_id=None)
+        legacy_body = make_entry(body="body", roles=["body"], device_id=None)
+        body_device = make_entry(body="body", roles=["body"])
+        anonymous_panel = make_entry(device_id=None)
+        entries = [panel, editor, legacy_body, body_device, anonymous_panel]
+        broker, _ = make_broker(entries)
+        task = await start_request(broker)
+        prompt = broker.pending()[0]
+        assert panel["sent"]
+        for other in entries[1:]:
+            assert other["sent"] == []
+            assert broker.acknowledge(other, prompt.id, True) is False
+            assert broker.answer(other, prompt.id, "allow") is False
+        ack_all(broker, panel)
+        assert broker.answer(panel, prompt.id, "allow")
+        await task
+
+    asyncio.run(run())
+
+
+def test_an_unacked_panel_cannot_allow():
+    async def run():
+        panel = make_entry()
+        broker, _ = make_broker([panel])
+        task = await start_request(broker)
+        prompt = broker.pending()[0]
+        assert panel["sent"]  # it received the prompt, but never said it shows it
+        assert broker.answer(panel, prompt.id, "allow") is False
+        assert not task.done()
+        assert broker.acknowledge(panel, "wrong-id", True) is False
+        assert broker.answer(panel, prompt.id, "allow") is False
+        task.cancel()
+
+    asyncio.run(run())
+
+
+def test_a_hidden_page_cannot_allow_and_an_unsubscribe_drops_the_ack():
+    async def run():
+        panel = make_entry()
+        broker, _ = make_broker([panel])
+        task = await start_request(broker)
+        prompt = broker.pending()[0]
+        assert broker.acknowledge(panel, prompt.id, True) is True
+        assert broker.acknowledge(panel, prompt.id, False) is False  # page hidden
+        assert broker.answer(panel, prompt.id, "allow") is False
+        assert broker.acknowledge(panel, prompt.id, "yes") is False  # only a real True counts
+        assert broker.acknowledge(panel, prompt.id, True) is True
+        panel["topics"].discard(PROMPTS_TOPIC)  # unsubscribed
+        assert broker.answer(panel, prompt.id, "allow") is False
+        panel["topics"].add(PROMPTS_TOPIC)  # re-subscribing does not revive the old ack
+        assert broker.answer(panel, prompt.id, "allow") is False
+        assert not task.done()
+        task.cancel()
+
+    asyncio.run(run())
+
+
 def test_a_device_that_disconnected_cannot_answer():
     async def run():
         panel = make_entry()
         entries = [panel]
         broker, _ = make_broker(entries)
         task = await start_request(broker)
+        ack_all(broker, panel)
         entries.remove(panel)
         assert broker.answer(panel, broker.pending()[0].id, "allow") is False
         task.cancel()
@@ -390,6 +505,7 @@ def test_timeout_returns_no_decision_and_the_id_is_dead():
         broker, bus = make_broker([panel], timeout=0.05)
         task = await start_request(broker)
         prompt = broker.pending()[0]
+        ack_all(broker, panel)
         assert await task == {}
         assert broker.answer(panel, prompt.id, "allow") is False
         assert bus.released
@@ -404,6 +520,7 @@ def test_expired_prompt_is_rejected_even_before_the_timer_fires():
         broker, _ = make_broker([panel], timeout=60.0, wall=lambda: now[0])
         task = await start_request(broker)
         prompt = broker.pending()[0]
+        ack_all(broker, panel)
         now[0] += 61
         assert broker.answer(panel, prompt.id, "allow") is False
         task.cancel()
@@ -508,10 +625,38 @@ def test_answer_action_uses_the_connection_that_sent_it(tmp_path):
         await hub.handle_message(stranger, {"type": "action", "id": "ai_coding_answer",
                                             "args": {"id": prompt_id, "decision": "allow"}}, send)
         assert replies[-1]["result"] == {"accepted": False}
+        # A Panel that has not acked the prompt is refused too.
+        await hub.handle_message(panel, {"type": "action", "id": "ai_coding_answer",
+                                         "args": {"id": prompt_id, "decision": "allow"}}, send)
+        assert replies[-1]["result"] == {"accepted": False}
+        await hub.handle_message(panel, {"type": "action", "id": "ai_coding_prompt_shown",
+                                         "args": {"id": prompt_id, "visible": True}}, send)
+        assert replies[-1]["result"] == {"acked": True}
         await hub.handle_message(panel, {"type": "action", "id": "ai_coding_answer",
                                          "args": {"id": prompt_id, "decision": "allow"}}, send)
         assert replies[-1]["result"] == {"accepted": True}
         assert (await task)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
+
+    asyncio.run(run())
+
+
+def test_a_disconnected_hook_caller_drops_the_prompt_and_releases_the_hold(tmp_path, monkeypatch):
+    from app.ai_coding import routes
+
+    monkeypatch.setattr(routes, "DISCONNECT_POLL_SECONDS", 0.01)
+
+    class Gone:
+        async def is_disconnected(self):
+            return True
+
+    async def run():
+        app, hub, service = build_app(tmp_path)
+        app.state.signals = bus = FakeBus()
+        hub.entries.append(make_entry())
+        work = service.broker.request("s", "/a/desk", "Bash", {"command": "ls"})
+        assert await routes.run_until_disconnect(Gone(), work, {}) == {}
+        assert service.broker.pending() == []
+        assert len(bus.signals) == 1 and len(bus.released) == 1
 
     asyncio.run(run())
 
@@ -524,13 +669,32 @@ def mac_headers():
     return {"host": "127.0.0.1:8123", "content-type": "application/json"}
 
 
-def test_hook_routes_install_and_remove_through_http(tmp_path):
+def test_hook_routes_install_and_remove_through_http(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.ai_coding.routes.is_macos", lambda: True)
     app, _hub, _service = build_app(tmp_path)
     client = TestClient(app, base_url="http://127.0.0.1:8123")
+    sure = {"confirm": True}
     assert client.get("/api/claude-hooks").json()["installed"] is False
-    assert client.post("/api/claude-hooks/install", headers=mac_headers()).json()["installed"] is True
+    assert client.post("/api/claude-hooks/install", headers=mac_headers(), json=sure).json()["installed"] is True
     assert (tmp_path / "settings.json").exists()
-    assert client.post("/api/claude-hooks/remove", headers=mac_headers()).json()["installed"] is False
+    assert client.post("/api/claude-hooks/remove", headers=mac_headers(), json=sure).json()["installed"] is False
+    assert not (tmp_path / "settings.json").exists()
+
+
+def test_install_and_remove_need_confirm_and_macos(tmp_path, monkeypatch):
+    app, _hub, _service = build_app(tmp_path)
+    client = TestClient(app, base_url="http://127.0.0.1:8123")
+    monkeypatch.setattr("app.ai_coding.routes.is_macos", lambda: True)
+    for path in ("install", "remove"):
+        for body in (None, {}, {"confirm": "yes"}, {"confirm": False}):
+            reply = client.post(f"/api/claude-hooks/{path}", headers=mac_headers(),
+                                **({} if body is None else {"json": body}))
+            assert reply.status_code == 400
+    assert not (tmp_path / "settings.json").exists()
+    monkeypatch.setattr("app.ai_coding.routes.is_macos", lambda: False)
+    for path in ("install", "remove"):
+        reply = client.post(f"/api/claude-hooks/{path}", headers=mac_headers(), json={"confirm": True})
+        assert reply.status_code == 403
     assert not (tmp_path / "settings.json").exists()
 
 
@@ -561,12 +725,15 @@ def test_permission_hook_falls_back_when_no_panel_is_showing(tmp_path):
     assert reply.status_code == 200 and reply.json() == {}
 
 
-def test_stop_hook_makes_lupin_wait_signal(tmp_path):
+def test_only_real_prompts_make_lupin_speak_and_hold(tmp_path):
     app, _hub, _service = build_app(tmp_path)
     app.state.signals = bus = FakeBus()
     client = TestClient(app, base_url="http://127.0.0.1:8123")
     assert client.post("/api/claude-hooks/event", headers=mac_headers(),
                        json={"hook_event_name": "Stop", "session_id": "s"}).status_code == 200
+    assert len(bus.signals) == 0  # Stop only updates the widget
+    client.post("/api/claude-hooks/event", headers=mac_headers(),
+                json={"hook_event_name": "Notification", "notification_type": "idle_prompt", "session_id": "s"})
     assert len(bus.signals) == 1
     # Notifications about auth etc. are not "needs the user".
     client.post("/api/claude-hooks/event", headers=mac_headers(),

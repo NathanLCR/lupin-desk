@@ -57,9 +57,12 @@ test('mount loads the status and Install posts then reloads', async () => {
   const calls = [];
   let installed = false;
   const container = fakeContainer();
+  const bodies = [];
   await Hooks.mount(container, {
+    confirm: () => true,
     fetchJson(url, options) {
       calls.push([url, (options && options.method) || 'GET']);
+      if (options && options.body) bodies.push(options.body);
       if (url.endsWith('/install')) installed = true;
       return Promise.resolve(Object.assign({}, STATUS, { installed }));
     },
@@ -70,8 +73,29 @@ test('mount loads the status and Install posts then reloads', async () => {
   assert.deepEqual(calls.map((c) => c.join(' ')), [
     '/api/claude-hooks GET', '/api/claude-hooks/install POST', '/api/claude-hooks GET',
   ]);
+  assert.deepEqual(bodies, [{ confirm: true }]);
   assert.ok(container.innerHTML.includes('Installed.'));
   assert.equal(container.nodes['[data-hooks-status]'].textContent, 'Hooks installed.');
+});
+
+test('declining the confirm step sends nothing', async () => {
+  const calls = [];
+  const container = fakeContainer();
+  await Hooks.mount(container, {
+    confirm: () => false,
+    fetchJson(url, options) {
+      calls.push(url + ((options && options.method) || ''));
+      return Promise.resolve(STATUS);
+    },
+  });
+  container.click('data-hooks-install');
+  await flush();
+  assert.deepEqual(calls, ['/api/claude-hooks']);
+});
+
+test('Remove stays available when only a backup is left', () => {
+  const html = Hooks.render(Object.assign({}, STATUS, { installed: false, backup: true }), true);
+  assert.ok(!/data-hooks-remove disabled/.test(html));
 });
 
 test('mount off the Mac shows read-only guidance and an error is reported, not thrown', async () => {

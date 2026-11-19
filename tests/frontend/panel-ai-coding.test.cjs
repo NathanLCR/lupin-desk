@@ -63,7 +63,7 @@ test('registers all four widgets with their topics and actions', () => {
   Widgets.registerAll(registry);
   Widgets.registerAll(registry); // idempotent
   assert.deepEqual(registry.list().map((d) => d.id).sort(), ['ai-github', 'ai-permissions', 'ai-quotas', 'ai-sessions']);
-  assert.deepEqual(registry.get('ai-permissions').actions, ['ai_coding_answer']);
+  assert.deepEqual(registry.get('ai-permissions').actions, ['ai_coding_answer', 'ai_coding_prompt_shown']);
   assert.deepEqual(registry.topicsFor([{ type: 'ai-permissions' }, { type: 'ai-sessions' }]), ['ai-coding', 'ai-coding-prompts']);
 });
 
@@ -139,9 +139,36 @@ test('permission widget shows the full command and sends Allow or Deny with the 
   const [deny] = byClass(host, 'pn-ai-deny');
   allow.fire('click', {});
   deny.fire('click', {});
-  assert.deepEqual(sent, [['ai_coding_answer', { id: 'p-1', decision: 'allow' }], ['ai_coding_answer', { id: 'p-1', decision: 'deny' }]]);
+  assert.deepEqual(sent.filter((s) => s[0] === 'ai_coding_answer'), [['ai_coding_answer', { id: 'p-1', decision: 'allow' }], ['ai_coding_answer', { id: 'p-1', decision: 'deny' }]]);
   instance.onTopic('ai-coding-prompts', { prompts: [] });
   assert.equal(byClass(host, 'pn-ai-allow').length, 0);
   instance.onTopic('ai-coding-prompts', { prompts: [{ project: 'no id' }, null] });
   assert.equal(byClass(host, 'pn-ai-allow').length, 0);
+});
+
+test('permission widget acks a prompt only while its page is visible, and withdraws the ack', () => {
+  const sent = [];
+  const { host, instance } = render('ai-permissions', {}, sent);
+  const doc = host.ownerDocument;
+  const acks = () => sent.filter((s) => s[0] === 'ai_coding_prompt_shown').map((s) => s[1]);
+  instance.onTopic('ai-coding-prompts', { prompts: [{ id: 'p-1', project: 'd', tool: 'Bash', args: 'ls' }] });
+  assert.deepEqual(acks(), [{ id: 'p-1', visible: true }]);
+  // the page is hidden: the ack is withdrawn
+  doc.visibilityState = 'hidden';
+  doc.fire('visibilitychange', {});
+  assert.deepEqual(acks().pop(), { id: 'p-1', visible: false });
+  const before = sent.length;
+  instance.onTopic('ai-coding-prompts', { prompts: [{ id: 'p-1', project: 'd', tool: 'Bash', args: 'ls' }] });
+  assert.equal(sent.length, before); // nothing acked while hidden
+  // visible again: acked again
+  doc.visibilityState = 'visible';
+  doc.fire('visibilitychange', {});
+  assert.deepEqual(acks().pop(), { id: 'p-1', visible: true });
+  // the prompt goes away: withdrawn
+  instance.onTopic('ai-coding-prompts', { prompts: [] });
+  assert.deepEqual(acks().pop(), { id: 'p-1', visible: false });
+  // destroy withdraws whatever is still shown
+  instance.onTopic('ai-coding-prompts', { prompts: [{ id: 'p-2', project: 'd', tool: 'Bash', args: 'ls' }] });
+  instance.destroy();
+  assert.deepEqual(acks().pop(), { id: 'p-2', visible: false });
 });

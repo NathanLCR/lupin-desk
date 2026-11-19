@@ -20,19 +20,26 @@ ROOT = Path(__file__).resolve().parent.parent
 PATCH = ROOT / ".scratch" / "agents" / "patches" / "p09-signals.py.diff"
 
 
+RESTORE_PATCH = ROOT / ".scratch" / "agents" / "patches" / "p09-signals-restore.py.diff"
+
+
 @pytest.fixture(scope="module")
 def sig(tmp_path_factory):
     source = ROOT / "app" / "signals.py"
-    if "hold_expression" in source.read_text(encoding="utf-8"):
+    text = source.read_text(encoding="utf-8")
+    if "hold_expression" in text and "_before_hold" in text:
         from app import signals
 
         return signals
-    if not PATCH.exists():
-        pytest.skip("patch already applied or removed")
     work = tmp_path_factory.mktemp("signals_patch")
     (work / "app").mkdir()
     shutil.copy(source, work / "app" / "signals.py")
-    subprocess.run(["git", "apply", str(PATCH)], cwd=work, check=True)
+    for patch, marker in ((PATCH, "hold_expression"), (RESTORE_PATCH, "_before_hold")):
+        if marker in (work / "app" / "signals.py").read_text(encoding="utf-8"):
+            continue
+        if not patch.exists():
+            pytest.skip("patch already applied or removed")
+        subprocess.run(["git", "apply", str(patch)], cwd=work, check=True)
     spec = importlib.util.spec_from_file_location("signals_patched", work / "app" / "signals.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules["signals_patched"] = module
@@ -135,5 +142,18 @@ def test_signals_without_hold_behave_as_before(sig):
         assert result.spoke and rec.expressions == ["happy"]
         await bus.emit(sig.Signal(kind="habit_due", source="x"))
         assert rec.expressions == ["happy", "curious"]
+
+    asyncio.run(run())
+
+
+def test_release_restores_the_previous_expression_not_neutral(sig):
+    async def run():
+        rec = Recorder()
+        bus = make_bus(sig, rec)
+        bus._expression = "happy"  # what Lupin was showing before the hold
+        await bus.emit(hold_signal(sig, "p1"))
+        assert rec.expressions[-1] != "happy"
+        await bus.release(id="p1")
+        assert rec.expressions[-1] == "happy"
 
     asyncio.run(run())

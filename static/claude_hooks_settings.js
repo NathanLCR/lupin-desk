@@ -10,7 +10,7 @@
   var EVENT_LABELS = {
     PermissionRequest: 'Permission request: ask on a Panel before Claude Code asks you',
     Notification: 'Notification: Lupin tells you when a session waits for you',
-    Stop: 'Stop: Lupin tells you when a session stops',
+    Stop: 'Stop: the widget shows when a session has stopped (Lupin stays quiet)',
   };
 
   function escapeHtml(value) {
@@ -37,12 +37,13 @@
 
   function render(status, canEdit) {
     var installed = Boolean(status && status.installed);
+    var removable = installed || Boolean(status && status.backup);
     var events = Object.keys((status && status.adds) || {}).map(function (event) {
       return '<li>' + escapeHtml(EVENT_LABELS[event] || event) + '</li>';
     }).join('');
     var actions = canEdit
       ? '<button type="button" data-hooks-install' + (installed ? ' disabled' : '') + '>Install hooks</button> ' +
-        '<button type="button" data-hooks-remove' + (installed ? '' : ' disabled') + '>Remove hooks</button>'
+        '<button type="button" data-hooks-remove' + (removable ? '' : ' disabled') + '>Remove hooks</button>'
       : '<p class="diag-hint">Set this up on the Mac.</p>';
     return '<section class="panel-card claude-hooks-settings">' +
       '<div class="panel-head"><h2>Claude Code permission prompts</h2></div>' +
@@ -62,6 +63,7 @@
     var opts = options || {};
     var init = { method: opts.method || 'GET', headers: {} };
     if (init.method !== 'GET') init.headers['Content-Type'] = 'application/json';
+    if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
     return global.fetch(url, init).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (data) {
         if (!response.ok) {
@@ -98,8 +100,13 @@
       });
     }
 
-    function change(route, okMessage) {
-      return fetchJson('/api/claude-hooks/' + route, { method: 'POST' }).then(function () {
+    function change(route, okMessage, question) {
+      var ask = typeof opts.confirm === 'function' ? opts.confirm : global.confirm;
+      if (typeof ask === 'function' && !ask.call(global, question)) {
+        setStatus('Nothing was changed.', false);
+        return Promise.resolve();
+      }
+      return fetchJson('/api/claude-hooks/' + route, { method: 'POST', body: { confirm: true } }).then(function () {
         return load().then(function () { setStatus(okMessage, false); });
       }).catch(function (err) {
         setStatus(err && err.message ? err.message : 'Something went wrong.', true);
@@ -109,8 +116,8 @@
     containerEl.addEventListener('click', function (event) {
       var target = event && event.target;
       if (!target || !target.hasAttribute) return;
-      if (target.hasAttribute('data-hooks-install')) change('install', 'Hooks installed.');
-      if (target.hasAttribute('data-hooks-remove')) change('remove', 'Hooks removed.');
+      if (target.hasAttribute('data-hooks-install')) change('install', 'Hooks installed.', 'Add the Claude Code hooks to your Claude Code settings file?');
+      if (target.hasAttribute('data-hooks-remove')) change('remove', 'Hooks removed.', 'Remove the Desk Assistant hooks from your Claude Code settings file?');
     });
 
     return load();

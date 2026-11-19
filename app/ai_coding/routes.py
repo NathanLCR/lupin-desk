@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
+import sys
+from collections.abc import Awaitable
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -19,6 +23,30 @@ MAC_ONLY_DETAIL = "Claude Code hooks can only be managed on the Mac."
 WAITING_NOTIFICATIONS = frozenset({"idle_prompt", "elicitation_dialog"})
 
 
+DISCONNECT_POLL_SECONDS = 1.0
+
+
+def is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
+async def run_until_disconnect(request: Any, work: Awaitable[Any], fallback: Any) -> Any:
+    """Await `work`, but cancel it and return `fallback` once the HTTP caller has gone away."""
+    task = asyncio.ensure_future(work)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=DISCONNECT_POLL_SECONDS)
+            if done:
+                return task.result()
+            if await request.is_disconnected():
+                return fallback
+    finally:
+        if not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+
+
 def setup_routes(app: FastAPI, service: Any) -> None:
     def guard(request: Request, *, write: bool) -> None:
         # Loopback peer, loopback Host and loopback Origin: defends against DNS rebinding.
@@ -28,6 +56,18 @@ def setup_routes(app: FastAPI, service: Any) -> None:
             kind = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             if kind != "application/json":
                 raise HTTPException(status_code=415, detail="Send application/json.")
+
+    async def confirmed_change(request: Request) -> None:
+        """Install and remove need the Mac, the JSON content type and an explicit confirm: true."""
+        guard(request, write=True)
+        if not is_macos():
+            raise HTTPException(status_code=403, detail=MAC_ONLY_DETAIL)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or body.get("confirm") is not True:
+            raise HTTPException(status_code=400, detail="Confirm the change first.")
 
     async def hook_body(request: Request) -> dict[str, Any]:
         guard(request, write=True)
@@ -60,7 +100,7 @@ def setup_routes(app: FastAPI, service: Any) -> None:
 
     @app.post("/api/claude-hooks/install")
     async def hooks_install(request: Request) -> dict[str, Any]:
-        guard(request, write=True)
+        await confirmed_change(request)
         try:
             return service.installer.install()
         except HooksError as exc:
@@ -68,7 +108,7 @@ def setup_routes(app: FastAPI, service: Any) -> None:
 
     @app.post("/api/claude-hooks/remove")
     async def hooks_remove(request: Request) -> dict[str, Any]:
-        guard(request, write=True)
+        await confirmed_change(request)
         try:
             return service.installer.remove()
         except HooksError as exc:
@@ -79,8 +119,13 @@ def setup_routes(app: FastAPI, service: Any) -> None:
         data = await hook_body(request)
         session = str(data.get("session_id") or "unknown")
         await service.broker.session_active(session)
-        output = await service.broker.request(
-            session, str(data.get("cwd") or ""), data.get("tool_name"), data.get("tool_input")
+        # If Claude Code gives up on the hook (the caller disconnects), drop the prompt.
+        output = await run_until_disconnect(
+            request,
+            service.broker.request(
+                session, str(data.get("cwd") or ""), data.get("tool_name"), data.get("tool_input")
+            ),
+            {},
         )
         return JSONResponse(output)
 
@@ -89,8 +134,7 @@ def setup_routes(app: FastAPI, service: Any) -> None:
         data = await hook_body(request)
         session = str(data.get("session_id") or "unknown")
         event = data.get("hook_event_name")
-        if event == "Stop" or (
-            event == "Notification" and data.get("notification_type") in WAITING_NOTIFICATIONS
-        ):
+        # Only a real prompt makes Lupin speak and hold; Stop just updates the widget.
+        if event == "Notification" and data.get("notification_type") in WAITING_NOTIFICATIONS:
             await service.broker.wait_for_user(session)
         return JSONResponse({})

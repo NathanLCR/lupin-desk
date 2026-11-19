@@ -138,6 +138,10 @@ def _setup_actions(actions: Any, service: AiCoding) -> None:
             await service.broker.publish()
         return {"accepted": accepted}
 
+    async def shown(args: dict[str, Any]) -> dict[str, Any]:
+        counted = service.broker.acknowledge(CURRENT_CALLER.get(), args.get("id"), args.get("visible"))
+        return {"acked": counted}
+
     async def refresh(_args: dict[str, Any]) -> dict[str, Any]:
         await service.poll_github(force=True)
         hub = getattr(service._app.state, "device_hub", None)
@@ -146,6 +150,9 @@ def _setup_actions(actions: Any, service: AiCoding) -> None:
         return {"ok": True}
 
     actions.register("ai_coding_answer", answer, "Allow or deny a Claude Code permission prompt.")
+    actions.register(
+        "ai_coding_prompt_shown", shown, "A Panel shows (or stops showing) a permission prompt."
+    )
     actions.register("ai_coding_refresh", refresh, "Refresh AI coding sessions and GitHub status.")
 
 

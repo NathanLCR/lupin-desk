@@ -16,6 +16,7 @@
   var PROMPTS_TOPIC = 'ai-coding-prompts';
   var SNAPSHOT_URL = '/api/ai-coding/snapshot';
   var ANSWER_ACTION = 'ai_coding_answer';
+  var SHOWN_ACTION = 'ai_coding_prompt_shown';
 
   function isRecord(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -226,6 +227,38 @@
     box.appendChild(body);
     el.appendChild(box);
     var live = true;
+    var shown = {}; // prompt ids this tile has told the Brain it shows
+
+    function pageVisible() {
+      return doc.visibilityState !== 'hidden';
+    }
+
+    function tell(id, visible) {
+      if (ctx && typeof ctx.sendAction === 'function') ctx.sendAction(SHOWN_ACTION, { id: id, visible: visible });
+    }
+
+    // The Brain accepts Allow only from a tile that acked the prompt while its page is visible.
+    function syncAcks(ids) {
+      var id;
+      for (id in shown) {
+        if (Object.prototype.hasOwnProperty.call(shown, id) && (!pageVisible() || ids.indexOf(id) < 0)) {
+          tell(id, false);
+          delete shown[id];
+        }
+      }
+      if (!pageVisible()) return;
+      // Ack on every update: a reconnect starts a new server-side connection with no acks.
+      for (var i = 0; i < ids.length; i++) {
+        shown[ids[i]] = true;
+        tell(ids[i], true);
+      }
+    }
+
+    var lastIds = [];
+    function onVisibility() {
+      if (live) syncAcks(lastIds);
+    }
+    if (typeof doc.addEventListener === 'function') doc.addEventListener('visibilitychange', onVisibility);
 
     function answer(id, decision) {
       if (ctx && typeof ctx.sendAction === 'function') ctx.sendAction(ANSWER_ACTION, { id: id, decision: decision });
@@ -242,6 +275,7 @@
       onTopic: function (topic, data) {
         if (!live || topic !== PROMPTS_TOPIC || !isRecord(data)) return;
         var prompts = list(data.prompts);
+        var ids = [];
         emptyNode(body);
         status.textContent = prompts.length ? 'Claude needs you' : 'No permission prompts waiting.';
         for (var i = 0; i < prompts.length; i++) {
@@ -255,9 +289,21 @@
           actions.appendChild(button('Deny', 'pn-ai-deny', p.id, 'deny'));
           card.appendChild(actions);
           body.appendChild(card);
+          ids.push(p.id);
         }
+        lastIds = ids;
+        syncAcks(ids);
       },
-      destroy: function () { live = false; }
+      destroy: function () {
+        if (live) {
+          for (var id in shown) {
+            if (Object.prototype.hasOwnProperty.call(shown, id)) tell(id, false);
+          }
+          shown = {};
+          if (typeof doc.removeEventListener === 'function') doc.removeEventListener('visibilitychange', onVisibility);
+        }
+        live = false;
+      }
     };
   }
 
@@ -284,7 +330,7 @@
       title: 'Claude permission prompts',
       sizes: { min: { w: 3, h: 2 }, max: { w: 8, h: 6 }, default: { w: 4, h: 3 } },
       topics: [PROMPTS_TOPIC],
-      actions: [ANSWER_ACTION],
+      actions: [ANSWER_ACTION, SHOWN_ACTION],
       render: mountPrompts
     }
   ];

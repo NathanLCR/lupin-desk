@@ -67,7 +67,8 @@ class Prompt:
     args: str
     expires_at: float
     future: asyncio.Future = field(repr=False)
-    shown_to: list[dict[str, Any]] = field(default_factory=list, repr=False)
+    # Connections whose rendered widget acknowledged this prompt while its page is visible.
+    acked: list[dict[str, Any]] = field(default_factory=list, repr=False)
 
     def to_public(self) -> dict[str, Any]:
         return {
@@ -97,11 +98,43 @@ class PermissionBroker:
 
     # -- viewers -----------------------------------------------------------
 
+    @staticmethod
+    def _is_panel(entry: dict[str, Any]) -> bool:
+        """A registered Panel device: it has a device id, the panel role, and is not the editor."""
+        roles = entry.get("roles")
+        return (
+            bool(entry.get("device_id"))
+            and entry.get("body") != "editor"
+            and isinstance(roles, list)
+            and "panel" in roles
+        )
+
+    def _eligible(self, entry: dict[str, Any] | None) -> bool:
+        hub = self._get_hub()
+        return (
+            entry is not None
+            and hub is not None
+            and self._is_panel(entry)
+            and PROMPTS_TOPIC in (entry.get("topics") or ())
+            and any(item is entry for item in hub.entries)
+        )
+
     def _viewers(self) -> list[dict[str, Any]]:
         hub = self._get_hub()
         if hub is None:
             return []
-        return [e for e in list(hub.entries) if PROMPTS_TOPIC in (e.get("topics") or ())]
+        return [e for e in list(hub.entries) if self._eligible(e)]
+
+    def acknowledge(self, entry: dict[str, Any] | None, prompt_id: Any, visible: Any) -> bool:
+        """A Panel says its widget shows (or no longer shows) a prompt. Returns whether it counts."""
+        prompt = self._prompts.get(prompt_id) if isinstance(prompt_id, str) else None
+        if prompt is None or entry is None:
+            return False
+        prompt.acked = [item for item in prompt.acked if item is not entry]
+        if visible is True and self._eligible(entry):
+            prompt.acked.append(entry)
+            return True
+        return False
 
     def pending(self) -> list[Prompt]:
         return list(self._prompts.values())
@@ -109,11 +142,7 @@ class PermissionBroker:
     async def publish(self) -> None:
         """Send the pending prompts to each subscribed Panel and remember who was shown them."""
         for entry in self._viewers():
-            visible = []
-            for prompt in self._prompts.values():
-                if not any(item is entry for item in prompt.shown_to):
-                    prompt.shown_to.append(entry)
-                visible.append(prompt.to_public())
+            visible = [prompt.to_public() for prompt in self._prompts.values()]
             try:
                 await entry["send"]({"type": "topic", "topic": PROMPTS_TOPIC, "data": {"prompts": visible}})
             except Exception:
@@ -200,12 +229,11 @@ class PermissionBroker:
         prompt = self._prompts.get(prompt_id)
         if prompt is None or prompt.future.done() or self._wall() >= prompt.expires_at:
             return False
-        hub = self._get_hub()
-        if hub is None or not any(item is entry for item in hub.entries):
+        # Still connected, still a subscribed Panel, and it acked this very prompt.
+        if not self._eligible(entry):
+            prompt.acked = [item for item in prompt.acked if item is not entry]  # unsubscribed or gone
             return False
-        if not any(item is entry for item in prompt.shown_to):
-            return False
-        if PROMPTS_TOPIC not in (entry.get("topics") or ()):
+        if not any(item is entry for item in prompt.acked):
             return False
         prompt.future.set_result(decision)
         return True

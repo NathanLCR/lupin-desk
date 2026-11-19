@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import os
+import shlex
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -43,10 +44,9 @@ class HooksInstaller:
 
     def _command(self, route: str, seconds: int) -> str:
         url = f"http://127.0.0.1:{self.port}{MARKER}{route}"
-        return (
-            f"curl -s -m {seconds} -X POST -H 'Content-Type: application/json' "
-            f"--data-binary @- {url} || true"
-        )
+        argv = ["curl", "-s", "-m", str(seconds), "-X", "POST", "-H", "Content-Type: application/json",
+                "--data-binary", "@-", url]
+        return " ".join(shlex.quote(part) for part in argv) + " || true"
 
     def entries(self) -> dict[str, list[dict[str, Any]]]:
         """Exactly what install adds, per event."""
@@ -83,12 +83,25 @@ class HooksInstaller:
                 os.unlink(tmp)
             raise
 
+    def _load_state(self) -> Any:
+        try:
+            return json.loads(self.state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def _save_state(self, state: dict[str, Any]) -> None:
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(self.state_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(state))
+
     def status(self) -> dict[str, Any]:
         _text, data = self._read()
         hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
         present = [e for e in EVENTS if any(_is_ours(x) for x in hooks.get(e, []))]
         return {
             "installed": len(present) == len(EVENTS),
+            "backup": self.state_path.exists(),
             "events": present,
             "settings_file": str(self.settings_path),
             "adds": self.entries(),
@@ -108,23 +121,27 @@ class HooksInstaller:
         written = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
         if written == original:
             return self.status()
+        digest = hashlib.sha256(written.encode("utf-8")).hexdigest()
         if not self.state_path.exists():
-            self.state_path.parent.mkdir(parents=True, exist_ok=True)
-            self.state_path.write_text(
-                json.dumps(
-                    {
-                        "original": original,
-                        "existed": original is not None,
-                        "written_sha": hashlib.sha256(written.encode("utf-8")).hexdigest(),
-                    }
-                ),
-                encoding="utf-8",
+            self._save_state(
+                {"original": original, "existed": original is not None, "written_sha": digest}
             )
-            os.chmod(self.state_path, 0o600)
         else:
-            state = json.loads(self.state_path.read_text(encoding="utf-8"))
-            state["written_sha"] = hashlib.sha256(written.encode("utf-8")).hexdigest()
-            self.state_path.write_text(json.dumps(state), encoding="utf-8")
+            state = self._load_state()
+            current_sha = (
+                hashlib.sha256(self.settings_path.read_bytes()).hexdigest()
+                if self.settings_path.exists()
+                else None
+            )
+            if not isinstance(state, dict) or current_sha != state.get("written_sha"):
+                # The file changed since we wrote it: its true original is no longer known, so
+                # refuse rather than let a later remove restore stale bytes.
+                raise HooksError(
+                    "Claude Code's settings changed since the hooks were installed. "
+                    "Remove the hooks first, then install again; nothing was changed."
+                )
+            state["written_sha"] = digest
+            self._save_state(state)
         self._write(written)
         return self.status()
 
