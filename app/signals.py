@@ -70,6 +70,7 @@ KIND_EXPRESSIONS: dict[str, str] = {
     "timer_done": "happy",
     "habit_due": "curious",
     "meeting_soon": "surprised",
+    "mac_heavy_load": "dizzy",
 }
 
 # Fallback expression by importance, used when the kind has no expression of its own.

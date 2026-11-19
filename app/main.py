@@ -26,6 +26,7 @@ from app.panels.routes import register as register_panels
 from app.panels.credentials import register as register_credentials
 from app.panels.eink import register as register_eink
 from app.panels.everyday import register as register_everyday
+from app.monitoring import register as register_monitoring
 from app.productivity import register as register_productivity
 from app.search import register as register_search
 from app.config import BASE_DIR, Settings, configure_logging, load_settings, resolve_runtime_access_token
@@ -375,9 +376,14 @@ def create_app(
         everyday = getattr(_app.state, "everyday", None)
         if everyday is not None:
             everyday.start()
+        monitoring = getattr(_app.state, "monitoring", None)
+        if monitoring is not None:
+            monitoring.start()
         try:
             yield
         finally:
+            if monitoring is not None:
+                await monitoring.stop()
             if everyday is not None:
                 await everyday.stop()
             if productivity is not None:
@@ -1042,6 +1048,9 @@ def create_app(
 
     # Tasks, notes and habits (issue 05): store, REST, Panel actions, habit scheduler.
     register_productivity(fastapi_app, resolved_settings.db_path)
+
+    # Mac monitoring widgets (P08): CPU, RAM, disks, network, top processes on the `monitor` topic.
+    register_monitoring(fastapi_app)
 
     # Everyday Panel widgets (P07): media, timers, Pomodoro end, calendar and reminders.
     register_everyday(fastapi_app, resolved_mac, calendar_reader=resolved_calendar_reader)
