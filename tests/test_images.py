@@ -81,7 +81,7 @@ class FakeRun:
         if self.returncode == 0:
             if "--out" in argv:
                 Path(argv[argv.index("--out") + 1]).write_bytes(b"result")
-            elif argv[0].endswith("image_helper"):
+            elif Path(argv[0]).name.startswith("image_helper-"):
                 if argv[1] == "orient":
                     return SimpleNamespace(returncode=10, stdout=b"", stderr=b"")
                 if argv[1] == "stripgps":
@@ -283,7 +283,7 @@ def test_all_subprocesses_are_argv_lists_never_shell(tmp_path: Path) -> None:
     assert fake.calls and all(isinstance(c, list) and all(isinstance(a, str) for a in c) for c in fake.calls)
     assert all(not k.get("shell") for k in fake.kwargs)
     assert all(
-        c[0] in ("/usr/bin/sips", "/usr/bin/swiftc") or c[0].endswith("/image_helper") for c in fake.calls
+        c[0] in ("/usr/bin/sips", "/usr/bin/swiftc") or Path(c[0]).name.startswith("image_helper-") for c in fake.calls
     )
     store = str(tmp_path / "store")
     for call in fake.calls:
@@ -344,7 +344,7 @@ def test_remove_background_compiles_helper_once_and_outputs_png(tmp_path: Path) 
         assert result["format"] == "png"
     compiles = [c for c in fake.calls if c[0].endswith("swiftc")]
     assert len(compiles) == 1 and compiles[0][:2] == ["/usr/bin/swiftc", "-O"]
-    runs = [c for c in fake.calls if c[0].endswith("image_helper") and c[1] == "cutout"]
+    runs = [c for c in fake.calls if Path(c[0]).name.startswith("image_helper-") and c[1] == "cutout"]
     assert len(runs) == 2 and len(runs[0]) == 4 and runs[0][1] == "cutout"
 
 
@@ -377,7 +377,7 @@ def test_remove_background_missing_swiftc_is_unavailable(tmp_path: Path) -> None
 def test_remove_background_no_subject_exit_code(tmp_path: Path) -> None:
     class NoSubject(FakeRun):
         def __call__(self, argv: list[str], **kwargs: Any) -> Any:
-            if argv[0].endswith("image_helper"):
+            if Path(argv[0]).name.startswith("image_helper-"):
                 return SimpleNamespace(returncode=4, stdout=b"", stderr=b"")
             return super().__call__(argv, **kwargs)
 
@@ -545,7 +545,7 @@ def test_real_exif_rotation_is_baked_in_on_upload(tmp_path: Path) -> None:
 def test_orientation_helper_called_on_upload_and_original_replaced(tmp_path: Path) -> None:
     class Rotates(FakeRun):
         def __call__(self, argv: list[str], **kwargs: Any) -> Any:
-            if argv[0].endswith("image_helper") and argv[1] == "orient":
+            if Path(argv[0]).name.startswith("image_helper-") and argv[1] == "orient":
                 self.calls.append(list(argv))
                 Path(argv[3]).write_bytes(b"upright")
                 return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
@@ -639,10 +639,29 @@ def test_helper_compiled_atomically_with_private_cache_dir(tmp_path: Path) -> No
     upload(TestClient(app), make_png())
     compile_call = next(c for c in fake.calls if c[0].endswith("swiftc"))
     out = compile_call[compile_call.index("-o") + 1]
-    assert out.endswith(".tmp") and not out.endswith("image_helper")
+    assert out.endswith(".tmp") and not Path(out).name.startswith("image_helper-")
     cache = tmp_path / "cache"
     assert stat.S_IMODE(cache.stat().st_mode) == 0o700
-    assert sorted(p.name for p in cache.iterdir()) == ["image_helper"]  # no leftover .tmp
+    names = [p.name for p in cache.iterdir()]
+    assert len(names) == 1 and names[0].startswith("image_helper-") and not names[0].endswith(".tmp")
+
+
+def test_helper_recompiled_when_source_changes(tmp_path: Path) -> None:
+    source = tmp_path / "image_helper.swift"
+    source.write_text("// v1")
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "image_helper").write_bytes(b"legacy")
+    fake = FakeRun()
+    tools = ImageTools(cache, run=fake, sips="/usr/bin/sips", swiftc="/usr/bin/swiftc", helper_source=source)
+    first = tools._ensure_helper()
+    assert tools._ensure_helper() == first
+    assert sum(c[0].endswith("swiftc") for c in fake.calls) == 1
+    source.write_text("// v2")
+    second = tools._ensure_helper()
+    assert second != first
+    assert sum(c[0].endswith("swiftc") for c in fake.calls) == 2
+    assert [p.name for p in cache.iterdir()] == [second.name]  # older binaries removed
 
 
 def test_create_app_never_starts_a_compile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -741,7 +760,7 @@ def test_gps_strip_runs_for_every_saved_format(tmp_path: Path) -> None:
 def test_gps_strip_failure_fails_closed(tmp_path: Path) -> None:
     class StripFails(FakeRun):
         def __call__(self, argv: list[str], **kwargs: Any) -> Any:
-            if argv[0].endswith("image_helper") and argv[1] == "stripgps":
+            if Path(argv[0]).name.startswith("image_helper-") and argv[1] == "stripgps":
                 self.calls.append(list(argv))
                 return SimpleNamespace(returncode=5, stdout=b"", stderr=b"")
             return super().__call__(argv, **kwargs)

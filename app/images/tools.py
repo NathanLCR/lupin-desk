@@ -9,6 +9,7 @@ macOS Vision `VNGenerateForegroundInstanceMaskRequest`) that is compiled once in
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import os
 import re
@@ -160,12 +161,20 @@ class ImageTools:
             raise ToolError("edit_failed")
 
     def _ensure_helper(self) -> Path:
-        """Compile the helper once into the cache folder; unavailable when that fails."""
-        helper = self._cache_dir / "image_helper"
+        """Compile the helper into the cache folder, once per source version.
+
+        The binary is named after a hash of the Swift source, so a changed source never reuses
+        an older binary.
+        """
+        if self._helper_failed:
+            raise ToolError("unavailable")
+        try:
+            digest = hashlib.sha256(self._helper_source.read_bytes()).hexdigest()[:12]
+        except OSError:
+            raise ToolError("unavailable") from None
+        helper = self._cache_dir / f"image_helper-{digest}"
         if helper.is_file():
             return helper
-        if self._helper_failed or not self._helper_source.is_file():
-            raise ToolError("unavailable")
         with self._compile_lock:
             if helper.is_file():
                 return helper
@@ -183,6 +192,10 @@ class ImageTools:
                     logger.warning("Image helper could not be compiled; Vision features unavailable.")
                     raise ToolError("unavailable")
                 os.replace(partial, helper)
+                for old in self._cache_dir.glob("image_helper*"):
+                    if old != helper and old.is_file() and not old.is_symlink():
+                        with contextlib.suppress(OSError):
+                            old.unlink()
             except ToolError:
                 raise
             finally:
