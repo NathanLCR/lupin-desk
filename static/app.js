@@ -3673,6 +3673,8 @@
     if (window.DeskMcpSettings && els.mcpRoot) mcpSettings = window.DeskMcpSettings.mount(els.mcpRoot);
     var claudeHooksRoot = document.getElementById('claude-hooks-root');
     if (window.DeskClaudeHooksSettings && claudeHooksRoot) window.DeskClaudeHooksSettings.mount(claudeHooksRoot);
+    var controlRoot = document.getElementById('control-settings-root');
+    if (window.DeskControlSettings && controlRoot) window.DeskControlSettings.mount(controlRoot);
     if (window.DeskSkills && typeof window.DeskSkills.init === 'function' && els.skillsRoot) {
       window.DeskSkills.init(els.skillsRoot, {
         onPlayTrick: (trickId) => {
