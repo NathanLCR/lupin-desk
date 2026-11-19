@@ -63,6 +63,7 @@ from app.local_mode import SlowModelNotice
 from app.mcp_client import McpServerStore
 from app.mcp_routes import register_mcp_routes
 from app.mcp_server import register_mcp_server
+from app.mcp_server import _security_error
 from app.signals import ActiveBodySpeaker, SignalBus
 from app.today import FirstWakeTracker, TodayEngine, compose_first_wake_speech
 from app.tts import ServerTTS
@@ -624,6 +625,11 @@ def create_app(
     async def put_data_consent(request: Request, body: DataConsentRequest) -> dict[str, Any]:
         """Turn calendar and/or e-mail consent on or off. Mac only."""
         require_mac_client(request, "Data Consent can only be changed on the Mac.")
+        # DNS rebinding: a loopback Host and Origin, and a JSON content type, as in app/mcp_routes.py.
+        if _security_error(request) is not None:
+            raise HTTPException(status_code=403, detail="Data Consent can only be changed on the Mac.")
+        if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+            raise HTTPException(status_code=415, detail="Send application/json.")
         data_consent.update(calendar=body.calendar, email=body.email)
         if body.files is not None:
             fastapi_app.state.files_consent.update(body.files)

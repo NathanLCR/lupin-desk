@@ -78,7 +78,7 @@ def _make_app(tmp_path: Path, docs_root: Path | None = None) -> Any:
 
 def test_files_consent_api_mac_guard_and_provider_switch_reset(tmp_path: Path) -> None:
     app = _make_app(tmp_path)
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         initial = mac.get("/api/data-consent").json()
         assert initial["files"] is False
 
@@ -121,7 +121,7 @@ def test_ws_search_action_respects_files_consent_and_does_not_persist_snippets(t
     (docs / "budget.txt").write_text(secret_line + "\n", encoding="utf-8")
 
     app = _make_app(tmp_path, docs_root=docs)
-    with TestClient(app) as mac:
+    with TestClient(app, base_url="http://localhost") as mac:
         speech.set_language("en")
 
         def run_ws_turn() -> tuple[list[dict[str, Any]], dict[str, Any]]:

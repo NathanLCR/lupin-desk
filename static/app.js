@@ -1704,6 +1704,7 @@
       }
       case 'mood': {
         state.mood = msg;
+        if (msg.emotion) applyFaceEmotion(msg.emotion);
         break;
       }
       case 'audio': {
