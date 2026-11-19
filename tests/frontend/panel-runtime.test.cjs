@@ -620,8 +620,22 @@ test('subscribes to layout plus the widget topics once the layout is rendered', 
   boot(h);
   const subs = h.sock().sent.filter((m) => m.type === 'subscribe');
   assert.ok(subs.length >= 2);
-  assert.deepEqual(subs[0].topics, ['layout']);
-  assert.deepEqual(subs[subs.length - 1].topics, ['layout', 'weather.now']);
+  assert.deepEqual(subs[0].topics, ['layout', 'panel:goto']);
+  assert.deepEqual(subs[subs.length - 1].topics, ['layout', 'panel:goto', 'weather.now']);
+});
+
+test('a panel:goto topic switches to the Layout page with that id and ignores unknown ids', () => {
+  const h = setup();
+  boot(h);
+  assert.equal(h.panel.pages()[0].pageEl.style.left, '0%');
+  h.sock().message({ type: 'topic', topic: 'panel:goto', data: { page_id: 'second' } });
+  assert.equal(h.panel.pages()[1].pageEl.style.left, '0%');
+  h.sock().message({ type: 'topic', topic: 'panel:goto', data: { page_id: 'nope' } });
+  h.sock().message({ type: 'topic', topic: 'panel:goto', data: { page_id: 7 } });
+  h.sock().message({ type: 'topic', topic: 'panel:goto' });
+  assert.equal(h.panel.pages()[1].pageEl.style.left, '0%');
+  h.sock().message({ type: 'topic', topic: 'panel:goto', data: { page_id: 'home' } });
+  assert.equal(h.panel.pages()[0].pageEl.style.left, '0%');
 });
 
 test('a topic message is forwarded to the tiles handles', () => {

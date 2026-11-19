@@ -1,0 +1,15 @@
+/* Control Deck widgets: big touch targets, no animation. */
+.pn-ctl { padding: 6px; box-sizing: border-box; }
+.pn-ctl-level { font-size: 36px; font-weight: bold; line-height: 1.1; margin-bottom: 6px; }
+.pn-ctl-sub { font-size: 14px; opacity: 0.7; }
+.pn-ctl-empty { font-size: 16px; opacity: 0.7; }
+.pn-ctl-row { display: -webkit-box; display: -webkit-flex; display: flex; }
+.pn-ctl-row .pn-ctl-btn { -webkit-flex: 1 1 0; flex: 1 1 0; margin-right: 6px; }
+.pn-ctl-btn {
+  min-height: 44px; padding: 8px 12px; margin-bottom: 6px; font-size: 18px;
+  border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit;
+}
+.pn-ctl-big { width: 100%; min-height: 64px; font-size: 24px; }
+.pn-ctl-list .pn-ctl-btn { display: block; width: 100%; text-align: left; }
+.pn-ctl-front { font-weight: bold; }
+.pn-ctl-closed { opacity: 0.55; }

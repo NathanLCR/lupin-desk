@@ -62,7 +62,7 @@ test('real modules render the starter-style layout and a throwing widget fails a
   assert.equal(tiles.length, 3);
   const clocks = fakes.findAll(root, (el) => el.classList.contains('pn-clock-time'));
   assert.equal(clocks.length, 1);
-  assert.deepEqual(h.sock.sent.filter((m) => m.type === 'subscribe').pop().topics, ['layout']);
+  assert.deepEqual(h.sock.sent.filter((m) => m.type === 'subscribe').pop().topics, ['layout', 'panel:goto']);
 });
 
 test('real modules: arranging saves a config-free payload', () => {

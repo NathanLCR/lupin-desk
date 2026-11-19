@@ -185,7 +185,7 @@
 
   // 'layout' is always subscribed; the widget topics are added after each render.
   function sendSubscribe(app, topics) {
-    var list = ['layout'];
+    var list = ['layout', 'panel:goto'];
     for (var i = 0; i < topics.length; i++) {
       if (list.indexOf(topics[i]) === -1) list.push(topics[i]);
     }
@@ -291,7 +291,27 @@
     return id === app.layoutId || (!!app.layout && id === app.layout.id);
   }
 
+  // Control Deck rules publish panel:goto {page_id}: show that Layout page if this Panel has it.
+  function gotoPageById(app, data) {
+    var id = data && data.page_id;
+    if (typeof id !== 'string' || app.arranging) return;
+    var layoutPages = app.layout && app.layout.pages ? app.layout.pages : [];
+    for (var i = 0; i < layoutPages.length; i++) {
+      if (layoutPages[i].id !== id) continue;
+      for (var j = 0; j < app.pages.length; j++) {
+        if (app.pages[j].id === id) {
+          goPage(app, j);
+          return;
+        }
+      }
+    }
+  }
+
   function onTopicMessage(app, topic, data) {
+    if (topic === 'panel:goto') {
+      gotoPageById(app, data);
+      return;
+    }
     if (topic === 'layout') {
       if (!app.arranging && layoutTopicIsOurs(app, data)) loadLayout(app);
       return;
