@@ -164,3 +164,98 @@ def build_personal_context(
             parts.append(speech.EMAIL_HEADER + "\n".join(lines))
 
     return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Front app Data Consent (Lupin 04): the fourth switch
+# ---------------------------------------------------------------------------
+
+_FRONT_APP_META_KEY = "data_consent_front_app"
+
+
+class FrontAppConsent:
+    """Front app consent: the name and window title of the Mac's front app may go to the LLM.
+
+    Same rules as the other consents: it only holds for the provider and host that were active
+    when it was given, and Ollama on a loopback host never asks (the data stays on the Mac).
+    Without it the front app is used only on the Mac (Mood, Control Deck rules), never sent to
+    an LLM, never stored and never logged. Stored under the `app_meta` key
+    `data_consent_front_app`.
+    """
+
+    def __init__(self, memory: MemoryStore, signature: Callable[[], tuple[str, str]]) -> None:
+        self._memory = memory
+        self._signature = signature
+
+    def _current(self) -> dict[str, Any]:
+        provider_id, base_url = self._signature()
+        return {"provider_id": provider_id, "host": _host_of(base_url)}
+
+    def _write(self, front_app: bool) -> None:
+        payload = {"front_app": front_app, **self._current()}
+        self._memory.set_meta(_FRONT_APP_META_KEY, json.dumps(payload, ensure_ascii=False))
+
+    def is_local(self) -> bool:
+        """True when the active provider is local Ollama (no consent needed)."""
+        provider_id, base_url = self._signature()
+        return is_local_provider(provider_id, base_url)
+
+    def get(self) -> bool:
+        """Read the consent; if the provider or host changed, reset it to off."""
+        raw = self._memory.get_meta(_FRONT_APP_META_KEY)
+        if self.is_local():
+            # Drop any cloud consent on record, so it can't come back when a cloud provider returns.
+            if raw:
+                try:
+                    data = json.loads(raw)
+                except (ValueError, json.JSONDecodeError):
+                    data = None
+                stored = (
+                    {"provider_id": data.get("provider_id"), "host": data.get("host")}
+                    if isinstance(data, dict)
+                    else None
+                )
+                if stored != self._current():
+                    self._write(False)
+            return True
+        if not raw:
+            return False
+        try:
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                raise ValueError("invalid format")
+        except (ValueError, json.JSONDecodeError):
+            self._write(False)
+            return False
+        sig = self._current()
+        if data.get("provider_id") != sig["provider_id"] or data.get("host") != sig["host"]:
+            self._write(False)
+            return False
+        return data.get("front_app") is True
+
+    def update(self, front_app: bool) -> bool:
+        """Change the switch for the provider that is active right now."""
+        if self.is_local():
+            return True
+        value = bool(front_app)
+        self._write(value)
+        return value
+
+
+def build_front_app_context(allowed: bool, front_app: dict[str, str] | None) -> str:
+    """Ephemeral per-turn line with the front app, only with the front app consent on.
+
+    Returns "" without consent or when the front app is unknown, so nothing about it reaches
+    the LLM. The caller must not read the front app at all without consent. Not saved to the
+    history and never logged.
+    """
+    if not allowed or not front_app:
+        return ""
+    name = str(front_app.get("name") or "").strip()
+    if not name:
+        return ""
+    title = str(front_app.get("title") or "").strip()
+    line = getattr(speech, "front_app_context_line", None)  # speech-table patch pending: English fallback
+    if line is not None:
+        return str(line(name, title))
+    return f"Front app on the Mac: {name}" + (f' (window: "{title}")' if title else "") + "."

@@ -252,6 +252,81 @@ def parse_mail_output(stdout: str) -> dict[str, Any] | None:
     return {"unread": unread, "recent": recent}
 
 
+# --- Presence reads (Lupin 04): fixed, read-only argv lists; nothing here takes client input. ---
+_IOREG_BIN = "/usr/sbin/ioreg"
+_IDLE_ARGV: tuple[str, ...] = (_IOREG_BIN, "-c", "IOHIDSystem")
+_HID_IDLE_RE = re.compile(r'"HIDIdleTime"\s*=\s*(\d+)')
+
+_NOWPLAYING_BIN = "/opt/homebrew/bin/nowplaying-cli"
+_NOWPLAYING_ARGV: tuple[str, ...] = (
+    _NOWPLAYING_BIN, "get", "title", "artist", "genre", "playbackRate", "bpm",
+)
+
+# Front app name and window title. The title needs the Accessibility permission; without it
+# the name still comes back and the title is empty.
+_FRONT_APP_SCRIPT = """
+tell application "System Events"
+    set frontProc to first application process whose frontmost is true
+    set appName to name of frontProc
+    set winTitle to ""
+    try
+        set winTitle to name of front window of frontProc
+    end try
+    return appName & linefeed & winTitle
+end tell
+""".strip()
+
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]+")
+_FRONT_APP_NAME_MAX = 80
+_FRONT_APP_TITLE_MAX = 200
+
+
+def parse_idle_seconds(stdout: str) -> float | None:
+    """Seconds since the last keyboard/mouse input from `ioreg` (HIDIdleTime is in nanoseconds)."""
+    match = _HID_IDLE_RE.search(stdout or "")
+    if match is None:
+        return None
+    return int(match.group(1)) / 1_000_000_000
+
+
+def parse_front_app_output(stdout: str) -> dict[str, str] | None:
+    """Convert the front-app script output (name line, title line) into {"name", "title"}."""
+    lines = (stdout or "").split("\n")
+    name = _CONTROL_CHARS_RE.sub(" ", lines[0]).strip()[:_FRONT_APP_NAME_MAX]
+    if not name:
+        return None
+    title = _CONTROL_CHARS_RE.sub(" ", " ".join(lines[1:])).strip()[:_FRONT_APP_TITLE_MAX]
+    return {"name": name, "title": title}
+
+
+def parse_now_playing_output(stdout: str) -> dict[str, Any] | None:
+    """Convert `nowplaying-cli get title artist genre playbackRate bpm` into a dict.
+
+    Returns None when nothing is loaded. `playing` is True when the playback rate is above 0.
+    """
+    lines = [line.strip() for line in (stdout or "").splitlines()]
+    while len(lines) < 5:
+        lines.append("null")
+
+    def clean(value: str) -> str:
+        return "" if value.lower() in ("null", "(null)") else _CONTROL_CHARS_RE.sub(" ", value)[:120]
+
+    title, artist, genre = clean(lines[0]), clean(lines[1]), clean(lines[2])
+    try:
+        rate = float(lines[3])
+    except ValueError:
+        rate = 0.0
+    try:
+        bpm: float | None = float(lines[4])
+        if bpm is not None and bpm <= 0:
+            bpm = None
+    except ValueError:
+        bpm = None
+    if not (title or artist or genre):
+        return None
+    return {"title": title, "artist": artist, "genre": genre, "playing": rate > 0, "bpm": bpm}
+
+
 def _is_accessibility_error(stderr: str) -> bool:
     """Detect macOS Accessibility permission errors in the `osascript` stderr."""
     lowered = (stderr or "").lower()
@@ -368,6 +443,33 @@ class MacController:
         if proc.returncode != 0:
             return None
         return parse_mail_output(proc.stdout)
+
+    def read_idle_seconds(self) -> float | None:
+        """Seconds since the last keyboard or mouse input (HIDIdleTime via `ioreg`). None on failure."""
+        proc = self._run_cmd(list(_IDLE_ARGV), timeout=3.0)
+        if proc.returncode != 0:
+            return None
+        return parse_idle_seconds(proc.stdout)
+
+    def front_app(self) -> dict[str, str] | None:
+        """The Mac's front app as {"name", "title"} (title is "" without Accessibility permission).
+
+        Contract (reused by Presence and by the Control Deck "app in front" rule): read-only,
+        argv-only (`osascript`), never raises, returns None when it cannot be read. The caller
+        must not store or log the result; it may reach an LLM only with the "front app"
+        Data Consent (app/consent.py).
+        """
+        proc = self._run_cmd(["/usr/bin/osascript", "-e", _FRONT_APP_SCRIPT], timeout=3.0)
+        if proc.returncode != 0:
+            return None
+        return parse_front_app_output(proc.stdout)
+
+    def now_playing(self) -> dict[str, Any] | None:
+        """What is playing right now ({"title","artist","genre","playing","bpm"}) via nowplaying-cli."""
+        proc = self._run_cmd(list(_NOWPLAYING_ARGV), timeout=3.0)
+        if proc.returncode != 0:
+            return None
+        return parse_now_playing_output(proc.stdout)
 
     def list_running_apps(self) -> list[dict[str, Any]]:
         """List the apps open on the Mac (frontmost highlighted) plus the default favorites."""
