@@ -1,0 +1,23 @@
+/* Mac monitoring widgets: big readable numbers, simple bars, no animation. */
+.pn-monitor { padding: 6px; box-sizing: border-box; }
+.pn-mon-status { opacity: 0.7; font-size: 16px; }
+.pn-mon-big { font-size: 36px; font-weight: bold; line-height: 1.1; }
+.pn-mon-bar { height: 10px; background: rgba(128, 128, 128, 0.3); border-radius: 5px; overflow: hidden; margin: 6px 0; }
+.pn-mon-fill { height: 100%; background: currentColor; }
+.pn-mon-spark {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: end;
+  -webkit-align-items: flex-end;
+  align-items: flex-end;
+  height: 36px;
+  margin-bottom: 6px;
+}
+.pn-mon-col { -webkit-flex: 1 1 0; flex: 1 1 0; margin-right: 1px; background: currentColor; opacity: 0.6; }
+.pn-mon-line { display: -webkit-box; display: -webkit-flex; display: flex; -webkit-justify-content: space-between; justify-content: space-between; font-size: 18px; }
+.pn-mon-sub { font-size: 14px; opacity: 0.7; margin-bottom: 6px; }
+.pn-mon-procs { list-style: none; margin: 0; padding: 0; }
+.pn-mon-proc { display: -webkit-box; display: -webkit-flex; display: flex; font-size: 16px; padding: 2px 0; }
+.pn-mon-proc-name { -webkit-flex: 1 1 auto; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-mon-proc-cpu, .pn-mon-proc-mem { width: 56px; text-align: right; }
