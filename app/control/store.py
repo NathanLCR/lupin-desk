@@ -96,6 +96,7 @@ class ControlStore:
         if str(db_path) != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._enabled_cache: list[dict[str, Any]] | None = None  # invalidated on every rule write
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
@@ -271,7 +272,15 @@ class ControlStore:
             rows = self._conn.execute("SELECT * FROM control_rules ORDER BY id").fetchall()
         return [self._rule(r) for r in rows]
 
-    def add_rule(self, trigger: Any, match: Any, page_id: Any) -> dict[str, Any]:
+    def enabled_rules(self) -> list[dict[str, Any]]:
+        """Enabled rules from an in-memory cache: the rules loop never reads the DB while idle."""
+        with self._lock:
+            if self._enabled_cache is None:
+                self._enabled_cache = [r for r in self.list_rules() if r["enabled"]]
+            return list(self._enabled_cache)
+
+    @staticmethod
+    def _clean_rule(trigger: Any, match: Any, page_id: Any) -> tuple[str, str, str]:
         if not isinstance(trigger, str) or trigger not in RULE_TRIGGERS:
             raise ValueError("trigger must be app_front or signal.")
         if trigger == "app_front":
@@ -282,6 +291,10 @@ class ControlStore:
             clean_match = match
         if not isinstance(page_id, str) or not _PAGE_RE.fullmatch(page_id):
             raise ValueError("page_id is not valid.")
+        return trigger, clean_match, page_id
+
+    def add_rule(self, trigger: Any, match: Any, page_id: Any) -> dict[str, Any]:
+        trigger, clean_match, page_id = self._clean_rule(trigger, match, page_id)
         with self._lock:
             count = self._conn.execute("SELECT COUNT(*) FROM control_rules").fetchone()[0]
             if count >= MAX_RULES:
@@ -291,7 +304,29 @@ class ControlStore:
                 (trigger, clean_match, page_id, _now_iso()),
             )
             self._conn.commit()
+            self._enabled_cache = None
             row = self._conn.execute("SELECT * FROM control_rules WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return self._rule(row)
+
+    def update_rule(
+        self, rule_id: int, trigger: Any = None, match: Any = None, page_id: Any = None
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM control_rules WHERE id = ?", (rule_id,)).fetchone()
+            if row is None:
+                return None
+            trigger, clean_match, page_id = self._clean_rule(
+                row["trigger"] if trigger is None else trigger,
+                row["match"] if match is None else match,
+                row["page_id"] if page_id is None else page_id,
+            )
+            self._conn.execute(
+                "UPDATE control_rules SET trigger = ?, match = ?, page_id = ? WHERE id = ?",
+                (trigger, clean_match, page_id, rule_id),
+            )
+            self._conn.commit()
+            self._enabled_cache = None
+            row = self._conn.execute("SELECT * FROM control_rules WHERE id = ?", (rule_id,)).fetchone()
         return self._rule(row)
 
     def set_rule_enabled(self, rule_id: int, enabled: bool) -> dict[str, Any] | None:
@@ -300,6 +335,7 @@ class ControlStore:
                 "UPDATE control_rules SET enabled = ? WHERE id = ?", (1 if enabled else 0, rule_id)
             )
             self._conn.commit()
+            self._enabled_cache = None
             if cur.rowcount == 0:
                 return None
             row = self._conn.execute("SELECT * FROM control_rules WHERE id = ?", (rule_id,)).fetchone()
@@ -309,4 +345,5 @@ class ControlStore:
         with self._lock:
             cur = self._conn.execute("DELETE FROM control_rules WHERE id = ?", (rule_id,))
             self._conn.commit()
+            self._enabled_cache = None
             return cur.rowcount > 0

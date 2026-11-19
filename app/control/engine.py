@@ -84,13 +84,13 @@ class RulesEngine:
     async def on_signal(self, signal: Any) -> None:
         """Signal listener: switch the page of every enabled rule for this kind."""
         kind = getattr(signal, "kind", None)
-        for rule in self._store.list_rules():
-            if rule["enabled"] and rule["trigger"] == "signal" and rule["match"] == kind:
+        for rule in self._store.enabled_rules():
+            if rule["trigger"] == "signal" and rule["match"] == kind:
                 await self._goto(rule["page_id"])
 
     async def tick(self) -> bool:
         """Read the front app once and apply the matching rule. True when a page was switched."""
-        rules = [r for r in self._store.list_rules() if r["enabled"] and r["trigger"] == "app_front"]
+        rules = [r for r in self._store.enabled_rules() if r["trigger"] == "app_front"]
         if not rules or self._front_app is None:
             self._last_rule = None
             return False

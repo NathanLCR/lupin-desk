@@ -53,7 +53,10 @@ class RuleBody(BaseModel):
 
 
 class RulePatch(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    trigger: str | None = None
+    match: str | None = None
+    page_id: str | None = None
 
 
 def _id_arg(args: dict[str, Any], key: str = "id") -> int:
@@ -109,7 +112,13 @@ def setup_actions(
         name = args.get("name")
         if not isinstance(name, str) or mac.validate_app_name(name) is None:
             raise ValueError("invalid app name")
-        result = await asyncio.to_thread(mac.activate_app, name.strip())
+        # Only apps that are open now or saved Dock favorites: never an arbitrary installed app.
+        known = await asyncio.to_thread(mac.list_running_apps)
+        by_lower = {str(a.get("name", "")).lower(): str(a["name"]) for a in known if a.get("name")}
+        canonical = by_lower.get(name.strip().lower())
+        if canonical is None:
+            raise ValueError("app is not in the Dock")
+        result = await asyncio.to_thread(mac.activate_app, canonical)
         return {"ok": bool(result.get("ok"))}
 
     reg("app.activate", app_activate, "Bring a Mac app to the front.")
@@ -215,15 +224,16 @@ def setup_routes(
             raise HTTPException(status_code=404, detail="Unknown webhook.")
         return {"deleted": True, "id": hook_id}
 
-    hits: deque[float] = deque()
+    hits: dict[int, deque[float]] = {}
 
-    def _rate_ok() -> bool:
+    def _rate_ok(hook_id: int) -> bool:
         now = clock()
-        while hits and now - hits[0] > HOOK_WINDOW_SECONDS:
-            hits.popleft()
-        if len(hits) >= HOOK_MAX_PER_WINDOW:
+        window = hits.setdefault(hook_id, deque())
+        while window and now - window[0] > HOOK_WINDOW_SECONDS:
+            window.popleft()
+        if len(window) >= HOOK_MAX_PER_WINDOW:
             return False
-        hits.append(now)
+        window.append(now)
         return True
 
     @app.post("/hooks/{secret}")
@@ -231,7 +241,7 @@ def setup_routes(
         hook = store.find_webhook_by_secret(secret)
         if hook is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
-        if not _rate_ok():
+        if not _rate_ok(hook["id"]):
             return JSONResponse({"error": "rate_limited"}, status_code=429)
         raw = b""
         async for chunk in request.stream():
@@ -282,7 +292,12 @@ def setup_routes(
 
     @app.patch("/api/control/rules/{rule_id}", dependencies=write)
     async def patch_rule(rule_id: int, body: RulePatch) -> dict[str, Any]:
-        rule = store.set_rule_enabled(rule_id, body.enabled)
+        try:
+            rule = store.update_rule(rule_id, body.trigger, body.match, body.page_id)
+            if rule is not None and body.enabled is not None:
+                rule = store.set_rule_enabled(rule_id, body.enabled)
+        except ValueError as exc:
+            raise _bad(exc) from exc
         if rule is None:
             raise HTTPException(status_code=404, detail="Unknown rule.")
         return {"rule": rule}

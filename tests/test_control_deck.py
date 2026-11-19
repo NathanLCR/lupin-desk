@@ -45,6 +45,9 @@ class FakeMac:
     def validate_app_name(self, name: str) -> str | None:
         return name.strip() or None
 
+    def list_running_apps(self) -> list[dict[str, Any]]:
+        return [{"name": "Safari", "running": True}, {"name": "Notes", "running": False}]
+
     def activate_app(self, name: str) -> dict[str, Any]:
         self.ran.append({"activate": name})
         return {"ok": True}
@@ -339,3 +342,50 @@ def test_start_subscribes_to_signals_and_stop_unsubscribes(ctx):
         assert ctx.bus.listeners == []
 
     asyncio.run(go())
+
+
+def test_app_activate_only_accepts_dock_apps(ctx):
+    assert run(ctx, "app.activate", {"name": "safari"})["ok"] is True
+    assert ctx.mac.ran[-1] == {"activate": "Safari"}
+    before = len(ctx.mac.ran)
+    assert run(ctx, "app.activate", {"name": "Some Installed App"})["ok"] is False
+    assert len(ctx.mac.ran) == before
+
+
+def test_webhook_rate_limit_is_per_hook(ctx):
+    a = ctx.client.post("/api/control/webhooks", json={"name": "A"}).json()["webhook"]
+    b = ctx.client.post("/api/control/webhooks", json={"name": "B"}).json()["webhook"]
+    lan = TestClient(ctx.app)
+    assert 429 in [lan.post(a["path"], json={"value": 1}).status_code for _ in range(70)]
+    assert lan.post(b["path"], json={"value": 1}).status_code == 200
+
+
+def test_rules_loop_does_not_touch_the_db_when_no_rule_is_enabled(ctx):
+    store = ctx.deck.store
+    store.enabled_rules()  # warm the cache
+    conn, store._conn = store._conn, None  # any DB read now would raise
+    try:
+        assert asyncio.run(ctx.deck.rules.tick()) is False
+    finally:
+        store._conn = conn
+
+
+def test_enabled_rule_cache_is_invalidated_on_save(ctx):
+    store = ctx.deck.store
+    assert store.enabled_rules() == []
+    rule = store.add_rule("app_front", "Xcode", "dev")
+    assert [r["id"] for r in store.enabled_rules()] == [rule["id"]]
+    store.set_rule_enabled(rule["id"], False)
+    assert store.enabled_rules() == []
+    store.set_rule_enabled(rule["id"], True)
+    store.remove_rule(rule["id"])
+    assert store.enabled_rules() == []
+
+
+def test_rule_can_be_edited(ctx):
+    rule = ctx.client.post("/api/control/rules", json={"trigger": "app_front", "match": "Xcode", "page_id": "p1"}).json()["rule"]
+    edited = ctx.client.patch(f"/api/control/rules/{rule['id']}", json={"trigger": "signal", "match": "timer_done", "page_id": "p2", "enabled": False})
+    assert edited.status_code == 200
+    assert edited.json()["rule"] == {"id": rule["id"], "trigger": "signal", "match": "timer_done", "page_id": "p2", "enabled": False}
+    assert ctx.client.patch(f"/api/control/rules/{rule['id']}", json={"page_id": "../x"}).status_code == 400
+    assert ctx.client.patch("/api/control/rules/999", json={"page_id": "p"}).status_code == 404

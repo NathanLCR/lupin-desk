@@ -43,6 +43,7 @@ class SystemControl:
         self._mac = mac
         self._run = run or subprocess.run
         self._lock = threading.Lock()
+        # Held in memory only: after a restart an unmute falls back to 75.
         self._mic_restore = _DEFAULT_MIC_LEVEL
 
     def _osascript(self, script: str) -> str | None:
