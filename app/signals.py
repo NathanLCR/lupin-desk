@@ -187,6 +187,8 @@ class SignalBus:
         self._last_spoken: dict[str, float] = {}
         self.clear_expression = clear_expression
         self._held: set[tuple[str | None, str]] = set()
+        self._expression: str | None = None  # the last Expression this bus set
+        self._before_hold: str | None = None  # what to go back to when the last hold goes
 
     def add_listener(self, callback: Callable[[Signal], Any]) -> Callable[[], None]:
         """Subscribe to every emitted signal; return a function that removes the subscription."""
@@ -218,7 +220,7 @@ class SignalBus:
             return 0
         self._held -= gone
         if not self._held:
-            await self._clear_expression()
+            await self._restore_expression()
         return len(gone)
 
     def llm_view(self, signal: Signal) -> dict[str, Any]:
@@ -299,6 +301,8 @@ class SignalBus:
         holding = signal.hold_expression and expression is not None
         free = not self._held and (spoke or (not in_focus and reason != "rate_limited"))
         if holding:
+            if not self._held:
+                self._before_hold = self._expression
             self._held.add((signal.id, kind))
         if (holding or free) and expression is not None:
             if await self._set_expression(expression):
@@ -337,12 +341,23 @@ class SignalBus:
             return False
         try:
             result = await asyncio.wait_for(_settle(self.set_expression(name)), SPEAK_TIMEOUT_SECONDS)
+            if result is not False:
+                self._expression = name
             return result is not False
         except Exception as exc:
             logger.warning("Lupin could not change expression (%s).", type(exc).__name__)
             return False
 
+    async def _restore_expression(self) -> None:
+        """Go back to the Expression from before the first hold; neutral when none is known."""
+        before, self._before_hold = self._before_hold, None
+        if before is not None and before != "neutral":
+            await self._set_expression(before)
+        else:
+            await self._clear_expression()
+
     async def _clear_expression(self) -> None:
+        self._expression = None
         try:
             if self.clear_expression is not None:
                 await asyncio.wait_for(_settle(self.clear_expression()), SPEAK_TIMEOUT_SECONDS)
