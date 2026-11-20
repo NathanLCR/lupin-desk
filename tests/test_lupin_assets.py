@@ -8,6 +8,20 @@ EMOTIONS = [
     "neutral", "happy", "excited", "curious", "skeptical", "surprised",
     "sad", "wink", "love", "sleepy", "angry", "dizzy",
 ]
+EXPECTED_LAYERS = [
+    "tail", "torso", "collar", "ear-left", "ear-right", "head", "eyes", "mouth",
+]
+
+
+def test_version_three_structure_and_pivots():
+    assert TABLE["version"] == 3
+    assert TABLE["layerOrder"] == EXPECTED_LAYERS
+    assert list(TABLE["layers"]) == EXPECTED_LAYERS
+    assert TABLE["headGroup"] == ["ear-left", "ear-right", "head", "eyes", "mouth"]
+    for key in ("breath", "headGroup", "ear-left", "ear-right", "tail"):
+        coords = TABLE["pivots"][key]
+        assert len(coords) == 2
+        assert 0 <= coords[0] <= 480 and 0 <= coords[1] <= 320
 
 
 def test_every_table_variant_has_a_480x320_svg():
@@ -42,6 +56,7 @@ def test_twelve_expressions_and_five_states_use_valid_variants():
 def test_full_body_tricks_are_only_dance_stretch_and_nap():
     body = {name for name, t in TABLE["tricks"].items() if t["mode"] == "body"}
     assert body == {"dance", "stretch", "nap"}
+    assert TABLE["tricks"]["dance"]["frames"] == ["dance-1", "dance-2"]
     assert {"sing", "meditate", "celebrate"} <= set(TABLE["tricks"])
 
 
@@ -54,9 +69,17 @@ def test_art_carries_no_code_or_external_images():
             assert forbidden not in text, f"{svg}: {forbidden}"
 
 
-def test_blink_and_speech_point_to_poses_that_exist():
-    poses = set(TABLE["layers"]["pose"])
+def test_blink_and_speech_point_to_valid_eye_and_mouth_variants():
+    eyes = set(TABLE["layers"]["eyes"])
+    mouths = set(TABLE["layers"]["mouth"])
     for source, target in TABLE["blink"].items():
-        assert source in poses and target in poses, (source, target)
-    assert TABLE["blink"], "Lupin must blink from the neutral pose"
-    assert TABLE["speech"]["pose"] in poses
+        assert source in eyes and target in eyes, (source, target)
+    assert {"open", "curious", "skeptical", "surprised", "sad", "angry"} <= set(TABLE["blink"])
+
+    speech = TABLE["speech"]
+    assert speech["closed"] in mouths
+    levels = speech["levels"]
+    assert len(levels) >= 2
+    assert [lvl["minLevel"] for lvl in levels] == sorted((lvl["minLevel"] for lvl in levels), reverse=True)
+    for lvl in levels:
+        assert lvl["mouth"] in mouths

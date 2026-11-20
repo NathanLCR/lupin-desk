@@ -36,7 +36,19 @@
 }
 
 .lupin-head-group {
-  transform-origin: 240px 270px;
+  transform-origin: 240px 240px;
+}
+
+.lupin-layer-ear-left {
+  transform-origin: 172px 82px;
+}
+
+.lupin-layer-ear-right {
+  transform-origin: 308px 82px;
+}
+
+.lupin-layer-tail {
+  transform-origin: 304px 286px;
 }
 
 .lupin-variant,

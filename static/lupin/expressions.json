@@ -1,19 +1,73 @@
 {
-  "version": 2,
+  "version": 3,
   "screen": {
     "width": 480,
     "height": 320
   },
   "layerOrder": [
-    "pose",
-    "collar"
+    "tail",
+    "torso",
+    "collar",
+    "ear-left",
+    "ear-right",
+    "head",
+    "eyes",
+    "mouth"
   ],
   "headGroup": [
-    "pose"
+    "ear-left",
+    "ear-right",
+    "head",
+    "eyes",
+    "mouth"
   ],
+  "pivots": {
+    "breath": [240, 320],
+    "headGroup": [240, 240],
+    "ear-left": [172, 82],
+    "ear-right": [308, 82],
+    "tail": [304, 286]
+  },
+  "motion": {
+    "breathAmp": 0.015,
+    "breathPeriodMs": 3500,
+    "idleSwayDeg": 2.0,
+    "idleSwayPeriodMs": 6500,
+    "musicTiltDeg": 2.2,
+    "musicPeriodMs": 1634,
+    "squashMs": 220,
+    "squashX": 1.04,
+    "squashY": 0.96,
+    "gazeMaxX": 5,
+    "gazeMaxY": 3,
+    "earTwitchDeg": 7,
+    "earTwitchMs": 180,
+    "earTwitchMinMs": 5000,
+    "earTwitchMaxMs": 11000
+  },
   "layers": {
-    "pose": [
-      "neutral",
+    "tail": [
+      "base"
+    ],
+    "torso": [
+      "base"
+    ],
+    "collar": [
+      "off",
+      "lit"
+    ],
+    "ear-left": [
+      "base"
+    ],
+    "ear-right": [
+      "base"
+    ],
+    "head": [
+      "base"
+    ],
+    "eyes": [
+      "open",
+      "closed",
       "happy",
       "in-love",
       "surprised",
@@ -21,85 +75,212 @@
       "angry",
       "dizzy",
       "winking",
-      "blink",
       "curious",
       "skeptical",
       "sad"
     ],
-    "collar": [
-      "off",
-      "lit"
+    "mouth": [
+      "closed",
+      "smile",
+      "in-love",
+      "surprised",
+      "angry",
+      "sad",
+      "skeptical",
+      "talk-mid",
+      "talk-open"
     ]
   },
   "default": {
-    "pose": "neutral",
-    "collar": "off"
+    "tail": "base",
+    "torso": "base",
+    "collar": "off",
+    "ear-left": "base",
+    "ear-right": "base",
+    "head": "base",
+    "eyes": "open",
+    "mouth": "closed",
+    "tilt": 0,
+    "earLeft": 0,
+    "earRight": 0,
+    "tailWag": {
+      "amp": 4,
+      "periodMs": 2800
+    }
   },
   "blink": {
-    "neutral": "blink"
+    "open": "closed",
+    "curious": "closed",
+    "skeptical": "closed",
+    "surprised": "closed",
+    "sad": "closed",
+    "angry": "closed"
   },
   "speech": {
-    "pose": "happy",
-    "threshold": 0.4
+    "closed": "closed",
+    "minHoldMs": 60,
+    "levels": [
+      {
+        "minLevel": 0.62,
+        "mouth": "talk-open"
+      },
+      {
+        "minLevel": 0.3,
+        "mouth": "talk-mid"
+      }
+    ]
   },
   "expressions": {
     "neutral": {},
     "happy": {
-      "pose": "happy"
+      "eyes": "happy",
+      "mouth": "smile",
+      "earLeft": 3,
+      "earRight": -3,
+      "tailWag": {
+        "amp": 10,
+        "periodMs": 550
+      }
     },
     "excited": {
-      "pose": "happy"
+      "eyes": "happy",
+      "mouth": "smile",
+      "earLeft": 5,
+      "earRight": -5,
+      "tailWag": {
+        "amp": 11,
+        "periodMs": 420
+      }
     },
     "curious": {
-      "pose": "curious"
+      "eyes": "curious",
+      "mouth": "closed",
+      "tilt": 7,
+      "earLeft": 6,
+      "earRight": 10,
+      "tailWag": {
+        "amp": 5,
+        "periodMs": 2200
+      }
     },
     "skeptical": {
-      "pose": "skeptical"
+      "eyes": "skeptical",
+      "mouth": "skeptical",
+      "tilt": -3,
+      "earLeft": -6,
+      "earRight": -8,
+      "tailWag": {
+        "amp": 2,
+        "periodMs": 3200
+      }
     },
     "surprised": {
-      "pose": "surprised"
+      "eyes": "surprised",
+      "mouth": "surprised",
+      "earLeft": 5,
+      "earRight": -5,
+      "tailWag": {
+        "amp": 3,
+        "periodMs": 1200
+      }
     },
     "sad": {
-      "pose": "sad"
+      "eyes": "sad",
+      "mouth": "sad",
+      "earLeft": -22,
+      "earRight": 22,
+      "tailWag": {
+        "amp": 0,
+        "periodMs": 2800
+      }
     },
     "wink": {
-      "pose": "winking"
+      "eyes": "winking",
+      "mouth": "smile",
+      "tilt": -6,
+      "earLeft": 0,
+      "earRight": -5,
+      "tailWag": {
+        "amp": 8,
+        "periodMs": 900
+      }
     },
     "love": {
-      "pose": "in-love"
+      "eyes": "in-love",
+      "mouth": "in-love",
+      "earLeft": 4,
+      "earRight": -4,
+      "tailWag": {
+        "amp": 10,
+        "periodMs": 500
+      }
     },
     "sleepy": {
-      "pose": "sleepy"
+      "eyes": "sleepy",
+      "mouth": "closed",
+      "earLeft": -18,
+      "earRight": 18,
+      "tailWag": {
+        "amp": 0,
+        "periodMs": 3200
+      }
     },
     "angry": {
-      "pose": "angry"
+      "eyes": "angry",
+      "mouth": "angry",
+      "earLeft": -24,
+      "earRight": 24,
+      "tailWag": {
+        "amp": 3,
+        "periodMs": 700
+      }
     },
     "dizzy": {
-      "pose": "dizzy"
+      "eyes": "dizzy",
+      "mouth": "closed",
+      "earLeft": -20,
+      "earRight": 16,
+      "tailWag": {
+        "amp": 0,
+        "periodMs": 2800
+      }
     }
   },
   "states": {
     "idle": {},
     "listening": {
-      "tilt": 6
+      "tilt": 6,
+      "earLeft": 4,
+      "earRight": -4
     },
     "thinking": {
-      "tilt": -6
+      "tilt": -6,
+      "gaze": {
+        "x": 0.6,
+        "y": -0.6
+      }
     },
     "speaking": {
       "collar": "lit",
       "speaking": true
     },
     "error": {
-      "pose": "dizzy"
+      "eyes": "dizzy",
+      "mouth": "closed",
+      "earLeft": -20,
+      "earRight": 16,
+      "tailWag": {
+        "amp": 0,
+        "periodMs": 2800
+      }
     }
   },
   "tricks": {
     "dance": {
       "mode": "body",
       "frames": [
-        "wave-1",
-        "wave-2"
+        "dance-1",
+        "dance-2"
       ],
       "intervalMs": 420,
       "durationMs": 3400
