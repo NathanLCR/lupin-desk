@@ -131,6 +131,7 @@
         forward('setEmotion', [emotion]);
       },
       destroy: function () {
+        if (ready) callFace('destroy', []);
         destroyed = true;
         queue = [];
       }

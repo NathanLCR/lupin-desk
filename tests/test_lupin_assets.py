@@ -9,7 +9,7 @@ EMOTIONS = [
     "sad", "wink", "love", "sleepy", "angry", "dizzy",
 ]
 EXPECTED_LAYERS = [
-    "tail", "torso", "collar", "ear-left", "ear-right", "head", "eyes", "mouth",
+    "tail", "torso", "collar", "head", "ear-left", "ear-right", "eyes", "mouth",
 ]
 
 
@@ -17,7 +17,7 @@ def test_version_three_structure_and_pivots():
     assert TABLE["version"] == 3
     assert TABLE["layerOrder"] == EXPECTED_LAYERS
     assert list(TABLE["layers"]) == EXPECTED_LAYERS
-    assert TABLE["headGroup"] == ["ear-left", "ear-right", "head", "eyes", "mouth"]
+    assert TABLE["headGroup"] == ["head", "ear-left", "ear-right", "eyes", "mouth"]
     for key in ("breath", "headGroup", "ear-left", "ear-right", "tail"):
         coords = TABLE["pivots"][key]
         assert len(coords) == 2

@@ -329,4 +329,113 @@ test('reinit keeps only one motion-preference listener', async () => {
   assert.equal(h.listenerCount, 1);
   h.api.init(h.container);
   assert.equal(h.listenerCount, 1);
+  h.api.destroy();
+});
+
+test('speaking avoids redundant 60fps DOM churn, thinking->idle resets gaze, and music release smooths tilt', async () => {
+  const h = await start();
+  const root = h.container.children[0];
+  const collar = findByClass(root, 'lupin-layer-collar');
+  const mouth = findByClass(root, 'lupin-layer-mouth');
+  const headGroup = findByClass(root, 'lupin-head-group');
+  const eyes = findByClass(root, 'lupin-layer-eyes');
+
+  let filterWrites = 0;
+  let filterVal = collar.style.filter || '';
+  Object.defineProperty(collar.style, 'filter', {
+    get() { return filterVal; },
+    set(v) { filterWrites += 1; filterVal = v; },
+    configurable: true,
+  });
+
+  h.api.setState('speaking');
+  h.api.setAudioLevel(0.8);
+  h.tick(100);
+  const writesAfterStart = filterWrites;
+  const mouthBefore = mouth.children.filter((c) => !c.hidden);
+  h.tick(120);
+  h.tick(140);
+  assert.equal(filterWrites, writesAfterStart);
+  assert.deepEqual(mouth.children.filter((c) => !c.hidden), mouthBefore);
+
+  // Transitioning thinking -> idle resets forced gaze back toward center
+  h.api.setState('thinking');
+  h.tick(200);
+  assert.match(eyes.style.transform, /^translate\(/);
+  h.api.setState('idle');
+  for (let ts = 220; ts <= 1200; ts += 40) h.tick(ts);
+  const m = eyes.style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/);
+  if (m) {
+    assert.ok(Math.abs(Number(m[1])) < 0.25 && Math.abs(Number(m[2])) < 0.25);
+  }
+
+  // setMusicPlaying(false) lerps tilt smoothly instead of hard-snapping on release
+  h.api.setMusicPlaying(true);
+  h.tick(1408);
+  const tiltBefore = headGroup.style.transform;
+  h.api.setMusicPlaying(false);
+  h.tick(1424);
+  const tiltOneFrame = headGroup.style.transform;
+  const parseDeg = (s) => Number((s.match(/rotate\(([-\d.]+)deg\)/) || [0, 0])[1]);
+  assert.ok(Math.abs(parseDeg(tiltOneFrame) - parseDeg(tiltBefore)) < Math.abs(parseDeg(tiltBefore)));
+  h.api.destroy();
+});
+
+test('nowMs timer drives touch reaction, body trick frames preload, and destroy/detach stop RAF', async () => {
+  const preloadedUrls = [];
+  const h = makeHarness();
+  // Inject a mock Image constructor on the sandbox global via init on same harness? Build dedicated harness with Image
+  h.api.destroy();
+
+  const timers = new Map();
+  let nextTimer = 0;
+  let nextRaf = 0;
+  const rafs = new Map();
+  let now = 0;
+  const listeners = new Set();
+  const motionQuery = {
+    matches: false,
+    addEventListener(type, cb) { listeners.add(cb); },
+    removeEventListener(type, cb) { listeners.delete(cb); },
+  };
+  const win = {
+    matchMedia: () => motionQuery,
+    requestAnimationFrame(cb) { const id = ++nextRaf; rafs.set(id, cb); return id; },
+    cancelAnimationFrame(id) { rafs.delete(id); },
+    fetch: async () => ({ ok: true, json: async () => table }),
+    Image: function MockImage() {
+      return { set src(v) { preloadedUrls.push(v); } };
+    },
+    document: { createElement: (tag) => new FakeElement(tag), body: new FakeElement('body') },
+  };
+  const ctx = {
+    window: win,
+    document: win.document,
+    performance: { now: () => now },
+    Math, Date, console, Promise,
+    setTimeout(cb, delay) { const id = ++nextTimer; timers.set(id, { cb, delay }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+  };
+  vm.runInNewContext(source, ctx, { filename: sourcePath });
+  const c = new FakeElement('div');
+  win.LupinFace.init(c);
+  await new Promise((r) => setImmediate(r));
+
+  assert.ok(preloadedUrls.some((u) => u.endsWith('/body/dance-1.svg')));
+  assert.ok(preloadedUrls.some((u) => u.endsWith('/body/dance-2.svg')));
+  assert.equal(listeners.size, 1);
+
+  now = 500;
+  win.LupinFace.reactToTouch('pet', 0.4, -0.2);
+  assert.equal(win.LupinFace.getEmotion(), 'happy');
+
+  const root = c.children[0];
+  root.isConnected = false;
+  const f1 = rafs.entries().next().value;
+  rafs.delete(f1[0]);
+  f1[1](520);
+  assert.equal(rafs.size, 0);
+
+  win.LupinFace.destroy();
+  assert.equal(listeners.size, 0);
 });

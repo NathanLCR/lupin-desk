@@ -149,6 +149,7 @@
     gazeY: 0,
     targetX: 0,
     targetY: 0,
+    forcedGaze: false,
     manualGazeUntil: 0,
     nextGaze: 0,
     tilt: 0,
@@ -176,6 +177,8 @@
     music: false,
     accessory: 'none',
     compact: false,
+    lastCollarGlow: '',
+    preloadedBody: false,
     clicks: [],
     trickTimers: [],
     activeTrick: null,
@@ -362,6 +365,25 @@
     body.hidden = true;
     internal.stage.appendChild(body);
     internal.body = body;
+    preloadBodyFrames();
+  }
+
+  function preloadBodyFrames() {
+    if (internal.preloadedBody || !internal.table || !internal.table.tricks || typeof global.Image !== 'function') {
+      return;
+    }
+    internal.preloadedBody = true;
+    const seen = new Set();
+    Object.keys(internal.table.tricks).forEach((id) => {
+      const trick = internal.table.tricks[id];
+      if (!trick || trick.mode !== 'body' || !Array.isArray(trick.frames)) return;
+      trick.frames.forEach((frame) => {
+        if (seen.has(frame)) return;
+        seen.add(frame);
+        const img = new global.Image();
+        img.src = BASE + 'body/' + frame + '.svg';
+      });
+    });
   }
 
   function loadTable() {
@@ -443,9 +465,19 @@
     internal.earRight = resolved.earRight || 0;
     internal.tailWag = resolved.tailWag || { amp: 4, periodMs: 2800 };
 
-    if (resolved.gaze && Date.now() > internal.manualGazeUntil) {
-      internal.targetX = resolved.gaze.x;
-      internal.targetY = resolved.gaze.y;
+    const manualActive = nowMs() <= internal.manualGazeUntil;
+    if (resolved.gaze) {
+      internal.forcedGaze = true;
+      if (!manualActive) {
+        internal.targetX = resolved.gaze.x;
+        internal.targetY = resolved.gaze.y;
+      }
+    } else if (internal.forcedGaze) {
+      internal.forcedGaze = false;
+      if (!manualActive) {
+        internal.targetX = 0;
+        internal.targetY = 0;
+      }
     }
 
     if (shouldReduceMotion()) {
@@ -514,7 +546,7 @@
       internal.twitchEar = null;
     }
 
-    const touchPerk = Date.now() < internal.touchPerkUntil ? 4 : 0;
+    const touchPerk = ts < internal.touchPerkUntil ? 4 : 0;
     const targetL = clamp(internal.earLeft + twitchL + touchPerk, -32, 12);
     const targetR = clamp(internal.earRight + twitchR - touchPerk, -12, 32);
     internal.currentEarLeft = lerp(internal.currentEarLeft, targetL, 0.16);
@@ -522,11 +554,11 @@
     transformEars();
   }
 
-  function updateTail(dt, awake) {
+  function updateTail(ts, dt, awake) {
     let targetAmp = internal.tailWag ? internal.tailWag.amp : 4;
     let targetPeriod = internal.tailWag ? internal.tailWag.periodMs : 2800;
 
-    if (Date.now() < internal.petWagUntil) {
+    if (ts < internal.petWagUntil) {
       targetAmp = Math.max(targetAmp, 11);
       targetPeriod = Math.min(targetPeriod, 420);
     } else if (internal.music && awake) {
@@ -541,25 +573,31 @@
   }
 
   function updateSpeaking(ts) {
+    let mouthChanged = false;
     if (internal.table && internal.table.speech) {
       const desired = resolveSpeechMouth(internal.table.speech, internal.audioLevel);
       const holdMs = internal.table.speech.minHoldMs || 60;
       if (internal.speechMouth === null || (desired !== internal.speechMouth && ts - internal.speechMouthSince >= holdMs)) {
         internal.speechMouth = desired;
         internal.speechMouthSince = ts;
+        mouthChanged = true;
       }
     }
-    apply();
+    if (mouthChanged) apply();
     const collar = internal.layerEl.collar;
     if (collar) {
       const glow = 3 + internal.audioLevel * 12;
-      collar.style.filter = 'drop-shadow(0 0 ' + glow.toFixed(1) + 'px #22d3ee)';
+      const nextFilter = 'drop-shadow(0 0 ' + glow.toFixed(1) + 'px #22d3ee)';
+      if (nextFilter !== internal.lastCollarGlow) {
+        collar.style.filter = nextFilter;
+        internal.lastCollarGlow = nextFilter;
+      }
     }
   }
 
   function step(ts) {
     internal.rafId = null;
-    if (!internal.root) return;
+    if (!internal.root || internal.root.isConnected === false) return;
     fitScale();
     const dt = internal.lastStepTs ? Math.min(100, Math.max(0, ts - internal.lastStepTs)) : 16;
     internal.lastStepTs = ts;
@@ -579,7 +617,7 @@
       }
 
       // Look around when nobody is steering the gaze.
-      if (Date.now() > internal.manualGazeUntil && internal.state !== 'thinking') {
+      if (ts > internal.manualGazeUntil && internal.state !== 'thinking') {
         if (ts >= internal.nextGaze) {
           internal.targetX = (Math.random() - 0.5) * 1.4;
           internal.targetY = (Math.random() - 0.5) * 0.8;
@@ -602,7 +640,7 @@
       transformHead();
 
       updateEars(ts, cfg, awake);
-      updateTail(dt, awake);
+      updateTail(ts, dt, awake);
 
       const breathing = 1 + cfg.breathAmp * Math.sin((ts * TWO_PI) / cfg.breathPeriodMs);
       internal.breath.style.transform = 'scale(' + breathing.toFixed(4) + ')';
@@ -674,6 +712,8 @@
       internal.lastEffectiveEmotion = null;
       internal.speechMouth = null;
       internal.speechMouthSince = 0;
+      internal.forcedGaze = false;
+      internal.lastCollarGlow = '';
       internal.squashStart = -1000;
       internal.squashX = 1;
       internal.squashY = 1;
@@ -693,6 +733,32 @@
       return LupinFace;
     },
 
+    destroy() {
+      if (internal.rafId !== null && typeof global.cancelAnimationFrame === 'function') {
+        global.cancelAnimationFrame(internal.rafId);
+        internal.rafId = null;
+      }
+      if (internal.emotionTimer !== null) {
+        clearTimeout(internal.emotionTimer);
+        internal.emotionTimer = null;
+      }
+      clearTrick();
+      clearMotionPreference();
+      internal.container = null;
+      internal.root = null;
+      internal.stage = null;
+      internal.breath = null;
+      internal.headGroup = null;
+      internal.body = null;
+      internal.imgs = {};
+      internal.layerEl = {};
+      internal.visible = {};
+      internal.forcedGaze = false;
+      internal.lastCollarGlow = '';
+      internal.scale = 0;
+      internal.lastStepTs = 0;
+    },
+
     setState(state) {
       if (!SUPPORTED_STATES.includes(state)) {
         if (typeof console !== 'undefined' && console.warn) {
@@ -703,9 +769,10 @@
       internal.state = state;
       internal.speechMouth = null;
       internal.speechMouthSince = 0;
-      if (state !== 'speaking') internal.audioLevel = 0;
-      if (state !== 'speaking' && internal.layerEl.collar) {
-        internal.layerEl.collar.style.filter = '';
+      if (state !== 'speaking') {
+        internal.audioLevel = 0;
+        internal.lastCollarGlow = '';
+        if (internal.layerEl.collar) internal.layerEl.collar.style.filter = '';
       }
       registerInteraction();
       apply();
@@ -737,10 +804,11 @@
     },
 
     lookAt(x, y) {
+      const ts = nowMs();
       internal.targetX = clamp(Number(x), -1, 1);
       internal.targetY = clamp(Number(y), -1, 1);
-      internal.manualGazeUntil = Date.now() + MANUAL_GAZE_MS;
-      registerInteraction();
+      internal.manualGazeUntil = ts + MANUAL_GAZE_MS;
+      registerInteraction(ts);
       if (shouldReduceMotion()) {
         internal.gazeX = 0;
         internal.gazeY = 0;
@@ -784,21 +852,21 @@
      * repeated pokes annoy him.
      */
     reactToTouch(kind, nx, ny) {
-      registerInteraction();
+      const ts = nowMs();
+      registerInteraction(ts);
       const audio = global.EmoAudio;
       if (kind === 'pet') {
-        internal.touchPerkUntil = Date.now() + 350;
-        internal.petWagUntil = Date.now() + 2400;
+        internal.touchPerkUntil = ts + 350;
+        internal.petWagUntil = ts + 2400;
         LupinFace.setEmotion('happy', { durationMs: 2400 });
         LupinFace.lookAt(nx, ny);
         if (audio && typeof audio.purr === 'function') audio.purr(true);
         return;
       }
       if (kind === 'poke') {
-        internal.touchPerkUntil = Date.now() + 350;
-        const nowTs = Date.now();
-        internal.clicks = internal.clicks.filter((t) => nowTs - t < 3000);
-        internal.clicks.push(nowTs);
+        internal.touchPerkUntil = ts + 350;
+        internal.clicks = internal.clicks.filter((t) => ts - t < 3000);
+        internal.clicks.push(ts);
         const n = internal.clicks.length;
         if (n >= 3) {
           LupinFace.setEmotion('angry', { durationMs: 3600 });
@@ -829,7 +897,6 @@
 
     setMusicPlaying(active) {
       internal.music = Boolean(active);
-      if (!internal.music && !shouldReduceMotion()) internal.currentTilt = internal.tilt;
     },
 
     getHitboxRect() {

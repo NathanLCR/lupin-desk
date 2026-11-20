@@ -8,16 +8,16 @@
     "tail",
     "torso",
     "collar",
+    "head",
     "ear-left",
     "ear-right",
-    "head",
     "eyes",
     "mouth"
   ],
   "headGroup": [
+    "head",
     "ear-left",
     "ear-right",
-    "head",
     "eyes",
     "mouth"
   ],
@@ -56,13 +56,13 @@
       "off",
       "lit"
     ],
+    "head": [
+      "base"
+    ],
     "ear-left": [
       "base"
     ],
     "ear-right": [
-      "base"
-    ],
-    "head": [
       "base"
     ],
     "eyes": [
