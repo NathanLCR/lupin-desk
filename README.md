@@ -76,7 +76,8 @@ flowchart LR
 Everything below is implemented and covered by the automated test suites. Hardware checks that have not happened yet are noted explicitly.
 
 **Lupin**
-- Layered SVG husky with Expressions, procedural Web Audio sound, touch/gamepad navigation, and persistent Mood (`Affinity` and `Energy`).
+- 8-layer SVG husky (`tail`, `torso`, `collar`, `head`, `ear-left`, `ear-right`, `eyes`, `mouth`) driven by `static/lupin/expressions.json` (12 Expressions, 5 States, universal open-eye blink, 3-level speaking lip-sync with audio-reactive collar glow), LVGL-compatible 2D motion (breathing, idle sway, Expression-change squash & stretch, ear angles and twitches, eyes-only gaze, tail wag, music tilt, `prefers-reduced-motion`), 6 Tricks (`dance`, `stretch`, `nap` full-body 2-frame SVGs plus `sing`, `meditate`, `celebrate` bust effects), procedural Web Audio sound, touch/gamepad navigation, and persistent Mood (`Affinity` and `Energy`) — live RG406H/ESP32 check pending for the layered art.
+- Presence: break reminders, time-of-day tone, music-reactive tilt (optional `nowplaying-cli`), and front-app Data Consent — live daily-use check pending.
 - Streaming chat, SQLite memory, two-way voice with barge-in, and deterministic First Wake briefings (`Today`, verified in daily use).
 - Voice-driven tasks, notes, habits, and Spotlight/local smart search ([docs/smart-search.md](docs/smart-search.md)) — live voice cross-check pending.
 - Focused-app dictation via `pbcopy` + `Cmd+V` with previous-clipboard restoration ([docs/dictation.md](docs/dictation.md)) — real-app paste check pending.
@@ -88,7 +89,11 @@ Everything below is implemented and covered by the automated test suites. Hardwa
 - Device Roles (`body`, `panel`, `body+panel`), `12x6` Layouts, ES5-compatible widget runtime (verified live on Anbernic RG406H; Moto G5 and iPad pending).
 - Mac-only Layout editor at `/editor` with live device preview, templates, and masked `.env` credentials store.
 - Everyday widgets (clock, calendar, weather, Pomodoro, timers, notes, checklist, habits) — RG406H render verified (small `3x3` notes tile clips the Add button in Android WebView; iPad pending).
-- Signals bus pushing Brain events (e.g., Claude Code approval prompts) to subscribed Panels.
+- Mac monitoring widgets (CPU, memory, disks, network, top processes via `psutil`) — live device check pending.
+- AI coding widgets and Claude Code hooks: live session tracking, Panel permission approval prompts (with Signal Expression hold and restore on release), and hooks install/remove in Settings — live Claude Code session check pending.
+- Control Deck and automation: Mac volume and mic mute, multi-step macros, rate-limited incoming webhooks (`POST /hooks/{secret}` with secret rotation), automation rules, `panel:goto` page switching, whitelisted `app.activate`, and Mac Settings UI — live hardware check pending.
+- Panel image editor: upload, crop, resize, compress, convert, and macOS Vision background removal (automatically compiled Swift helper recompiled on source change), EXIF orientation baking, GPS stripping on saved outputs, and voice Action integration — live device check pending.
+- Signals bus pushing Brain events (Claude Code prompts, timers, webhooks, rules, habits) to subscribed Panels.
 - Android kiosk APK shell (`minSdk 24` for Android 7+, reconnect backoff, boot receiver) built via `scripts/build_android_apk.py` (verified on RG406H; Moto G5 pending).
 - E-ink Mode at `/eink`: plain server-rendered black-and-white HTML with no JavaScript or external assets, built for old Kindle WebKit browsers (Kindle device check pending).
 
@@ -121,7 +126,7 @@ Open on the Mac or another device on your Wi-Fi (`http://<your-mac-ip>:8000`):
 
 **Microphone over Wi-Fi:** Browsers block `getUserMedia` on plain HTTP outside localhost. Run `.venv/bin/python scripts/setup_https.py` to generate a self-signed cert in `certs/` and connect over HTTPS on port `8443`.
 
-**Optional targets:** `.venv/bin/python scripts/build_android_apk.py` builds `dist/desk-assistant-rg406h.apk` (requires Android SDK build tools), and `cd electron && npm install && npm start` launches the Mac mini-pet.
+**Optional targets:** `.venv/bin/python scripts/build_android_apk.py` builds `dist/desk-assistant-rg406h.apk` (requires Android SDK build tools), `.venv/bin/python scripts/generate_lupin_png.py` exports all 34 indexed `480x320` ESP32 PNG layers from `static/lupin/` (111 KB total, largest 11.3 KB against the 20 KB per-layer budget; requires dev-only `pillow` and `resvg-py`), and `cd electron && npm install && npm start` launches the Mac mini-pet.
 
 ## Security model and trade-offs
 
@@ -129,9 +134,9 @@ Lupin assumes a **trusted single-user home LAN** ([ADR 0002](docs/adr/0002-two-p
 
 - By default (`DESK_REQUIRE_TOKEN` unset), devices on your Wi-Fi connect to Panels and `/ws` without an access token. Anyone on the same Wi-Fi can view Panels and trigger Panel actions, including pressing **Allow** on a Claude Code approval prompt. Set `DESK_REQUIRE_TOKEN=1` (and optionally `DESK_ACCESS_TOKEN` in `.env`) to require a token from non-loopback clients. Do not port-forward the Brain or run it on untrusted networks.
 - **No shell execution:** Mac control runs fixed `argv` lists against an explicit whitelist in `app/mac_control.py`, never `shell=True`.
-- **Loopback-only MCP server:** `POST /mcp` and `/api/mcp/*` write routes reject non-loopback peers and non-localhost `Host`/`Origin` headers to block DNS-rebinding attacks.
-- **Secret isolation:** `SecretRedactingFilter` strips API keys and tokens from logs; `.env` credentials are never serialized to clients.
-- **Per-provider Data Consent:** Calendar, email, and Spotlight file snippets leave the Mac only when explicitly consented for the active provider/host; switching providers clears consent. Local loopback Ollama skips cloud consent.
+- **Loopback-only Mac controls & DNS-rebinding guards:** `POST /mcp`, `/api/mcp/*`, `PUT /api/data-consent`, `PUT /api/presence`, and `/api/control/*` write/rules routes reject non-loopback peers and non-localhost `Host`/`Origin` headers (and require `application/json` on writes) to block DNS-rebinding attacks.
+- **Secret isolation:** `SecretRedactingFilter` strips API keys, tokens, and incoming webhook paths (`/hooks/...`) from logs; `.env` credentials are never serialized to clients; edited image outputs have GPS metadata stripped.
+- **Per-provider Data Consent:** Calendar, email, Spotlight file snippets, and the Mac's front app (app name and window title) leave the Mac only when explicitly consented for the active provider/host; switching providers clears consent. Local loopback Ollama skips cloud consent.
 
 ## How it was built
 
@@ -149,16 +154,15 @@ We also benchmarked agent team structures across nine issues in [docs/agent-work
 Both suites run automatically on push and pull request via [.github/workflows/ci.yml](.github/workflows/ci.yml):
 
 ```bash
-.venv/bin/python -m pytest -q            # 752 passed
-node --test tests/frontend/*.test.cjs    # 447 passed
+.venv/bin/python -m pytest -q            # 919 passed
+node --test tests/frontend/*.test.cjs    # 509 passed
 ```
 
 ## Roadmap
 
-- ESP32-S3 (`Guition JC3248W535`, 480x320 LVGL) Body firmware and hardware demo.
-- Remaining Panel widget groups: Mac monitoring (`P08`), AI coding sessions (`P09`), and Control Deck / Automation (`P10`).
-- Presence reactions and Panel image editor widget.
-- Live hardware verification on Moto G5, iPad Safari, and Kindle E-ink Mode.
+- ESP32-S3 (`Guition JC3248W535`, 480x320 LVGL) Body firmware, optional cropped-sprite PNG export, and hardware demo.
+- Incremental evolutions on top of the 8-layer Lupin 2D base (accessories art such as headphones/Pomodoro cues, richer eye and mouth motion, and new Tricks).
+- Live hardware verification on Moto G5, iPad Safari, Kindle E-ink Mode, and RG406H checks for layered Lupin and recent Panel widgets.
 
 ## License
 
