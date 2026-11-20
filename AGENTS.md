@@ -9,8 +9,7 @@ You are working inside the repository root (the directory that holds this file).
 1. `docs/adr/0001-companion-first-brain-and-body.md`: the product direction ("a desk companion that actually works", one feature at a time).
 2. `GLOSSARY.md`: the domain language. Use its terms.
 3. `docs/adr/0002-two-pillars-lupin-and-panels.md`: two pillars (Lupin and Panels), Device Roles, LAN trust, and the spec-then-code gate.
-4. `.scratch/lupin-foco/spec.md` and `.scratch/panels/spec.md`: the issue lists and the execution rules.
-5. `.scratch/agents/board.md`: who is working on which files right now. Read it before a task and update it after.
+4. When present in a local workspace (`.scratch/` is gitignored and omitted from public checkouts): `.scratch/lupin-foco/spec.md`, `.scratch/panels/spec.md`, and `.scratch/agents/board.md`.
 
 The older swarm-era design that lived in `docs/superpowers/` was superseded by ADR 0001 and removed from the tree (it is still in git history). Do not follow it.
 
@@ -32,14 +31,14 @@ The older swarm-era design that lived in `docs/superpowers/` was superseded by A
   - Frontend tests: `node --test tests/frontend/*.test.cjs`.
 - **Connected device**: the RG406H may be connected over ADB (`RG406H01980952`), with `adb reverse` and `RECORD_AUDIO` granted to Chrome.
 - **Verification**: work counts as done only after all tests pass and the updated server has been restarted for a live check.
-- **Parallel agents**: if several agents build at once, split the files so no two agents touch the same file. Claim files in `.scratch/agents/board.md`; log finished tasks in `.scratch/agents/ledger.md`.
+- **Parallel agents**: if several agents build at once, split the files so no two agents touch the same file. When `.scratch/` is present locally, claim files in `.scratch/agents/board.md` and log finished tasks in `.scratch/agents/ledger.md`.
 - **Decide here, code elsewhere** (ADR 0002): planning, grilling, specs and orchestration run on Opus and write no feature code. Code is written by Sonnet leads and Haiku coders, from a grilled spec. Never make product decisions while coding; ask.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues and specs are tracked as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+Issues and specs are tracked locally under `.scratch/` (gitignored when absent in clean clones). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
