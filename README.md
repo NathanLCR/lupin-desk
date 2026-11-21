@@ -14,11 +14,11 @@ The system separates state from display ([ADR 0002](docs/adr/0002-two-pillars-lu
 - **Lupin (companion):** One Python Brain on your Mac manages the LLM connection, SQLite short- and long-term memory, Mood (`Affinity` and `Energy`), morning First Wake summaries, Cowork workspace tasks, and whitelisted Mac actions. Any screen can act as a **Body**, though Lupin only speaks and animates in one **Active Body** at a time (chosen by priority on the Mac). You can talk from any device; replies play on the Active Body and appear as text where you asked.
 - **Panels (repurposed screens):** Spare devices become grid dashboards (`12x6`, portrait and landscape) configured in a Mac browser editor and pushed over WebSocket—or rendered as plain server-side HTML over HTTP for e-ink readers.
 
-![A Panel in landscape: clock, weather, Pomodoro, checklist, habits and notes](docs/media/panel.png)
+![A Panel in landscape: clock, weather, Mac CPU and memory, checklist, AI coding sessions, and habits](docs/media/panel.png)
 
 ![Mac Layout editor](docs/media/layout-editor.png)
 
-<img src="docs/media/eink-mode.png" alt="The same Layout in E-ink Mode, portrait, as a Kindle renders it" width="380">
+<img src="docs/media/eink-mode.png" alt="Portrait E-ink Mode on a Kindle: clock, weather, calendar, tasks, and notes" width="380">
 
 *Screenshots captured against a throwaway demo Brain with sample data.*
 
